@@ -1,0 +1,15 @@
+{
+    "pools": {
+        "astroport": {
+            "neutron": {
+                "directory": {
+                    "address": "neutron1hptk0k5kng7hjy35vmh009qd5m6l33609nypgf2yc6nqnewduqasxplt4e",
+                    "src": "contracts/astroport_factory.wasm"
+                },
+                "pair": {
+                    "src": "contracts/astroport_pair.wasm"
+                }
+            }
+        }
+    }
+}
