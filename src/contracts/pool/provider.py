@@ -5,14 +5,14 @@ class PoolProvider:
     exchange and chain-specific via extension of this base class.
     """
 
-    def exchange_rate_asset_a(self, amount: int) -> int:
+    def simulate_swap_asset_a(self, amount: int) -> int:
         """
         Gets the current exchange rate per quantity of asset a in the base denomination.
         """
 
         pass
 
-    def exchange_rate_asset_b(self, amount: int) -> int:
+    def simulate_swap_asset_b(self, amount: int) -> int:
         """
         Gets the current exchange rate per quantity of asset b in the base denomination.
         """
