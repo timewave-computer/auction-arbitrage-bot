@@ -19,7 +19,7 @@
                 "src": "contracts/auctions_manager.wasm"
             },
             "auction": {
-                "src": "contract/auction.wasm"
+                "src": "contracts/auction.wasm"
             }
         }
     }

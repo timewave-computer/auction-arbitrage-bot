@@ -1,6 +1,7 @@
 from src.contracts.pool.provider import PoolProvider
+from src.util import NEUTRON_NETWORK_CONFIG
 from cosmpy.aerial.contract import LedgerContract
-from cosmpy.aerial.client import LedgerClient, NetworkConfig
+from cosmpy.aerial.client import LedgerClient
 
 
 class Token:
@@ -100,15 +101,7 @@ class AstroportPoolDirectory:
     """
 
     def __init__(self, deployments: dict[str, any]):
-        self.client = LedgerClient(
-            NetworkConfig(
-                chain_id="neutron-1",
-                url="grpc+https://neutron-grpc.publicnode.com:443",
-                fee_minimum_gas_price=0.0053,
-                fee_denomination="untrn",
-                staking_denomination="untrn",
-            )
-        )
+        self.client = LedgerClient(NEUTRON_NETWORK_CONFIG)
         self.deployment_info = deployments["pools"]["astroport"]["neutron"]
 
         deployment_info = self.deployment_info["directory"]

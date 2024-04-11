@@ -5,13 +5,8 @@ from src.contracts.pool.astroport import (
     token_to_addr,
 )
 from src.contracts.pool.osmosis import OsmosisPoolDirectory, OsmosisPoolProvider
-import json
+from tests.util import deployments
 import pytest
-
-
-def deployments() -> dict[str, any]:
-    with open("contracts/deployments.json") as f:
-        return json.load(f)
 
 
 def test_astroport_pools():
