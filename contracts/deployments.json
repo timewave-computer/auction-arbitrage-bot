@@ -11,5 +11,16 @@
                 }
             }
         }
+    },
+    "auctions": {
+        "neutron": {
+            "auctions_manager": {
+                "address": "neutron13exc5wdc7y5qpqazc34djnu934lqvfw2dru30j52ahhjep6jzx8ssjxcyz",
+                "src": "contracts/auctions_manager.wasm"
+            },
+            "auction": {
+                "src": "contract/auction.wasm"
+            }
+        }
     }
 }
