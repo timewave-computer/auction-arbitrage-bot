@@ -1,6 +1,7 @@
 import urllib3
 import json
 from src.contracts.pool.provider import PoolProvider
+from typing import Any
 
 
 class OsmosisPoolProvider(PoolProvider):
@@ -15,8 +16,8 @@ class OsmosisPoolProvider(PoolProvider):
         self.asset_b_denom = asset_b
         self.pool_id = pool_id
 
-    def __exchange_rate(self, asset_a: str, asset_b: str, amount: int) -> int:
-        return int(
+    def __exchange_rate(self, asset_a: str, asset_b: str, amount: int) -> float:
+        return float(
             json.loads(
                 self.client.request(
                     "GET",
@@ -25,10 +26,10 @@ class OsmosisPoolProvider(PoolProvider):
             )["token_out_amount"]
         )
 
-    def simulate_swap_asset_a(self, amount: int) -> int:
+    def simulate_swap_asset_a(self, amount: int) -> float:
         return self.__exchange_rate(self.asset_a_denom, self.asset_b_denom, amount)
 
-    def simulate_swap_asset_b(self, amount: int) -> int:
+    def simulate_swap_asset_b(self, amount: int) -> float:
         return self.__exchange_rate(self.asset_b_denom, self.asset_a_denom, amount)
 
     def asset_a(self) -> str:
@@ -54,7 +55,7 @@ class OsmosisPoolDirectory:
         Gets an OsmosisPoolProvider for every pair on Osmosis.
         """
 
-        def denoms(pool: dict[str, any]) -> list[str]:
+        def denoms(pool: dict[str, Any]) -> list[str]:
             if "pool_liquidity" in pool:
                 return [asset["denom"] for asset in pool["pool_liquidity"]][:2]
 
@@ -74,7 +75,7 @@ class OsmosisPoolDirectory:
         )["pools"]
 
         # Match each symbol with multiple trading pairs
-        asset_pools = {}
+        asset_pools: dict[str, dict[str, OsmosisPoolProvider]] = {}
 
         for pool_id, pool in enumerate(pools, 1):
             denom_addrs = denoms(pool)

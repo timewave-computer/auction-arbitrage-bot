@@ -5,30 +5,30 @@ class PoolProvider:
     exchange and chain-specific via extension of this base class.
     """
 
-    def simulate_swap_asset_a(self, amount: int) -> int:
+    def simulate_swap_asset_a(self, amount: int) -> float:
         """
         Gets the current exchange rate per quantity of asset a in the base denomination.
         """
 
-        pass
+        raise NotImplementedError
 
-    def simulate_swap_asset_b(self, amount: int) -> int:
+    def simulate_swap_asset_b(self, amount: int) -> float:
         """
         Gets the current exchange rate per quantity of asset b in the base denomination.
         """
 
-        pass
+        raise NotImplementedError
 
     def asset_a(self) -> str:
         """
         Gets the contract address or ticker (if a native asset) of the first denomination in the pair.
         """
 
-        pass
+        raise NotImplementedError
 
     def asset_b(self) -> str:
         """
         Gets the contract address or ticker (if a native asset) of the second denomination in the pair.
         """
 
-        pass
+        raise NotImplementedError

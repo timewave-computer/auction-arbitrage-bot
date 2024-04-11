@@ -1,6 +1,7 @@
 from src.util import NEUTRON_NETWORK_CONFIG
 from cosmpy.aerial.contract import LedgerContract
 from cosmpy.aerial.client import LedgerClient
+from typing import Any
 
 
 class AuctionProvider:
@@ -13,7 +14,7 @@ class AuctionProvider:
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b
 
-    def simulate_swap_asset_a(self, amount: int) -> int:
+    def simulate_swap_asset_a(self, amount: int) -> float:
         auction_info = self.contract.query("get_auction")
 
         print(self.contract.address)
@@ -38,7 +39,7 @@ class AuctionDirectory:
     - AuctionProviders for each auction
     """
 
-    def __init__(self, deployments: dict[str, any]):
+    def __init__(self, deployments: dict[str, Any]):
         self.client = LedgerClient(NEUTRON_NETWORK_CONFIG)
         self.deployment_info = deployments["auctions"]["neutron"]
 
@@ -55,7 +56,7 @@ class AuctionDirectory:
         auction_infos = self.directory_contract.query(
             {"get_pairs": {"start_after": None, "limit": None}}
         )
-        auctions = {}
+        auctions: dict[str, dict[str, AuctionProvider]] = {}
 
         for auction in auction_infos:
             pair, addr = auction

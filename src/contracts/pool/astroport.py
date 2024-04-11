@@ -2,6 +2,7 @@ from src.contracts.pool.provider import PoolProvider
 from src.util import NEUTRON_NETWORK_CONFIG
 from cosmpy.aerial.contract import LedgerContract
 from cosmpy.aerial.client import LedgerClient
+from typing import Any, cast
 
 
 class Token:
@@ -14,16 +15,16 @@ class NativeToken:
         self.denom = denom
 
 
-def asset_info_to_token(info: dict[str, any]) -> NativeToken | Token:
+def asset_info_to_token(info: dict[str, Any]) -> NativeToken | Token:
     """
     Converts an Astroport Pairs {} query message response list member to a
     representation as Token or NativeToken.
     """
 
     if "token" in info:
-        return Token(info["token"]["contract_addr"])
+        return Token(cast(dict[str, Any], info["token"])["contract_addr"])
 
-    return NativeToken(info["native_token"]["denom"])
+    return NativeToken(cast(dict[str, Any], info["native_token"])["denom"])
 
 
 def token_to_addr(token: NativeToken | Token) -> str:
@@ -37,7 +38,7 @@ def token_to_addr(token: NativeToken | Token) -> str:
     return token.contract_addr
 
 
-def token_to_asset_info(token: NativeToken | Token) -> dict[str, any]:
+def token_to_asset_info(token: NativeToken | Token) -> dict[str, Any]:
     """
     Gets the JSON astroport AssetInfo representation of a token representation.
     """
@@ -100,7 +101,7 @@ class AstroportPoolDirectory:
     - AstroportPoolProviders for each pair
     """
 
-    def __init__(self, deployments: dict[str, any]):
+    def __init__(self, deployments: dict[str, Any]):
         self.client = LedgerClient(NEUTRON_NETWORK_CONFIG)
         self.deployment_info = deployments["pools"]["astroport"]["neutron"]
 
@@ -119,7 +120,7 @@ class AstroportPoolDirectory:
         )["pairs"]
 
         # All denom symbols and token contract addresses
-        asset_pools = {}
+        asset_pools: dict[str, dict[str, AstroportPoolProvider]] = {}
 
         # Pool wrappers for each asset
         for pool in pools:

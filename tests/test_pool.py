@@ -5,7 +5,7 @@ from src.contracts.pool.astroport import (
     token_to_addr,
 )
 from src.contracts.pool.osmosis import OsmosisPoolDirectory, OsmosisPoolProvider
-from tests.util import deployments
+from src.util import deployments
 import pytest
 
 
@@ -16,7 +16,13 @@ def test_astroport_pools():
     """
 
     astroport = AstroportPoolDirectory(deployments())
-    assert len(astroport.pools()) != 0
+    pools = astroport.pools()
+
+    assert len(pools) != 0
+
+    for base in pools.values():
+        for pool in base.values():
+            assert isinstance(pool, AstroportPoolProvider)
 
 
 def test_osmosis_pools():
@@ -26,7 +32,13 @@ def test_osmosis_pools():
     """
 
     osmosis = OsmosisPoolDirectory()
-    assert len(osmosis.pools()) != 0
+    pools = osmosis.pools()
+
+    assert len(pools) != 0
+
+    for base in pools.values():
+        for pool in base.values():
+            assert isinstance(pool, OsmosisPoolProvider)
 
 
 def test_astroport_provider():

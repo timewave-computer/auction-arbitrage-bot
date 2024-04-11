@@ -2,7 +2,7 @@ from src.contracts.auction import AuctionProvider
 from src.contracts.auction import (
     AuctionDirectory,
 )
-from tests.util import deployments
+from src.util import deployments
 import json
 import pytest
 

@@ -1,4 +1,6 @@
 from cosmpy.aerial.client import NetworkConfig
+import json
+from typing import Any
 
 """
 Network configuration to be used for all neutron clients.
@@ -10,3 +12,8 @@ NEUTRON_NETWORK_CONFIG = NetworkConfig(
     fee_denomination="untrn",
     staking_denomination="untrn",
 )
+
+
+def deployments() -> dict[str, Any]:
+    with open("contracts/deployments.json") as f:
+        return json.load(f)
