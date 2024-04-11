@@ -14,7 +14,15 @@ class AuctionProvider:
         self.asset_b_denom = asset_b
 
     def simulate_swap_asset_a(self, amount: int) -> int:
-        pass
+        auction_info = self.contract.query("get_auction")
+
+        print(self.contract.address)
+
+        # No swap is possible since the auction is closed
+        if auction_info["status"] != "started":
+            return 0
+
+        return float(self.contract.query("get_price")["price"])
 
     def asset_a(self) -> str:
         return self.asset_a_denom
@@ -64,10 +72,6 @@ class AuctionDirectory:
             if asset_a not in auctions:
                 auctions[asset_a] = {}
 
-            if asset_b not in auctions:
-                auctions[asset_b] = {}
-
             auctions[asset_a][asset_b] = provider
-            auctions[asset_b][asset_a] = provider
 
         return auctions
