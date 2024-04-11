@@ -14,10 +14,8 @@ class AuctionProvider:
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b
 
-    def simulate_swap_asset_a(self, amount: int) -> float:
+    def exchange_rate(self) -> float:
         auction_info = self.contract.query("get_auction")
-
-        print(self.contract.address)
 
         # No swap is possible since the auction is closed
         if auction_info["status"] != "started":
@@ -30,6 +28,9 @@ class AuctionProvider:
 
     def asset_b(self) -> str:
         return self.asset_b_denom
+
+    def remaining_asset_a(self) -> float:
+        return float(self.contract.query("get_auction")["available_amount"])
 
 
 class AuctionDirectory:

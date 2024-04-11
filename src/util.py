@@ -1,6 +1,8 @@
 from cosmpy.aerial.client import NetworkConfig
 import json
 from typing import Any
+import sys
+import logging
 
 """
 Network configuration to be used for all neutron clients.
@@ -17,3 +19,7 @@ NEUTRON_NETWORK_CONFIG = NetworkConfig(
 def deployments() -> dict[str, Any]:
     with open("contracts/deployments.json") as f:
         return json.load(f)
+
+
+def decimal_to_int(dec: float) -> int:
+    return int(dec * 10**18)

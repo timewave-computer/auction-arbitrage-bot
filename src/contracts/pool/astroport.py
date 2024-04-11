@@ -2,7 +2,8 @@ from src.contracts.pool.provider import PoolProvider
 from src.util import NEUTRON_NETWORK_CONFIG
 from cosmpy.aerial.contract import LedgerContract
 from cosmpy.aerial.client import LedgerClient
-from typing import Any, cast
+from typing import Any, cast, Callable
+from functools import cached_property
 
 
 class Token:
@@ -56,13 +57,25 @@ class AstroportPoolProvider(PoolProvider):
 
     def __init__(
         self,
-        contract: LedgerContract,
+        deployment_info: dict[str, Any],
+        client: LedgerClient,
+        address: str,
         asset_a: Token | NativeToken,
         asset_b: Token | NativeToken,
     ):
-        self.contract = contract
+        self.deployment_info = deployment_info
+        self.client = client
+        self.address = address
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b
+
+    @cached_property
+    def contract(self):
+        return LedgerContract(
+            self.deployment_info["pair"]["src"],
+            self.client,
+            address=self.address,
+        )
 
     def __exchange_rate(
         self, asset_a: Token | NativeToken, asset_b: Token | NativeToken, amount: int
@@ -115,9 +128,24 @@ class AstroportPoolDirectory:
         Gets an AstroportPoolProvider for every pair on Astroport.
         """
 
-        pools = self.directory_contract.query(
-            {"pairs": {"start_after": None, "limit": None}}
-        )["pairs"]
+        # Load all pools in 10-pool batches
+        pools = []
+        prev_pool_page = None
+
+        while prev_pool_page is None or len(prev_pool_page) > 0:
+            next_pools = self.directory_contract.query(
+                {
+                    "pairs": {
+                        "start_after": prev_pool_page[-1]["asset_infos"]
+                        if prev_pool_page is not None
+                        else None,
+                        "limit": 10,
+                    }
+                }
+            )["pairs"]
+
+            pools.extend(next_pools)
+            prev_pool_page = next_pools
 
         # All denom symbols and token contract addresses
         asset_pools: dict[str, dict[str, AstroportPoolProvider]] = {}
@@ -132,11 +160,9 @@ class AstroportPoolDirectory:
                 continue
 
             provider = AstroportPoolProvider(
-                LedgerContract(
-                    self.deployment_info["pair"]["src"],
-                    self.client,
-                    address=pool["contract_addr"],
-                ),
+                self.deployment_info,
+                self.client,
+                pool["contract_addr"],
                 pair[0],
                 pair[1],
             )

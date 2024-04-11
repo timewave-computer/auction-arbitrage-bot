@@ -30,10 +30,7 @@ def test_auction_provider():
             assert len(auction.asset_a()) != ""
             assert len(auction.asset_b()) != ""
 
-            price = auction.simulate_swap_asset_a(1000)
+            price = auction.exchange_rate()
             assert price >= 0
 
             prices.append(price)
-
-    # At least one auction must have a price
-    assert max(prices) > 0

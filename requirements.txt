@@ -16,6 +16,8 @@ jedi==0.19.1
 jsonschema==4.21.1
 jsonschema-specifications==2023.12.1
 multidict==6.0.5
+mypy==1.9.0
+mypy-extensions==1.0.0
 packaging==24.0
 parso==0.8.4
 pluggy==1.4.0
@@ -28,6 +30,12 @@ python-lsp-server==1.11.0
 referencing==0.34.0
 requests==2.31.0
 rpds-py==0.18.0
+schedule==1.2.1
 six==1.16.0
+types-colorama==0.4.15.20240311
+types-docutils==0.20.0.20240406
+types-Pygments==2.17.0.20240310
+types-setuptools==69.2.0.20240317
+typing_extensions==4.11.0
 ujson==5.9.0
 urllib3==2.2.1
