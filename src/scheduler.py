@@ -13,8 +13,14 @@ class Ctx:
     - User state
     """
 
-    def __init__(self, poll_interval: int) -> None:
+    poll_interval: int
+    max_hops: int
+    base_symbol: str
+
+    def __init__(self, poll_interval: int, max_hops: int, base_symbol: str) -> None:
         self.poll_interval = poll_interval
+        self.max_hops = max_hops
+        self.base_symbol = base_symbol
 
     def with_state(self, state: Any) -> Self:
         self.state = state

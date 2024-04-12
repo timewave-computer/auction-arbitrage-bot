@@ -19,7 +19,9 @@ def strategy(
 
 
 def ctx():
-    return Ctx(120)
+    return Ctx(
+        120, 5, "ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81"
+    )
 
 
 def test_init():
