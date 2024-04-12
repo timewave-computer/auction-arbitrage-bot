@@ -4,6 +4,7 @@ from cosmpy.aerial.contract import LedgerContract  # type: ignore
 from cosmpy.aerial.client import LedgerClient  # type: ignore
 from typing import Any, cast, Callable, Union, List
 from functools import cached_property
+from grpc._channel import _InactiveRpcError
 
 
 class Token:
@@ -80,19 +81,26 @@ class AstroportPoolProvider(PoolProvider):
     def __exchange_rate(
         self, asset_a: Token | NativeToken, asset_b: Token | NativeToken, amount: int
     ) -> int:
-        simulated_pricing_info = self.contract.query(
-            {
-                "simulation": {
-                    "offer_asset": {
-                        "info": token_to_asset_info(asset_a),
-                        "amount": str(amount),
-                    },
-                    "ask_asset_info": token_to_asset_info(asset_b),
+        try:
+            simulated_pricing_info = self.contract.query(
+                {
+                    "simulation": {
+                        "offer_asset": {
+                            "info": token_to_asset_info(asset_a),
+                            "amount": str(amount),
+                        },
+                        "ask_asset_info": token_to_asset_info(asset_b),
+                    }
                 }
-            }
-        )
+            )
 
-        return int(simulated_pricing_info["return_amount"])
+            return int(simulated_pricing_info["return_amount"])
+        except _InactiveRpcError as e:
+            # The pool has no assets in it
+            if "One of the pools is empty" in e.details():
+                return 0
+
+            raise e
 
     def simulate_swap_asset_a(self, amount: int) -> int:
         return self.__exchange_rate(self.asset_a_denom, self.asset_b_denom, amount)

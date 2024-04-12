@@ -48,13 +48,39 @@ def test_astroport_provider():
     """
 
     astroport = AstroportPoolDirectory(deployments())
-    pool = list(list(astroport.pools().values())[0].values())[0]
+    pools = astroport.pools()
 
-    assert len(pool.asset_a()) != ""
-    assert len(pool.asset_b()) != ""
+    # All pools must have assets
+    assert all(
+        map(
+            lambda base: all(map(lambda pool: pool.asset_a() != "", base.values())),
+            pools.values(),
+        )
+    )
+    assert all(
+        map(
+            lambda base: all(map(lambda pool: pool.asset_b() != "", base.values())),
+            pools.values(),
+        )
+    )
 
-    assert pool.simulate_swap_asset_a(1000) >= 0
-    assert pool.simulate_swap_asset_b(1000) >= 0
+    # At least one pool must have some assets to swap
+    assert any(
+        map(
+            lambda base: any(
+                map(lambda pool: pool.simulate_swap_asset_a(1000) >= 0, base.values())
+            ),
+            pools.values(),
+        )
+    )
+    assert any(
+        map(
+            lambda base: any(
+                map(lambda pool: pool.simulate_swap_asset_b(1000) >= 0, base.values())
+            ),
+            pools.values(),
+        )
+    )
 
 
 def test_osmosis_provider():
@@ -64,10 +90,36 @@ def test_osmosis_provider():
     """
 
     osmosis = OsmosisPoolDirectory()
-    pool = list(list(osmosis.pools().values())[0].values())[0]
+    pools = osmosis.pools()
 
-    assert len(pool.asset_a()) != ""
-    assert len(pool.asset_b()) != ""
+    # All pools must have assets
+    assert all(
+        map(
+            lambda base: all(map(lambda pool: pool.asset_a() != "", base.values())),
+            pools.values(),
+        )
+    )
+    assert all(
+        map(
+            lambda base: all(map(lambda pool: pool.asset_b() != "", base.values())),
+            pools.values(),
+        )
+    )
 
-    assert pool.simulate_swap_asset_a(1000) >= 0
-    assert pool.simulate_swap_asset_b(1000) >= 0
+    # At least one pool must have some assets to swap
+    assert any(
+        map(
+            lambda base: any(
+                map(lambda pool: pool.simulate_swap_asset_a(1000) >= 0, base.values())
+            ),
+            pools.values(),
+        )
+    )
+    assert any(
+        map(
+            lambda base: any(
+                map(lambda pool: pool.simulate_swap_asset_b(1000) >= 0, base.values())
+            ),
+            pools.values(),
+        )
+    )
