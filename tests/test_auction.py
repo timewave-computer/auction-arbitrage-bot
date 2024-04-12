@@ -23,7 +23,6 @@ def test_auction_provider():
     """
 
     auctions = AuctionDirectory(deployments()).auctions()
-    prices = []
 
     for auction_base in auctions.values():
         for auction in auction_base.values():
@@ -32,5 +31,3 @@ def test_auction_provider():
 
             price = auction.exchange_rate()
             assert price >= 0
-
-            prices.append(price)

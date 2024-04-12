@@ -37,7 +37,20 @@ class AuctionProvider:
         if auction_info["status"] != "started":
             return 0
 
-        return float(self.contract.query("get_price")["price"])
+        # Calcualte prices manually by following the
+        # pricing curve to the given block
+        current_block_height = self.client.query_height()
+
+        # The change in price per block
+        price_delta_per_block = (
+            float(auction_info["start_price"]) - float(auction_info["end_price"])
+        ) / (float(auction_info["end_block"]) - float(auction_info["start_block"]))
+        current_price = float(auction_info["start_price"]) - (
+            price_delta_per_block
+            * (current_block_height - float(auction_info["start_block"]))
+        )
+
+        return current_price
 
     def asset_a(self) -> str:
         return self.asset_a_denom
