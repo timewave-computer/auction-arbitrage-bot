@@ -20,6 +20,6 @@ jobs:
       - name: Run unit tests
         run: python -m pytest tests
       - name: Check src mypy
-        run: mypy src --install-types --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs
+        run: mypy src --install-types --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs --strict
       - name: Check main mypy
-        run: mypy main.py --install-types --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs
+        run: mypy main.py --install-types --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs --strict

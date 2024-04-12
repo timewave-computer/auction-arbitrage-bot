@@ -42,10 +42,10 @@ class AuctionProvider:
         current_block_height = self.client.query_height()
 
         # The change in price per block
-        price_delta_per_block = (
+        price_delta_per_block: float = (
             float(auction_info["start_price"]) - float(auction_info["end_price"])
         ) / (float(auction_info["end_block"]) - float(auction_info["start_block"]))
-        current_price = float(auction_info["start_price"]) - (
+        current_price: float = float(auction_info["start_price"]) - (
             price_delta_per_block
             * (current_block_height - float(auction_info["start_block"]))
         )

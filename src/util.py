@@ -1,6 +1,6 @@
 from cosmpy.aerial.client import NetworkConfig  # type: ignore
 import json
-from typing import Any
+from typing import Any, cast
 import sys
 import logging
 
@@ -18,7 +18,7 @@ NEUTRON_NETWORK_CONFIG = NetworkConfig(
 
 def deployments() -> dict[str, Any]:
     with open("contracts/deployments.json") as f:
-        return json.load(f)
+        return cast(dict[str, Any], json.load(f))
 
 
 def decimal_to_int(dec: float) -> int:
