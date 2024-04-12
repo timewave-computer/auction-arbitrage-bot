@@ -18,12 +18,16 @@ def strategy(
     return ctx
 
 
+def ctx():
+    return Ctx(120)
+
+
 def test_init():
     """
     Test that a scheduler can be instantiated.
     """
 
-    sched = Scheduler(strategy)
+    sched = Scheduler(ctx(), strategy)
     assert sched is not None
 
 
@@ -35,7 +39,7 @@ def test_register_provider():
     osmosis = OsmosisPoolDirectory()
     pool = list(list(osmosis.pools().values())[0].values())[0]
 
-    sched = Scheduler(strategy)
+    sched = Scheduler(ctx(), strategy)
 
     directory = OsmosisPoolDirectory()
     pools = directory.pools()
@@ -63,7 +67,7 @@ def test_poll():
         assert len(pools) > 0
         assert len(auctions) > 0
 
-    sched = Scheduler(simple_strategy)
+    sched = Scheduler(ctx(), simple_strategy)
 
     osmos_pools = osmosis.pools()
     astro_pools = astroport.pools()

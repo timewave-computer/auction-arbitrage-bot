@@ -31,6 +31,7 @@ class Scheduler:
 
     def __init__(
         self,
+        ctx: Ctx,
         strategy: Callable[
             [
                 Ctx,
@@ -40,6 +41,7 @@ class Scheduler:
             Ctx,
         ],
     ):
+        self.ctx = ctx
         self.strategy = strategy
         self.providers: dict[str, dict[str, List[PoolProvider]]] = {}
 
@@ -71,4 +73,4 @@ class Scheduler:
         Polls the strategy functionw with all registered providers.
         """
 
-        self.strategy(self.providers, self.auctions)
+        self.ctx = self.strategy(self.ctx, self.providers, self.auctions)
