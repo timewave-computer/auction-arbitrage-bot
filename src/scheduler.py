@@ -3,7 +3,7 @@ from src.contracts.pool.provider import PoolProvider
 from src.contracts.pool.astroport import AstroportPoolDirectory
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.util import deployments
-from typing import Callable, List, Any
+from typing import Callable, List, Any, Self
 
 
 class Ctx:
@@ -16,7 +16,7 @@ class Ctx:
     def __init__(self, poll_interval: int) -> None:
         self.poll_interval = poll_interval
 
-    def with_state(self, state: Any) -> Ctx:
+    def with_state(self, state: Any) -> Self:
         self.state = state
 
         return self
