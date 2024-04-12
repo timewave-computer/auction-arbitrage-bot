@@ -13,10 +13,10 @@ class Ctx:
     - User state
     """
 
-    def __init__(self, poll_interval: int):
+    def __init__(self, poll_interval: int) -> None:
         self.poll_interval = poll_interval
 
-    def with_state(self, state: Any):
+    def with_state(self, state: Any) -> Ctx:
         self.state = state
 
         return self
@@ -29,6 +29,18 @@ class Scheduler:
     may interact with registered providers.
     """
 
+    ctx: Ctx
+    strategy: Callable[
+        [
+            Ctx,
+            dict[str, dict[str, List[PoolProvider]]],
+            dict[str, dict[str, AuctionProvider]],
+        ],
+        Ctx,
+    ]
+    providers: dict[str, dict[str, List[PoolProvider]]]
+    auctions: dict[str, dict[str, AuctionProvider]]
+
     def __init__(
         self,
         ctx: Ctx,
@@ -40,7 +52,7 @@ class Scheduler:
             ],
             Ctx,
         ],
-    ):
+    ) -> None:
         self.ctx = ctx
         self.strategy = strategy
         self.providers: dict[str, dict[str, List[PoolProvider]]] = {}
@@ -48,7 +60,7 @@ class Scheduler:
         auction_manager = AuctionDirectory(deployments())
         self.auctions = auction_manager.auctions()
 
-    def register_provider(self, provider: PoolProvider):
+    def register_provider(self, provider: PoolProvider) -> None:
         """
         Registers a pool provider, enqueing it to future strategy function polls.
         """
@@ -68,7 +80,7 @@ class Scheduler:
         self.providers[provider.asset_a()][provider.asset_b()].append(provider)
         self.providers[provider.asset_b()][provider.asset_a()].append(provider)
 
-    def poll(self):
+    def poll(self) -> None:
         """
         Polls the strategy functionw with all registered providers.
         """

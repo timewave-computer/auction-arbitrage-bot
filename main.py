@@ -1,4 +1,4 @@
-from src.scheduler import Scheduler
+from src.scheduler import Scheduler, Ctx
 from src.util import deployments
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import AstroportPoolDirectory
@@ -24,7 +24,8 @@ def main():
 
     logger.info("Building pool catalogue")
 
-    sched = Scheduler(strategy)
+    ctx = Ctx(args.poll_interval)
+    sched = Scheduler(ctx, strategy)
 
     # Register Osmosis and Astroport providers
     osmosis = OsmosisPoolDirectory()
@@ -33,13 +34,13 @@ def main():
     osmo_pools = osmosis.pools()
     astro_pools = astro.pools()
 
-    for base in osmo_pools.values():
-        for pool in base.values():
-            sched.register_provider(pool)
+    for osmo_base in osmo_pools.values():
+        for osmo_pool in osmo_base.values():
+            sched.register_provider(osmo_pool)
 
-    for base in astro_pools.values():
-        for pool in base.values():
-            sched.register_provider(pool)
+    for astro_base in astro_pools.values():
+        for astro_pool in astro_base.values():
+            sched.register_provider(astro_pool)
 
     # Continuously poll the strategy on the specified interval
     schedule.every(args.poll_interval).seconds.do(lambda _: sched.poll())

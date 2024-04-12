@@ -46,7 +46,7 @@ class OsmosisPoolDirectory:
     - OsmosisPoolProviders for each pair
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.client = urllib3.PoolManager()
         self.endpoint = "https://lcd.osmosis.zone"
 

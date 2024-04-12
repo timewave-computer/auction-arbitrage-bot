@@ -71,7 +71,7 @@ class AstroportPoolProvider(PoolProvider):
         self.asset_b_denom = asset_b
 
     @cached_property
-    def contract(self):
+    def contract(self) -> LedgerContract:
         return LedgerContract(
             self.deployment_info["pair"]["src"],
             self.client,
