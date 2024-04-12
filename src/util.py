@@ -1,4 +1,4 @@
-from cosmpy.aerial.client import NetworkConfig
+from cosmpy.aerial.client import NetworkConfig  # type: ignore
 import json
 from typing import Any
 import sys

@@ -1,7 +1,8 @@
 from src.util import NEUTRON_NETWORK_CONFIG
-from cosmpy.aerial.contract import LedgerContract
-from cosmpy.aerial.client import LedgerClient
+from cosmpy.aerial.contract import LedgerContract  # type: ignore
+from cosmpy.aerial.client import LedgerClient  # type: ignore
 from typing import Any
+from functools import cached_property
 
 
 class AuctionProvider:
@@ -9,10 +10,25 @@ class AuctionProvider:
     Provides pricing and asset information for an arbitrary auction on valenece.
     """
 
-    def __init__(self, contract: LedgerContract, asset_a: str, asset_b: str):
-        self.contract = contract
+    def __init__(
+        self,
+        deployment_info: dict[str, Any],
+        client: LedgerClient,
+        address: str,
+        asset_a: str,
+        asset_b: str,
+    ):
+        self.deployment_info = deployment_info
+        self.client = client
+        self.address = address
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b
+
+    @cached_property
+    def contract(self) -> LedgerContract:
+        return LedgerContract(
+            self.deployment_info["auction"]["src"], self.client, address=self.address
+        )
 
     def exchange_rate(self) -> float:
         auction_info = self.contract.query("get_auction")
@@ -64,9 +80,9 @@ class AuctionDirectory:
             asset_a, asset_b = pair
 
             provider = AuctionProvider(
-                LedgerContract(
-                    self.deployment_info["auction"]["src"], self.client, address=addr
-                ),
+                self.deployment_info,
+                self.client,
+                addr,
                 asset_a,
                 asset_b,
             )

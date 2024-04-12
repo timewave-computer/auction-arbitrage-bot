@@ -1,8 +1,8 @@
 from src.contracts.pool.provider import PoolProvider
 from src.util import NEUTRON_NETWORK_CONFIG
-from cosmpy.aerial.contract import LedgerContract
-from cosmpy.aerial.client import LedgerClient
-from typing import Any, cast, Callable
+from cosmpy.aerial.contract import LedgerContract  # type: ignore
+from cosmpy.aerial.client import LedgerClient  # type: ignore
+from typing import Any, cast, Callable, Union, List
 from functools import cached_property
 
 
@@ -130,7 +130,7 @@ class AstroportPoolDirectory:
 
         # Load all pools in 10-pool batches
         pools = []
-        prev_pool_page = None
+        prev_pool_page: Union[None, List[dict[str, Any]]] = None
 
         while prev_pool_page is None or len(prev_pool_page) > 0:
             next_pools = self.directory_contract.query(
