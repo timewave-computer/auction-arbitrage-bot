@@ -11,7 +11,7 @@ import sys
 logger = logging.getLogger(__name__)
 
 
-def main():
+def main() -> None:
     logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
     parser = argparse.ArgumentParser(
