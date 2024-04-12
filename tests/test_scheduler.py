@@ -1,4 +1,4 @@
-from src.scheduler import Scheduler
+from src.scheduler import Scheduler, Ctx
 from src.util import deployments
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import AstroportPoolDirectory
@@ -11,10 +11,11 @@ from typing import List
 
 # Noop strategy
 def strategy(
+    ctx: Ctx,
     pools: dict[str, dict[str, List[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
-):
-    return None
+) -> Ctx:
+    return ctx
 
 
 def test_init():
@@ -55,9 +56,10 @@ def test_poll():
     astroport = AstroportPoolDirectory(deployments())
 
     def simple_strategy(
+        ctx: Ctx,
         pools: dict[str, dict[str, List[PoolProvider]]],
         auctions: dict[str, dict[str, AuctionProvider]],
-    ):
+    ) -> Ctx:
         assert len(pools) > 0
         assert len(auctions) > 0
 

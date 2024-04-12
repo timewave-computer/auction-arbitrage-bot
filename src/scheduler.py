@@ -3,7 +3,23 @@ from src.contracts.pool.provider import PoolProvider
 from src.contracts.pool.astroport import AstroportPoolDirectory
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.util import deployments
-from typing import Callable, List
+from typing import Callable, List, Any
+
+
+class Ctx:
+    """
+    Information about the scheduling environment including:
+    - User configuration via flags
+    - User state
+    """
+
+    def __init__(self, poll_interval: int):
+        self.poll_interval = poll_interval
+
+    def with_state(self, state: Any):
+        self.state = state
+
+        return self
 
 
 class Scheduler:
@@ -17,10 +33,11 @@ class Scheduler:
         self,
         strategy: Callable[
             [
+                Ctx,
                 dict[str, dict[str, List[PoolProvider]]],
                 dict[str, dict[str, AuctionProvider]],
             ],
-            None,
+            Ctx,
         ],
     ):
         self.strategy = strategy
