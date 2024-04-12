@@ -19,3 +19,5 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run unit tests
         run: python -m pytest tests
+      - name: Check mypy
+        run: mypy src --install-types

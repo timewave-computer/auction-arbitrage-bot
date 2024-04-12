@@ -4,7 +4,7 @@ from cosmpy.aerial.contract import LedgerContract  # type: ignore
 from cosmpy.aerial.client import LedgerClient  # type: ignore
 from typing import Any, cast, Callable, Union, List
 from functools import cached_property
-from grpc._channel import _InactiveRpcError
+from grpc._channel import _InactiveRpcError  # type: ignore
 
 
 class Token:
