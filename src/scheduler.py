@@ -3,7 +3,7 @@ from src.contracts.pool.provider import PoolProvider
 from src.contracts.pool.astroport import AstroportPoolDirectory
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.util import deployments
-from typing import Callable, List, Any, Self
+from typing import Callable, List, Any, Self, Optional
 
 
 class Ctx:
@@ -14,13 +14,23 @@ class Ctx:
     """
 
     poll_interval: int
+    discovery_interval: int
     max_hops: int
-    base_symbol: str
+    base_denom: str
+    state: Optional[Any]
 
-    def __init__(self, poll_interval: int, max_hops: int, base_symbol: str) -> None:
+    def __init__(
+        self,
+        poll_interval: int,
+        discovery_interval: int,
+        max_hops: int,
+        base_denom: str,
+    ) -> None:
         self.poll_interval = poll_interval
+        self.discovery_interval = discovery_interval
         self.max_hops = max_hops
-        self.base_symbol = base_symbol
+        self.base_denom = base_denom
+        self.state = None
 
     def with_state(self, state: Any) -> Self:
         self.state = state

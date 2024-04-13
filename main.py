@@ -19,18 +19,24 @@ def main() -> None:
         description="Identifies and executes arbitrage opportunities between Valence, Osmosis, and Astroport.",
     )
     parser.add_argument("-p", "--poll_interval", default=120)
-    parser.add_argument("-m", "--max_hops", default=5)
+    parser.add_argument("-d", "--discovery_interval", default=600)
+    parser.add_argument("-m", "--max_hops", default=3)
     parser.add_argument(
         "-b",
-        "--base_symbol",
-        default="USDC",
+        "--base_denom",
+        default="ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81",
     )
 
     args = parser.parse_args()
 
     logger.info("Building pool catalogue")
 
-    ctx = Ctx(args.poll_interval, args.max_hops, args.base_symbol)
+    ctx = Ctx(
+        int(args.poll_interval),
+        int(args.discovery_interval),
+        int(args.max_hops),
+        args.base_denom,
+    )
     sched = Scheduler(ctx, strategy)
 
     # Register Osmosis and Astroport providers
@@ -55,7 +61,7 @@ def main() -> None:
     logger.info(f"Built pool catalogue with {n_pools} pools")
 
     # Continuously poll the strategy on the specified interval
-    schedule.every(args.poll_interval).seconds.do(lambda _: sched.poll())
+    schedule.every(args.poll_interval).seconds.do(lambda: sched.poll())
     sched.poll()
 
     while True:
