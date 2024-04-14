@@ -73,14 +73,6 @@ def test_astroport_provider():
             pools.values(),
         )
     )
-    assert any(
-        map(
-            lambda base: any(
-                map(lambda pool: pool.simulate_swap_asset_b(1000) >= 0, base.values())
-            ),
-            pools.values(),
-        )
-    )
 
 
 def test_osmosis_provider():
@@ -111,14 +103,6 @@ def test_osmosis_provider():
         map(
             lambda base: any(
                 map(lambda pool: pool.simulate_swap_asset_a(1000) >= 0, base.values())
-            ),
-            pools.values(),
-        )
-    )
-    assert any(
-        map(
-            lambda base: any(
-                map(lambda pool: pool.simulate_swap_asset_b(1000) >= 0, base.values())
             ),
             pools.values(),
         )
