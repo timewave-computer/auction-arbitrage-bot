@@ -4,6 +4,7 @@ from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import AstroportPoolDirectory
 from src.contracts.pool.provider import PoolProvider
 from src.contracts.auction import AuctionProvider
+from cosmpy.aerial.client import LedgerClient  # type: ignore
 import json
 import pytest
 from typing import List
