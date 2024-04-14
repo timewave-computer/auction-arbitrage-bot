@@ -1,10 +1,16 @@
+"""
+Implements a strategy runner with an arbitrary provider set in an even-loop style.
+"""
+
+from typing import Callable, List, Any, Self, Optional
+from dataclasses import dataclass
+from cosmpy.aerial.client import LedgerClient  # type: ignore
 from src.contracts.auction import AuctionDirectory, AuctionProvider
 from src.contracts.pool.provider import PoolProvider
 from src.util import deployments
-from cosmpy.aerial.client import LedgerClient  # type: ignore
-from typing import Callable, List, Any, Self, Optional
 
 
+@dataclass
 class Ctx:
     """
     Information about the scheduling environment including:
@@ -13,37 +19,15 @@ class Ctx:
     """
 
     client: LedgerClient
-    poll_interval: int
-    discovery_interval: int
-    max_hops: int
-    num_routes_considered: int
-    base_denom: str
-    profit_margin: int
-    wallet_address: str
+    cfg: dict[str, Any]
     state: Optional[Any]
 
-    def __init__(
-        self,
-        client: LedgerClient,
-        poll_interval: int,
-        discovery_interval: int,
-        max_hops: int,
-        num_routes_considered: int,
-        base_denom: str,
-        profit_margin: int,
-        wallet_address: str,
-    ) -> None:
-        self.client = client
-        self.poll_interval = poll_interval
-        self.discovery_interval = discovery_interval
-        self.max_hops = max_hops
-        self.num_routes_considered = num_routes_considered
-        self.base_denom = base_denom
-        self.profit_margin = profit_margin
-        self.wallet_address = wallet_address
-        self.state = None
-
     def with_state(self, state: Any) -> Self:
+        """
+        Constructs a new context with the given state,
+        modifying the current context.
+        """
+
         self.state = state
 
         return self
@@ -80,6 +64,11 @@ class Scheduler:
             Ctx,
         ],
     ) -> None:
+        """
+        Initializes the scheduler with some initial context,
+        a strategy function to poll,
+        and no providers except available auctions.
+        """
         self.ctx = ctx
         self.strategy = strategy
         self.providers: dict[str, dict[str, List[PoolProvider]]] = {}

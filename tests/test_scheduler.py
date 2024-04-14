@@ -20,13 +20,16 @@ def strategy(
 def ctx() -> Ctx:
     return Ctx(
         LedgerClient(NEUTRON_NETWORK_CONFIG),
-        120,
-        1000,
-        5,
-        20,
-        "ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81",
-        10,
-        "neutron1cm9ckhh8839tpwvpqqqsdvvra32z5p8w97trje",
+        {
+            "poll_interval": 120,
+            "discovery_interval": 1000,
+            "max_hops": 5,
+            "num_routes_considered": 20,
+            "base_denom": "ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81",
+            "profit_margin": 10,
+            "wallet_address": "neutron1cm9ckhh8839tpwvpqqqsdvvra32z5p8w97trje",
+        },
+        None,
     )
 
 

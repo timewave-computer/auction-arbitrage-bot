@@ -1,23 +1,32 @@
+"""
+Implements a command-line interface for running arbitrage strategies.
+"""
+
+import argparse
+import logging
+import sys
+import schedule
+from cosmpy.aerial.client import LedgerClient  # type: ignore
 from src.scheduler import Scheduler, Ctx
 from src.util import deployments, NEUTRON_NETWORK_CONFIG
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import AstroportPoolDirectory
 from src.strategies.naive import strategy
-from cosmpy.aerial.client import LedgerClient  # type: ignore
-import schedule
-import argparse
-import logging
-import sys
 
 logger = logging.getLogger(__name__)
 
 
 def main() -> None:
+    """
+    Entrypoint for the arbitrage bot.
+    """
+
     logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
     parser = argparse.ArgumentParser(
         prog="arbbot",
-        description="Identifies and executes arbitrage opportunities between Valence, Osmosis, and Astroport.",
+        description="""Identifies and executes arbitrage
+            opportunities between Valence, Osmosis, and Astroport.""",
     )
     parser.add_argument("-p", "--poll_interval", default=120)
     parser.add_argument("-d", "--discovery_interval", default=600)
@@ -44,13 +53,16 @@ def main() -> None:
 
     ctx = Ctx(
         LedgerClient(NEUTRON_NETWORK_CONFIG),
-        int(args.poll_interval),
-        int(args.discovery_interval),
-        int(args.max_hops),
-        int(args.num_routes_considered),
-        args.base_denom,
-        int(args.profit_margin),
-        args.wallet_address,
+        {
+            "poll_interval": int(args.poll_interval),
+            "discovery_interval": int(args.discovery_interval),
+            "max_hops": int(args.max_hops),
+            "num_routes_considered": int(args.num_routes_considered),
+            "base_denom": args.base_denom,
+            "profit_margin": int(args.profit_margin),
+            "wallet_address": args.wallet_address,
+        },
+        None,
     )
     sched = Scheduler(ctx, strategy)
 
@@ -73,10 +85,10 @@ def main() -> None:
         map(lambda base: len(base.values()), astro_pools.values())
     )
 
-    logger.info(f"Built pool catalogue with {n_pools} pools")
+    logger.info("Built pool catalogue with {n_pools} pools", n_pools=n_pools)
 
     # Continuously poll the strategy on the specified interval
-    schedule.every(args.poll_interval).seconds.do(lambda: sched.poll())
+    schedule.every(args.poll_interval).seconds.do(sched.poll)
     sched.poll()
 
     while True:

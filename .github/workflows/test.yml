@@ -27,7 +27,13 @@ jobs:
         run: mypy main.py --install-types --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs --strict
       - name: Check linter
         run: ruff check src
-      - name: Check linter
+      - name: Check linter tests
         run: ruff check tests
       - name: Check linter main
         run: ruff check main.py
+      - name: Check linter (pylint)
+        run: python -m pylint src
+      - name: Check linter tests (pylint)
+        run: python -m pylint tests
+      - name: Check linter main (pylint)
+        run: python -m pylint main.py

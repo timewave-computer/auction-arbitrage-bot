@@ -1,11 +1,12 @@
-from cosmpy.aerial.client import NetworkConfig  # type: ignore
+"""
+Implements utilities for implementing arbitrage bots.
+"""
+
 import json
 from typing import Any, cast, Optional
 import urllib3
+from cosmpy.aerial.client import NetworkConfig  # type: ignore
 
-"""
-Network configuration to be used for all neutron clients.
-"""
 NEUTRON_NETWORK_CONFIG = NetworkConfig(
     chain_id="neutron-1",
     url="grpc+https://neutron-grpc.publicnode.com:443",
@@ -16,11 +17,19 @@ NEUTRON_NETWORK_CONFIG = NetworkConfig(
 
 
 def deployments() -> dict[str, Any]:
-    with open("contracts/deployments.json") as f:
+    """
+    Gets a dict of contracts to address on different networks.
+    See contracts/deployments.json.
+    """
+    with open("contracts/deployments.json", encoding="utf-8") as f:
         return cast(dict[str, Any], json.load(f))
 
 
 def decimal_to_int(dec: float) -> int:
+    """
+    Converts a cosmwasm decimal with 18 decimal places to
+    a raw quantity with no decimals.
+    """
     return int(dec * 10**18)
 
 
