@@ -118,6 +118,9 @@ class AstroportPoolProvider(PoolProvider, WithContract):
     def asset_b(self) -> str:
         return token_to_addr(self.asset_b_denom)
 
+    def __hash__(self) -> int:
+        return hash(self.address)
+
 
 class AstroportPoolDirectory:
     """

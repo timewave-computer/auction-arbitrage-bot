@@ -212,7 +212,7 @@ def get_routes_with_depth_limit_bfs(
     ] = deque(
         [
             (pool, ([], set()), src)
-            for pool_set in pools[src].values()
+            for pool_set in pools.get(src, {}).values()
             for pool in pool_set
         ]
     )

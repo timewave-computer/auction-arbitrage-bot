@@ -68,10 +68,13 @@ class AuctionProvider(WithContract):
 
     def remaining_asset_a(self) -> float:
         """
-        Gets thea amount of the asking asset left in the auction.
+        Gets the amount of the asking asset left in the auction.
         """
 
         return float(self.contract.query("get_auction")["available_amount"])
+
+    def __hash__(self) -> int:
+        return hash(self.address)
 
 
 class AuctionDirectory:
