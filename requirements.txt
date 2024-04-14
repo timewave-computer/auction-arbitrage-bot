@@ -31,6 +31,7 @@ python-lsp-server==1.11.0
 referencing==0.34.0
 requests==2.31.0
 rpds-py==0.18.0
+ruff==0.3.7
 schedule==1.2.1
 six==1.16.0
 types-colorama==0.4.15.20240311
