@@ -5,8 +5,6 @@ from src.contracts.pool.astroport import AstroportPoolDirectory
 from src.contracts.pool.provider import PoolProvider
 from src.contracts.auction import AuctionProvider
 from cosmpy.aerial.client import LedgerClient  # type: ignore
-import json
-import pytest
 from typing import List
 
 
@@ -19,20 +17,20 @@ def strategy(
     return ctx
 
 
-def ctx():
+def ctx() -> Ctx:
     return Ctx(
         LedgerClient(NEUTRON_NETWORK_CONFIG),
         120,
         1000,
         5,
         20,
-        10,
         "ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81",
+        10,
         "neutron1cm9ckhh8839tpwvpqqqsdvvra32z5p8w97trje",
     )
 
 
-def test_init():
+def test_init() -> None:
     """
     Test that a scheduler can be instantiated.
     """
@@ -41,7 +39,7 @@ def test_init():
     assert sched is not None
 
 
-def test_register_provider():
+def test_register_provider() -> None:
     """
     Test that a provider can be registered to a scheduler.
     """
@@ -61,7 +59,7 @@ def test_register_provider():
     assert len(sched.providers) > 0
 
 
-def test_poll():
+def test_poll() -> None:
     """
     Test that a strategy function can be run.
     """
@@ -77,6 +75,8 @@ def test_poll():
         assert len(pools) > 0
         assert len(auctions) > 0
 
+        return ctx
+
     sched = Scheduler(ctx(), simple_strategy)
 
     osmos_pools = osmosis.pools()
@@ -86,8 +86,8 @@ def test_poll():
         for pool in base.values():
             sched.register_provider(pool)
 
-    for base in astro_pools.values():
-        for pool in base.values():
-            sched.register_provider(pool)
+    for astro_base in astro_pools.values():
+        for astro_pool in astro_base.values():
+            sched.register_provider(astro_pool)
 
     sched.poll()

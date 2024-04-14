@@ -1,13 +1,10 @@
-from src.contracts.auction import AuctionProvider
 from src.contracts.auction import (
     AuctionDirectory,
 )
 from src.util import deployments
-import json
-import pytest
 
 
-def test_auctions():
+def test_auctions() -> None:
     """
     Test that an auction directory can be created,
     and that it has some auctions.
@@ -17,7 +14,7 @@ def test_auctions():
     assert len(auctions.auctions()) > 0
 
 
-def test_auction_provider():
+def test_auction_provider() -> None:
     """
     Test that an auction can be queried.
     """
@@ -26,8 +23,8 @@ def test_auction_provider():
 
     for auction_base in auctions.values():
         for auction in auction_base.values():
-            assert len(auction.asset_a()) != ""
-            assert len(auction.asset_b()) != ""
+            assert len(auction.asset_a()) != 0
+            assert len(auction.asset_b()) != 0
 
             price = auction.exchange_rate()
             assert price >= 0

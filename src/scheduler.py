@@ -1,7 +1,5 @@
 from src.contracts.auction import AuctionDirectory, AuctionProvider
 from src.contracts.pool.provider import PoolProvider
-from src.contracts.pool.astroport import AstroportPoolDirectory
-from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.util import deployments
 from cosmpy.aerial.client import LedgerClient  # type: ignore
 from typing import Callable, List, Any, Self, Optional

@@ -2,7 +2,7 @@ from src.contracts.pool.provider import PoolProvider
 from src.util import NEUTRON_NETWORK_CONFIG
 from cosmpy.aerial.contract import LedgerContract  # type: ignore
 from cosmpy.aerial.client import LedgerClient  # type: ignore
-from typing import Any, cast, Callable, Union, List
+from typing import Any, cast, Union, List
 from functools import cached_property
 from grpc._channel import _InactiveRpcError  # type: ignore
 
@@ -144,9 +144,11 @@ class AstroportPoolDirectory:
             next_pools = self.directory_contract.query(
                 {
                     "pairs": {
-                        "start_after": prev_pool_page[-1]["asset_infos"]
-                        if prev_pool_page is not None
-                        else None,
+                        "start_after": (
+                            prev_pool_page[-1]["asset_infos"]
+                            if prev_pool_page is not None
+                            else None
+                        ),
                         "limit": 10,
                     }
                 }

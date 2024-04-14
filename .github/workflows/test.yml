@@ -21,5 +21,13 @@ jobs:
         run: python -m pytest tests
       - name: Check src mypy
         run: mypy src --install-types --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs --strict
+      - name: Check tests mypy
+        run: mypy tests --install-types --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs --strict
       - name: Check main mypy
         run: mypy main.py --install-types --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs --strict
+      - name: Check linter
+        run: ruff src
+      - name: Check linter
+        run: ruff tests
+      - name: Check linter main
+        run: ruff main.py

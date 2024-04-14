@@ -1,8 +1,6 @@
 from cosmpy.aerial.client import NetworkConfig  # type: ignore
 import json
 from typing import Any, cast, Optional
-import sys
-import logging
 import urllib3
 
 """

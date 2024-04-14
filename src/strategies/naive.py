@@ -5,7 +5,7 @@ from src.contracts.auction import AuctionProvider
 from src.scheduler import Ctx
 from src.util import denom_on_chain, decimal_to_int
 from typing import List, Union, Optional, Self
-from datetime import time, datetime
+from datetime import datetime
 from collections import deque
 import logging
 
@@ -118,6 +118,9 @@ def route_base_denom_profit(
     quantity_received = starting_amount
 
     for leg in route:
+        if quantity_received == 0:
+            break
+
         if isinstance(leg, PoolProvider):
             if prev_asset == leg.asset_a():
                 quantity_received = int(leg.simulate_swap_asset_a(quantity_received))

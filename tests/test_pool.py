@@ -1,15 +1,12 @@
-from src.contracts.pool.provider import PoolProvider
 from src.contracts.pool.astroport import (
     AstroportPoolDirectory,
     AstroportPoolProvider,
-    token_to_addr,
 )
 from src.contracts.pool.osmosis import OsmosisPoolDirectory, OsmosisPoolProvider
 from src.util import deployments
-import pytest
 
 
-def test_astroport_pools():
+def test_astroport_pools() -> None:
     """
     Test that an astroport poool provider can be instantiated,
     and that it has some pools.
@@ -25,7 +22,7 @@ def test_astroport_pools():
             assert isinstance(pool, AstroportPoolProvider)
 
 
-def test_osmosis_pools():
+def test_osmosis_pools() -> None:
     """
     Test that an osmosis poool provider can be instantiated,
     and that it has some pools.
@@ -41,7 +38,7 @@ def test_osmosis_pools():
             assert isinstance(pool, OsmosisPoolProvider)
 
 
-def test_astroport_provider():
+def test_astroport_provider() -> None:
     """
     Test that an astroport poool can be queried
     for simulation information and basic information
@@ -75,7 +72,7 @@ def test_astroport_provider():
     )
 
 
-def test_osmosis_provider():
+def test_osmosis_provider() -> None:
     """
     Test that an osmosis poool can be queried
     for simulation information and basic information
