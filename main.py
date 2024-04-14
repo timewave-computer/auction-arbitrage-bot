@@ -85,7 +85,7 @@ def main() -> None:
         map(lambda base: len(base.values()), astro_pools.values())
     )
 
-    logger.info("Built pool catalogue with {n_pools} pools", n_pools=n_pools)
+    logger.info("Built pool catalogue with %d pools", n_pools)
 
     # Continuously poll the strategy on the specified interval
     schedule.every(args.poll_interval).seconds.do(sched.poll)

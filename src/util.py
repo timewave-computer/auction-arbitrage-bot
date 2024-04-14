@@ -7,9 +7,8 @@ from typing import Any, cast, Optional
 from functools import cached_property
 from dataclasses import dataclass
 import urllib3
-from cosmpy.aerial.client import NetworkConfig  # type: ignore
+from cosmpy.aerial.client import NetworkConfig, LedgerClient  # type: ignore
 from cosmpy.aerial.contract import LedgerContract  # type: ignore
-from cosmpy.aerial.client import LedgerClient  # type: ignore
 
 NEUTRON_NETWORK_CONFIG = NetworkConfig(
     chain_id="neutron-1",

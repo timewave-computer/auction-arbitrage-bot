@@ -55,12 +55,9 @@ class State:
         # Perform a breadth-first traversal, exploring all possible
         # routes with increasing hops
         logger.info(
-            (
-                "Building route tree from {base_denom} with"
-                "{vertices} vertices (this may take a while)"
-            ),
-            base_denom=ctx.cfg["base_denom"],
-            vertices=vertices,
+            ("Building route tree from %s with" "%d vertices (this may take a while)"),
+            ctx.cfg["base_denom"],
+            vertices,
         )
 
         self.routes: List[List[Union[PoolProvider, AuctionProvider]]] = (
@@ -74,8 +71,8 @@ class State:
         )
 
         logger.info(
-            "Finished building route tree; discovered {n_routes} routes",
-            n_routes=len(self.routes),
+            "Finished building route tree; discovered %d routes",
+            len(self.routes),
         )
         self.last_discovered = datetime.now()
 
@@ -92,7 +89,7 @@ def strategy(
     """
 
     if ctx.state is None:
-        ctx.state = State(None, None)
+        ctx.state = State(None, [])
 
     state = ctx.state.poll(ctx, pools, auctions)
 
@@ -114,25 +111,22 @@ def strategy(
 
     # Report route stats to user
     logger.info(
-        (
-            "Found {profitable_routes} profitable routes, with"
-            "max profit of {max_profit} and min profit of {min_profit}"
-        ),
-        profitable_routes=len(profitable_routes),
-        max_profit=max(profitable_routes, key=lambda route: route[1])[1],
-        in_profit=min(profitable_routes, key=lambda route: route[1])[1],
+        ("Found %d profitable routes, with" "max profit of %d and min profit of %d"),
+        len(profitable_routes),
+        max(profitable_routes, key=lambda route: route[1])[1],
+        min(profitable_routes, key=lambda route: route[1])[1],
     )
 
     for i, (route, profit) in enumerate(profitable_routes):
         logger.info(
             (
-                "Candidate arbitrage opportunity #{num_arb} with"
-                "profit of {profit} and route with {n_hops} hop(s): {hops}"
+                "Candidate arbitrage opportunity #%d with"
+                "profit of %d and route with %d hop(s): %s"
             ),
-            num_arb=i + 1,
-            profit=profit,
-            n_hops=len(route),
-            hops=" -> ".join(
+            i + 1,
+            profit,
+            len(route),
+            " -> ".join(
                 map(
                     lambda route_leg: fmt_route_leg(route_leg)
                     + ": "
@@ -246,14 +240,14 @@ def get_routes_with_depth_limit_bfs(
             path[1].add(pool)
 
             logger.info(
-                "Closed circuit from {src} to {pair_denom}; registering route",
-                src=src,
-                pair_denom=pair_denom,
+                "Closed circuit from %s to %s; registering route",
+                src,
+                pair_denom,
             )
             logger.info(
-                "Discovered route with {n_hops} hop(s): {hops}",
-                n_hops=len(path[0]),
-                hops=" -> ".join(
+                "Discovered route with %d hop(s): %s",
+                len(path[0]),
+                " -> ".join(
                     map(
                         lambda route_leg: route_leg.asset_a()
                         + " - "
