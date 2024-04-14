@@ -1,3 +1,7 @@
+"""
+Tests that the auction directory and providers work as expected.
+"""
+
 from src.contracts.auction import (
     AuctionDirectory,
 )

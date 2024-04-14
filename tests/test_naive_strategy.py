@@ -1,3 +1,7 @@
+"""
+Tests the naive strategy.
+"""
+
 from src.strategies.naive import fmt_route_leg
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import AstroportPoolDirectory
@@ -6,6 +10,11 @@ from src.util import deployments
 
 
 def test_fmt_route_leg() -> None:
+    """
+    Test that the utility function for formatting a route leg behaves as
+    expected.
+    """
+
     # Register Osmosis and Astroport providers
     osmosis = OsmosisPoolDirectory()
     pool = list(list(osmosis.pools().values())[0].values())[0]

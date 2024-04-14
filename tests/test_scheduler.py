@@ -1,23 +1,34 @@
+"""
+Tests that the scheduler works as expected.
+"""
+
+from typing import List
+from cosmpy.aerial.client import LedgerClient  # type: ignore
 from src.scheduler import Scheduler, Ctx
 from src.util import deployments, NEUTRON_NETWORK_CONFIG
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import AstroportPoolDirectory
 from src.contracts.pool.provider import PoolProvider
 from src.contracts.auction import AuctionProvider
-from cosmpy.aerial.client import LedgerClient  # type: ignore
-from typing import List
 
 
-# Noop strategy
 def strategy(
-    ctx: Ctx,
-    pools: dict[str, dict[str, List[PoolProvider]]],
-    auctions: dict[str, dict[str, AuctionProvider]],
+    strat_ctx: Ctx,
+    _pools: dict[str, dict[str, List[PoolProvider]]],
+    _auctions: dict[str, dict[str, AuctionProvider]],
 ) -> Ctx:
-    return ctx
+    """
+    Noop strategy.
+    """
+
+    return strat_ctx
 
 
 def ctx() -> Ctx:
+    """
+    Gets a default context for test schedulers.
+    """
+
     return Ctx(
         LedgerClient(NEUTRON_NETWORK_CONFIG),
         {
@@ -71,14 +82,14 @@ def test_poll() -> None:
     astroport = AstroportPoolDirectory(deployments())
 
     def simple_strategy(
-        ctx: Ctx,
+        strat_ctx: Ctx,
         pools: dict[str, dict[str, List[PoolProvider]]],
         auctions: dict[str, dict[str, AuctionProvider]],
     ) -> Ctx:
         assert len(pools) > 0
         assert len(auctions) > 0
 
-        return ctx
+        return strat_ctx
 
     sched = Scheduler(ctx(), simple_strategy)
 
