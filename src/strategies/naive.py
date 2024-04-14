@@ -1,7 +1,9 @@
 from src.contracts.pool.provider import PoolProvider
+from src.contracts.pool.osmosis import OsmosisPoolProvider
+from src.contracts.pool.astroport import AstroportPoolProvider
 from src.contracts.auction import AuctionProvider
 from src.scheduler import Ctx
-from src.util import denom_on_chain
+from src.util import denom_on_chain, decimal_to_int
 from typing import List, Union, Optional, Self
 from datetime import time, datetime
 from collections import deque
@@ -44,7 +46,9 @@ class State:
         )
 
         self.routes: List[List[Union[PoolProvider, AuctionProvider]]] = (
-            get_routes_with_depth_bfs(ctx.max_hops, ctx.base_denom, pools, auctions)
+            get_routes_with_depth_limit_bfs(
+                ctx.max_hops, ctx.num_routes_considered, ctx.base_denom, pools, auctions
+            )
         )
 
         logger.info(
@@ -65,16 +69,72 @@ def strategy(
 
     state = ctx.state.poll(ctx, pools, auctions)
 
+    profitable_routes: List[tuple[List[Union[PoolProvider, AuctionProvider]], int]] = []
+
+    # Calculate profitability of all routes, and report them
+    # to the user
     for route in ctx.state.routes:
+        profit = route_base_denom_profit(
+            ctx.base_denom,
+            ctx.client.query_bank_balance(ctx.wallet_address, ctx.base_denom),
+            route,
+        )
+
+        if profit > ctx.profit_margin:
+            profitable_routes.append((route, profit))
+
+    # Report route stats to user
+    logging.info(
+        f"Found {len(profitable_routes)} profitable routes, with max profit of {max(profitable_routes, key=lambda route : route[1])[1]} and min profit of {min(profitable_routes, key=lambda route : route[1])[1]}"
+    )
+
+    for i, (route, profit) in enumerate(profitable_routes):
         logger.info(
-            f"Discovered route with {len(route)} hop(s): {' -> '.join(map(lambda route_leg : route_leg.asset_a() + ' - ' + route_leg.asset_b(), route))}"
+            f"Candidate arbitrage opportunity #{i + 1} with profit of {profit} and route with {len(route)} hop(s): {' -> '.join(map(lambda route_leg : fmt_route_leg(route_leg) + ': ' + route_leg.asset_a() + ' - ' + route_leg.asset_b(), route))}"
         )
 
     return ctx.with_state(state)
 
 
-def get_routes_with_depth_bfs(
+def fmt_route_leg(leg: Union[PoolProvider, AuctionProvider]) -> str:
+    if isinstance(leg, OsmosisPoolProvider):
+        return "osmosis"
+
+    if isinstance(leg, AstroportPoolProvider):
+        return "astroport"
+
+    if isinstance(leg, AuctionProvider):
+        return "valence"
+
+    return "unknown pool"
+
+
+def route_base_denom_profit(
+    base_denom: str,
+    starting_amount: int,
+    route: List[Union[PoolProvider, AuctionProvider]],
+) -> int:
+    prev_asset = base_denom
+    quantity_received = starting_amount
+
+    for leg in route:
+        if isinstance(leg, PoolProvider):
+            if prev_asset == leg.asset_a():
+                quantity_received = int(leg.simulate_swap_asset_a(quantity_received))
+            else:
+                quantity_received = int(leg.simulate_swap_asset_b(quantity_received))
+        else:
+            if prev_asset == leg.asset_a():
+                quantity_received = decimal_to_int(
+                    leg.exchange_rate() * quantity_received
+                )
+
+    return quantity_received - starting_amount
+
+
+def get_routes_with_depth_limit_bfs(
     depth: int,
+    limit: int,
     src: str,
     pools: dict[str, dict[str, List[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
@@ -95,12 +155,12 @@ def get_routes_with_depth_bfs(
             for pool in pool_set
         ]
     )
-    paths: List[List[Union[PoolProvider, AuctionProvider]],] = []
+    paths: List[List[Union[PoolProvider, AuctionProvider]]] = []
     denom_cache = {}
 
     # Perform a breadth-first traversal, exploring all possible
     # routes from `src` back to itself
-    while len(to_explore) > 0:
+    while len(to_explore) > 0 and len(paths) < limit:
         pool, path, base_denom = to_explore.pop()
 
         pair_denom = pool.asset_a() if pool.asset_a() != base_denom else pool.asset_b()

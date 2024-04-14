@@ -1,8 +1,9 @@
 from src.scheduler import Scheduler, Ctx
-from src.util import deployments
+from src.util import deployments, NEUTRON_NETWORK_CONFIG
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import AstroportPoolDirectory
 from src.strategies.naive import strategy
+from cosmpy.aerial.client import LedgerClient  # type: ignore
 import schedule
 import argparse
 import logging
@@ -21,10 +22,20 @@ def main() -> None:
     parser.add_argument("-p", "--poll_interval", default=120)
     parser.add_argument("-d", "--discovery_interval", default=600)
     parser.add_argument("-m", "--max_hops", default=3)
+    parser.add_argument("-n", "--num_routes_considered", default=30)
     parser.add_argument(
         "-b",
         "--base_denom",
         default="ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81",
+    )
+    parser.add_argument(
+        "-pm",
+        "--profit_margin",
+        default=10,
+    )
+    parser.add_argument(
+        "-w",
+        "--wallet_address",
     )
 
     args = parser.parse_args()
@@ -32,10 +43,14 @@ def main() -> None:
     logger.info("Building pool catalogue")
 
     ctx = Ctx(
+        LedgerClient(NEUTRON_NETWORK_CONFIG),
         int(args.poll_interval),
         int(args.discovery_interval),
         int(args.max_hops),
+        int(args.num_routes_considered),
         args.base_denom,
+        int(args.profit_margin),
+        args.wallet_address,
     )
     sched = Scheduler(ctx, strategy)
 

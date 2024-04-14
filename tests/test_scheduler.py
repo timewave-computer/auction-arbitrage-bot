@@ -1,5 +1,5 @@
 from src.scheduler import Scheduler, Ctx
-from src.util import deployments
+from src.util import deployments, NEUTRON_NETWORK_CONFIG
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import AstroportPoolDirectory
 from src.contracts.pool.provider import PoolProvider
@@ -20,10 +20,14 @@ def strategy(
 
 def ctx():
     return Ctx(
+        LedgerClient(NEUTRON_NETWORK_CONFIG),
         120,
         1000,
         5,
+        20,
+        10,
         "ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81",
+        "neutron1cm9ckhh8839tpwvpqqqsdvvra32z5p8w97trje",
     )
 
 

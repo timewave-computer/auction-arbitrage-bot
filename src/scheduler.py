@@ -3,6 +3,7 @@ from src.contracts.pool.provider import PoolProvider
 from src.contracts.pool.astroport import AstroportPoolDirectory
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.util import deployments
+from cosmpy.aerial.client import LedgerClient  # type: ignore
 from typing import Callable, List, Any, Self, Optional
 
 
@@ -13,23 +14,35 @@ class Ctx:
     - User state
     """
 
+    client: LedgerClient
     poll_interval: int
     discovery_interval: int
     max_hops: int
+    num_routes_considered: int
     base_denom: str
+    profit_margin: int
+    wallet_address: str
     state: Optional[Any]
 
     def __init__(
         self,
+        client: LedgerClient,
         poll_interval: int,
         discovery_interval: int,
         max_hops: int,
+        num_routes_considered: int,
         base_denom: str,
+        profit_margin: int,
+        wallet_address: str,
     ) -> None:
+        self.client = client
         self.poll_interval = poll_interval
         self.discovery_interval = discovery_interval
         self.max_hops = max_hops
+        self.num_routes_considered = num_routes_considered
         self.base_denom = base_denom
+        self.profit_margin = profit_margin
+        self.wallet_address = wallet_address
         self.state = None
 
     def with_state(self, state: Any) -> Self:
