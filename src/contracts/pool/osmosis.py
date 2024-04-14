@@ -1,7 +1,11 @@
-import urllib3
-import json
-from src.contracts.pool.provider import PoolProvider
+"""
+Implements a pool provider for osmosis.
+"""
+
 from typing import Any
+import json
+import urllib3
+from src.contracts.pool.provider import PoolProvider
 
 
 class OsmosisPoolProvider(PoolProvider):
@@ -10,6 +14,10 @@ class OsmosisPoolProvider(PoolProvider):
     """
 
     def __init__(self, pool_id: int, asset_a: str, asset_b: str):
+        """
+        Initializes the Osmosis pool provider.
+        """
+
         self.client = urllib3.PoolManager()
         self.endpoint = "https://lcd.osmosis.zone"
         self.asset_a_denom = asset_a
@@ -21,7 +29,11 @@ class OsmosisPoolProvider(PoolProvider):
             json.loads(
                 self.client.request(
                     "GET",
-                    f"{self.endpoint}/osmosis/poolmanager/v1beta1/{self.pool_id}/estimate/single_pool_swap_exact_amount_in?pool_id={self.pool_id}&token_in={amount}{asset_a}&token_out_denom={asset_b}",
+                    (
+                        f"{self.endpoint}/osmosis/poolmanager/v1beta1/{self.pool_id}"
+                        f"/estimate/single_pool_swap_exact_amount_in?pool_id={self.pool_id}"
+                        f"&token_in={amount}{asset_a}&token_out_denom={asset_b}"
+                    ),
                 ).data
             )["token_out_amount"]
         )
@@ -65,7 +77,6 @@ class OsmosisPoolDirectory:
             if "token0" in pool:
                 return [pool["token0"], pool["token1"]]
 
-            # TODO: Support cosmwasm pools
             return []
 
         pools = json.loads(
@@ -96,3 +107,10 @@ class OsmosisPoolDirectory:
             asset_pools[denom_addrs[1]][denom_addrs[0]] = provider
 
         return asset_pools
+
+    def set_endpoint(self, endpoint: str) -> None:
+        """
+        Sets the HTTP REST endpoint used to fetch Osmosis information.
+        """
+
+        self.endpoint = endpoint

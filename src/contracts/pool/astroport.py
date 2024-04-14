@@ -1,20 +1,33 @@
-from src.contracts.pool.provider import PoolProvider
-from src.util import NEUTRON_NETWORK_CONFIG
+"""
+Implemens contract wrappers for Astroport, providing pricing information for
+Astroport pools.
+"""
+
+from typing import Any, cast, Optional, List
+from dataclasses import dataclass
 from cosmpy.aerial.contract import LedgerContract  # type: ignore
 from cosmpy.aerial.client import LedgerClient  # type: ignore
-from typing import Any, cast, Union, List
-from functools import cached_property
 from grpc._channel import _InactiveRpcError  # type: ignore
+from src.contracts.pool.provider import PoolProvider
+from src.util import NEUTRON_NETWORK_CONFIG, WithContract
 
 
+@dataclass
 class Token:
-    def __init__(self, addr: str):
-        self.contract_addr = addr
+    """
+    A token returned by an Astroport contract
+    """
+
+    contract_addr: str
 
 
+@dataclass
 class NativeToken:
-    def __init__(self, denom: str):
-        self.denom = denom
+    """
+    A NativeToken returned by an Astroport contract
+    """
+
+    denom: str
 
 
 def asset_info_to_token(info: dict[str, Any]) -> NativeToken | Token:
@@ -31,7 +44,8 @@ def asset_info_to_token(info: dict[str, Any]) -> NativeToken | Token:
 
 def token_to_addr(token: NativeToken | Token) -> str:
     """
-    Gets the contract address or denomination (if a native token) of the representation of a Token or NativeToken.
+    Gets the contract address or denomination (if a native token) of
+    the representation of a Token or NativeToken.
     """
 
     if isinstance(token, NativeToken):
@@ -51,32 +65,22 @@ def token_to_asset_info(token: NativeToken | Token) -> dict[str, Any]:
     return {"token": {"contract_addr": token.contract_addr}}
 
 
-class AstroportPoolProvider(PoolProvider):
+class AstroportPoolProvider(PoolProvider, WithContract):
     """
     Provides pricing and asset information for an arbitrary pair on astroport.
     """
 
     def __init__(
         self,
-        deployment_info: dict[str, Any],
-        client: LedgerClient,
-        address: str,
+        contract_info: tuple[dict[str, Any], LedgerClient, str],
         asset_a: Token | NativeToken,
         asset_b: Token | NativeToken,
     ):
-        self.deployment_info = deployment_info
-        self.client = client
-        self.address = address
+        WithContract.__init__(
+            self, contract_info[0], contract_info[1], contract_info[2], "pair"
+        )
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b
-
-    @cached_property
-    def contract(self) -> LedgerContract:
-        return LedgerContract(
-            self.deployment_info["pair"]["src"],
-            self.client,
-            address=self.address,
-        )
 
     def __exchange_rate(
         self, asset_a: Token | NativeToken, asset_b: Token | NativeToken, amount: int
@@ -138,17 +142,18 @@ class AstroportPoolDirectory:
 
         # Load all pools in 10-pool batches
         pools = []
-        prev_pool_page: Union[None, List[dict[str, Any]]] = None
+        prev_pool_page: Optional[List[dict[str, Any]]] = None
 
         while prev_pool_page is None or len(prev_pool_page) > 0:
+            start_after = None
+
+            if prev_pool_page is not None:
+                start_after = prev_pool_page[-1]["asset_infos"]
+
             next_pools = self.directory_contract.query(
                 {
                     "pairs": {
-                        "start_after": (
-                            prev_pool_page[-1]["asset_infos"]
-                            if prev_pool_page is not None
-                            else None
-                        ),
+                        "start_after": start_after,
                         "limit": 10,
                     }
                 }
@@ -170,9 +175,7 @@ class AstroportPoolDirectory:
                 continue
 
             provider = AstroportPoolProvider(
-                self.deployment_info,
-                self.client,
-                pool["contract_addr"],
+                (self.deployment_info, self.client, pool["contract_addr"]),
                 pair[0],
                 pair[1],
             )
@@ -188,3 +191,10 @@ class AstroportPoolDirectory:
             asset_pools[pair_addrs[1]][pair_addrs[0]] = provider
 
         return asset_pools
+
+    def contract(self) -> LedgerContract:
+        """
+        Gets the contract backing the pool provider.
+        """
+
+        return self.directory_contract

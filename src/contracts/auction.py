@@ -1,36 +1,36 @@
-from src.util import NEUTRON_NETWORK_CONFIG
+"""
+Implements a wrapper around a valence auction, providing pricing information
+for the auction.
+"""
+
+from typing import Any
 from cosmpy.aerial.contract import LedgerContract  # type: ignore
 from cosmpy.aerial.client import LedgerClient  # type: ignore
-from typing import Any
-from functools import cached_property
+from src.util import NEUTRON_NETWORK_CONFIG, WithContract
 
 
-class AuctionProvider:
+class AuctionProvider(WithContract):
     """
     Provides pricing and asset information for an arbitrary auction on valenece.
     """
 
     def __init__(
         self,
-        deployment_info: dict[str, Any],
-        client: LedgerClient,
-        address: str,
+        contract_info: tuple[dict[str, Any], LedgerClient, str],
         asset_a: str,
         asset_b: str,
     ):
-        self.deployment_info = deployment_info
-        self.client = client
-        self.address = address
+        WithContract.__init__(
+            self, contract_info[0], contract_info[1], contract_info[2], "auction"
+        )
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b
 
-    @cached_property
-    def contract(self) -> LedgerContract:
-        return LedgerContract(
-            self.deployment_info["auction"]["src"], self.client, address=self.address
-        )
-
     def exchange_rate(self) -> float:
+        """
+        Gets the number of asset_b required to purchase a single asset_a.
+        """
+
         auction_info = self.contract.query("get_auction")
 
         # No swap is possible since the auction is closed
@@ -53,12 +53,24 @@ class AuctionProvider:
         return current_price
 
     def asset_a(self) -> str:
+        """
+        Gets the asset being sold in the pool.
+        """
+
         return self.asset_a_denom
 
     def asset_b(self) -> str:
+        """
+        Gets the asset being used to purchase in the pool.
+        """
+
         return self.asset_b_denom
 
     def remaining_asset_a(self) -> float:
+        """
+        Gets thea amount of the asking asset left in the auction.
+        """
+
         return float(self.contract.query("get_auction")["available_amount"])
 
 
@@ -93,9 +105,7 @@ class AuctionDirectory:
             asset_a, asset_b = pair
 
             provider = AuctionProvider(
-                self.deployment_info,
-                self.client,
-                addr,
+                (self.deployment_info, self.client, addr),
                 asset_a,
                 asset_b,
             )
@@ -106,3 +116,10 @@ class AuctionDirectory:
             auctions[asset_a][asset_b] = provider
 
         return auctions
+
+    def contract(self) -> LedgerContract:
+        """
+        Gets the conract backing the auction directory.
+        """
+
+        return self.directory_contract

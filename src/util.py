@@ -4,8 +4,12 @@ Implements utilities for implementing arbitrage bots.
 
 import json
 from typing import Any, cast, Optional
+from functools import cached_property
+from dataclasses import dataclass
 import urllib3
 from cosmpy.aerial.client import NetworkConfig  # type: ignore
+from cosmpy.aerial.contract import LedgerContract  # type: ignore
+from cosmpy.aerial.client import LedgerClient  # type: ignore
 
 NEUTRON_NETWORK_CONFIG = NetworkConfig(
     chain_id="neutron-1",
@@ -62,3 +66,27 @@ def denom_on_chain(src_chain: str, src_denom: str, dest_chain: str) -> Optional[
         return str(dests[dest_chain]["assets"][0]["denom"])
 
     return None
+
+
+@dataclass
+class WithContract:
+    """
+    Provides instantiation and methods for accessing the contract backing a provider.
+    """
+
+    deployment_info: dict[str, Any]
+    client: LedgerClient
+    address: str
+    deployment_item: str
+
+    @cached_property
+    def contract(self) -> LedgerContract:
+        """
+        Gets the LedgerContract backing the auction wrapper.
+        """
+
+        return LedgerContract(
+            self.deployment_info[self.deployment_item]["src"],
+            self.client,
+            address=self.address,
+        )

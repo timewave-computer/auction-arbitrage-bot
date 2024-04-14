@@ -1,3 +1,8 @@
+"""
+Defines an interface for all providers of pricing information to fulfill.
+"""
+
+
 class PoolProvider:
     """
     A base abstract class representing a pair between two denominations.
@@ -21,14 +26,16 @@ class PoolProvider:
 
     def asset_a(self) -> str:
         """
-        Gets the contract address or ticker (if a native asset) of the first denomination in the pair.
+        Gets the contract address or ticker (if a native asset) of the first denomination
+        in the pair.
         """
 
         raise NotImplementedError
 
     def asset_b(self) -> str:
         """
-        Gets the contract address or ticker (if a native asset) of the second denomination in the pair.
+        Gets the contract address or ticker (if a native asset) of the second denomination
+        in the pair.
         """
 
         raise NotImplementedError

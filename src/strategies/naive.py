@@ -1,24 +1,32 @@
+"""
+Implements an arbitrage strategy with an arbitrary number
+of hops using all available providers.
+"""
+
+from typing import List, Union, Optional, Self
+from datetime import datetime
+from collections import deque
+from dataclasses import dataclass
+import logging
 from src.contracts.pool.provider import PoolProvider
 from src.contracts.pool.osmosis import OsmosisPoolProvider
 from src.contracts.pool.astroport import AstroportPoolProvider
 from src.contracts.auction import AuctionProvider
 from src.scheduler import Ctx
 from src.util import denom_on_chain, decimal_to_int
-from typing import List, Union, Optional, Self
-from datetime import datetime
-from collections import deque
-import logging
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass
 class State:
+    """
+    A strategy state for a naive strategy that provides caching of
+    the route graph.
+    """
+
     last_discovered: Optional[datetime]
     routes: List[List[Union[PoolProvider, AuctionProvider]]]
-
-    def __init__(self) -> None:
-        self.last_discovered = None
-        self.routes = []
 
     def poll(
         self,
@@ -26,6 +34,11 @@ class State:
         pools: dict[str, dict[str, List[PoolProvider]]],
         auctions: dict[str, dict[str, AuctionProvider]],
     ) -> Self:
+        """
+        Polls the state for a potential update, leaving the state
+        along, or producing a new state.
+        """
+
         # No need to update the state
         if (
             self.last_discovered is not None
@@ -42,7 +55,12 @@ class State:
         # Perform a breadth-first traversal, exploring all possible
         # routes with increasing hops
         logger.info(
-            f"Building route tree from {ctx.cfg['base_denom']} with {vertices} vertices (this may take a while)"
+            (
+                "Building route tree from {base_denom} with"
+                "{vertices} vertices (this may take a while)"
+            ),
+            base_denom=ctx.cfg["base_denom"],
+            vertices=vertices,
         )
 
         self.routes: List[List[Union[PoolProvider, AuctionProvider]]] = (
@@ -56,7 +74,8 @@ class State:
         )
 
         logger.info(
-            f"Finished building route tree; discovered {len(self.routes)} routes"
+            "Finished building route tree; discovered {n_routes} routes",
+            n_routes=len(self.routes),
         )
         self.last_discovered = datetime.now()
 
@@ -68,8 +87,12 @@ def strategy(
     pools: dict[str, dict[str, List[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
 ) -> Ctx:
+    """
+    Finds new arbitrage opportunities using the context, pools, and auctions.
+    """
+
     if ctx.state is None:
-        ctx.state = State()
+        ctx.state = State(None, None)
 
     state = ctx.state.poll(ctx, pools, auctions)
 
@@ -90,19 +113,45 @@ def strategy(
             profitable_routes.append((route, profit))
 
     # Report route stats to user
-    logging.info(
-        f"Found {len(profitable_routes)} profitable routes, with max profit of {max(profitable_routes, key=lambda route : route[1])[1]} and min profit of {min(profitable_routes, key=lambda route : route[1])[1]}"
+    logger.info(
+        (
+            "Found {profitable_routes} profitable routes, with"
+            "max profit of {max_profit} and min profit of {min_profit}"
+        ),
+        profitable_routes=len(profitable_routes),
+        max_profit=max(profitable_routes, key=lambda route: route[1])[1],
+        in_profit=min(profitable_routes, key=lambda route: route[1])[1],
     )
 
     for i, (route, profit) in enumerate(profitable_routes):
         logger.info(
-            f"Candidate arbitrage opportunity #{i + 1} with profit of {profit} and route with {len(route)} hop(s): {' -> '.join(map(lambda route_leg : fmt_route_leg(route_leg) + ': ' + route_leg.asset_a() + ' - ' + route_leg.asset_b(), route))}"
+            (
+                "Candidate arbitrage opportunity #{num_arb} with"
+                "profit of {profit} and route with {n_hops} hop(s): {hops}"
+            ),
+            num_arb=i + 1,
+            profit=profit,
+            n_hops=len(route),
+            hops=" -> ".join(
+                map(
+                    lambda route_leg: fmt_route_leg(route_leg)
+                    + ": "
+                    + route_leg.asset_a()
+                    + " - "
+                    + route_leg.asset_b(),
+                    route,
+                )
+            ),
         )
 
     return ctx.with_state(state)
 
 
 def fmt_route_leg(leg: Union[PoolProvider, AuctionProvider]) -> str:
+    """
+    Returns the nature of the route leg (i.e., "osmosis," "astroport," or, "valence.")
+    """
+
     if isinstance(leg, OsmosisPoolProvider):
         return "osmosis"
 
@@ -120,6 +169,10 @@ def route_base_denom_profit(
     starting_amount: int,
     route: List[Union[PoolProvider, AuctionProvider]],
 ) -> int:
+    """
+    Calculates the profit that can be obtained by following the route.
+    """
+
     prev_asset = base_denom
     quantity_received = starting_amount
 
@@ -148,6 +201,11 @@ def get_routes_with_depth_limit_bfs(
     pools: dict[str, dict[str, List[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
 ) -> List[List[Union[PoolProvider, AuctionProvider]]]:
+    """
+    Finds `limit` routes from `src` back to `src` with a maximum route length
+    of `depth`.
+    """
+
     to_explore: deque[
         tuple[
             Union[PoolProvider, AuctionProvider],
@@ -171,7 +229,6 @@ def get_routes_with_depth_limit_bfs(
     # routes from `src` back to itself
     while len(to_explore) > 0 and len(paths) < limit:
         pool, path, base_denom = to_explore.pop()
-
         pair_denom = pool.asset_a() if pool.asset_a() != base_denom else pool.asset_b()
 
         if pair_denom not in denom_cache:
@@ -181,10 +238,6 @@ def get_routes_with_depth_limit_bfs(
 
         pair_denom_osmo = denom_cache[pair_denom]
 
-        pair_pools = (
-            pool for pool_set in pools[pair_denom].values() for pool in pool_set
-        )
-
         if len(path[0]) + 1 > depth:
             continue
 
@@ -192,16 +245,31 @@ def get_routes_with_depth_limit_bfs(
             path[0].append(pool)
             path[1].add(pool)
 
-            logger.info(f"Closed circuit from {src} to {pair_denom}; registering route")
             logger.info(
-                f"Discovered route with {len(path[0])} hop(s): {' -> '.join(map(lambda route_leg : route_leg.asset_a() + ' - ' + route_leg.asset_b(), path[0]))}"
+                "Closed circuit from {src} to {pair_denom}; registering route",
+                src=src,
+                pair_denom=pair_denom,
+            )
+            logger.info(
+                "Discovered route with {n_hops} hop(s): {hops}",
+                n_hops=len(path[0]),
+                hops=" -> ".join(
+                    map(
+                        lambda route_leg: route_leg.asset_a()
+                        + " - "
+                        + route_leg.asset_b(),
+                        path[0],
+                    )
+                ),
             )
 
             paths.append(path[0])
 
             continue
 
-        for candidate_pool in pair_pools:
+        for candidate_pool in (
+            pool for pool_set in pools[pair_denom].values() for pool in pool_set
+        ):
             if candidate_pool not in path[1] and candidate_pool != pool:
                 to_explore.append(
                     (candidate_pool, (path[0] + [pool], path[1] | {pool}), pair_denom)
@@ -209,7 +277,7 @@ def get_routes_with_depth_limit_bfs(
 
         # Osmosis may not have a matching pool
         if pair_denom_osmo in pools:
-            pair_pools_osmo = (
+            for candidate_pool in (
                 (
                     pool
                     for pool_set in pools[pair_denom_osmo].values()
@@ -217,9 +285,7 @@ def get_routes_with_depth_limit_bfs(
                 )
                 if pair_denom_osmo is not None
                 else []
-            )
-
-            for candidate_pool in pair_pools_osmo:
+            ):
                 if candidate_pool not in path[1] and pool != candidate_pool:
                     to_explore.append(
                         (
@@ -231,9 +297,7 @@ def get_routes_with_depth_limit_bfs(
 
         # Neither might the auctions
         if pair_denom in auctions:
-            pair_pools_auction = auctions[pair_denom].values()
-
-            for candidate_auction in pair_pools_auction:
+            for candidate_auction in auctions[pair_denom].values():
                 if candidate_auction not in path[1] and pool != candidate_auction:
                     to_explore.append(
                         (
