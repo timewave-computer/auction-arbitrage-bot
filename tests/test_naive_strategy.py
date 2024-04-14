@@ -2,7 +2,11 @@
 Tests the naive strategy.
 """
 
-from src.strategies.naive import fmt_route_leg, get_routes_with_depth_limit_bfs
+from src.strategies.naive import (
+    fmt_route_leg,
+    get_routes_with_depth_limit_bfs,
+    route_base_denom_profit,
+)
 from src.scheduler import Scheduler
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import AstroportPoolDirectory
@@ -86,3 +90,38 @@ def test_route_base_denom_profit() -> None:
     """
     Tests the route profit calculator against USDC.
     """
+
+    sched = Scheduler(ctx(), strategy)
+
+    osmosis = OsmosisPoolDirectory()
+    astro = AstroportPoolDirectory(deployments())
+
+    osmo_pools = osmosis.pools()
+    astro_pools = astro.pools()
+
+    for osmo_base in osmo_pools.values():
+        for osmo_pool in osmo_base.values():
+            sched.register_provider(osmo_pool)
+
+    for astro_base in astro_pools.values():
+        for astro_pool in astro_base.values():
+            sched.register_provider(astro_pool)
+
+    providers = sched.providers
+    auctions = sched.auctions
+
+    routes = get_routes_with_depth_limit_bfs(
+        3,
+        5,
+        "ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81",
+        providers,
+        auctions,
+    )
+
+    # Check that all routes can calculate profit successfully
+    for route in routes:
+        route_base_denom_profit(
+            "ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81",
+            10000,
+            route,
+        )
