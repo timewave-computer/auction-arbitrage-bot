@@ -55,7 +55,7 @@ class State:
         # Perform a breadth-first traversal, exploring all possible
         # routes with increasing hops
         logger.info(
-            ("Building route tree from %s with" "%d vertices (this may take a while)"),
+            "Building route tree from %s with %d vertices (this may take a while)",
             ctx.cfg["base_denom"],
             vertices,
         )
@@ -111,7 +111,7 @@ def strategy(
 
     # Report route stats to user
     logger.info(
-        ("Found %d profitable routes, with" "max profit of %d and min profit of %d"),
+        "Found %d profitable routes, with max profit of %d and min profit of %d",
         len(profitable_routes),
         max(profitable_routes, key=lambda route: route[1])[1],
         min(profitable_routes, key=lambda route: route[1])[1],
@@ -120,7 +120,7 @@ def strategy(
     for i, (route, profit) in enumerate(profitable_routes):
         logger.info(
             (
-                "Candidate arbitrage opportunity #%d with"
+                "Candidate arbitrage opportunity #%d with "
                 "profit of %d and route with %d hop(s): %s"
             ),
             i + 1,
