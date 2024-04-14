@@ -26,8 +26,8 @@ jobs:
       - name: Check main mypy
         run: mypy main.py --install-types --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs --strict
       - name: Check linter
-        run: ruff src
+        run: ruff check src
       - name: Check linter
-        run: ruff tests
+        run: ruff check tests
       - name: Check linter main
-        run: ruff main.py
+        run: ruff check main.py
