@@ -98,7 +98,7 @@ class Scheduler:
 
     def poll(self) -> None:
         """
-        Polls the strategy functionw with all registered providers.
+        Polls the strategy function with all registered providers.
         """
 
         self.ctx = self.strategy(self.ctx, self.providers, self.auctions)
