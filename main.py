@@ -81,6 +81,8 @@ def main() -> None:
         for astro_pool in astro_base.values():
             sched.register_provider(astro_pool)
 
+    # Calculate the number of pools by summing up the number of pools for a particular base
+    # in Osmosis and Astroport
     n_pools: int = sum(map(lambda base: len(base.values()), osmo_pools.values())) + sum(
         map(lambda base: len(base.values()), astro_pools.values())
     )
