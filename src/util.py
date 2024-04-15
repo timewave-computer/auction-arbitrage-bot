@@ -3,6 +3,7 @@ Implements utilities for implementing arbitrage bots.
 """
 
 import json
+from decimal import Decimal
 from typing import Any, cast, Optional
 from functools import cached_property
 from dataclasses import dataclass
@@ -28,7 +29,7 @@ def deployments() -> dict[str, Any]:
         return cast(dict[str, Any], json.load(f))
 
 
-def decimal_to_int(dec: float) -> int:
+def decimal_to_int(dec: Decimal) -> int:
     """
     Converts a cosmwasm decimal with 18 decimal places to
     a raw quantity with no decimals.

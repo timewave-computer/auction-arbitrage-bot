@@ -3,10 +3,11 @@ Implements a wrapper around a valence auction, providing pricing information
 for the auction.
 """
 
+from decimal import Decimal
 from typing import Any
 from cosmpy.aerial.contract import LedgerContract  # type: ignore
 from cosmpy.aerial.client import LedgerClient  # type: ignore
-from src.util import NEUTRON_NETWORK_CONFIG, WithContract, ContractInfo
+from src.util import NEUTRON_NETWORK_CONFIG, WithContract, ContractInfo, decimal_to_int
 
 
 class AuctionProvider(WithContract):
@@ -24,7 +25,7 @@ class AuctionProvider(WithContract):
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b
 
-    def exchange_rate(self) -> float:
+    def exchange_rate(self) -> int:
         """
         Gets the number of asset_b required to purchase a single asset_a.
         """
@@ -39,22 +40,22 @@ class AuctionProvider(WithContract):
         # pricing curve to the given block
         current_block_height = self.contract_info.client.query_height()
 
-        start_price = float(auction_info["start_price"])
-        end_price = float(auction_info["end_price"])
-        start_block = float(auction_info["start_block"])
-        end_block = float(auction_info["end_block"])
+        start_price = Decimal(auction_info["start_price"])
+        end_price = Decimal(auction_info["end_price"])
+        start_block = Decimal(auction_info["start_block"])
+        end_block = Decimal(auction_info["end_block"])
 
         # The change in price per block
-        price_delta_per_block: float = (start_price - end_price) / (
+        price_delta_per_block: Decimal = (start_price - end_price) / (
             end_block - start_block
         )
 
         # The current price
-        current_price: float = start_price - (
+        current_price: Decimal = start_price - (
             price_delta_per_block * (current_block_height - start_block)
         )
 
-        return current_price
+        return decimal_to_int(current_price)
 
     def asset_a(self) -> str:
         """
@@ -70,12 +71,12 @@ class AuctionProvider(WithContract):
 
         return self.asset_b_denom
 
-    def remaining_asset_a(self) -> float:
+    def remaining_asset_a(self) -> int:
         """
         Gets the amount of the asking asset left in the auction.
         """
 
-        return float(self.contract.query("get_auction")["available_amount"])
+        return int(self.contract.query("get_auction")["available_amount"])
 
     def __hash__(self) -> int:
         return hash(self.contract_info.address)

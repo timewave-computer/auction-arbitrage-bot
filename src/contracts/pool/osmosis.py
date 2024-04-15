@@ -24,8 +24,8 @@ class OsmosisPoolProvider(PoolProvider):
         self.asset_b_denom = asset_b
         self.pool_id = pool_id
 
-    def __exchange_rate(self, asset_a: str, asset_b: str, amount: int) -> float:
-        return float(
+    def __exchange_rate(self, asset_a: str, asset_b: str, amount: int) -> int:
+        return int(
             json.loads(
                 self.client.request(
                     "GET",
@@ -38,10 +38,10 @@ class OsmosisPoolProvider(PoolProvider):
             )["token_out_amount"]
         )
 
-    def simulate_swap_asset_a(self, amount: int) -> float:
+    def simulate_swap_asset_a(self, amount: int) -> int:
         return self.__exchange_rate(self.asset_a_denom, self.asset_b_denom, amount)
 
-    def simulate_swap_asset_b(self, amount: int) -> float:
+    def simulate_swap_asset_b(self, amount: int) -> int:
         return self.__exchange_rate(self.asset_b_denom, self.asset_a_denom, amount)
 
     def asset_a(self) -> str:
