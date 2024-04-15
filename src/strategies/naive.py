@@ -181,9 +181,7 @@ def route_base_denom_profit(
                 quantity_received = int(leg.simulate_swap_asset_b(quantity_received))
         else:
             if prev_asset == leg.asset_a():
-                quantity_received = decimal_to_int(
-                    leg.exchange_rate() * quantity_received
-                )
+                quantity_received = leg.exchange_rate() * quantity_received
 
     return quantity_received - starting_amount
 
