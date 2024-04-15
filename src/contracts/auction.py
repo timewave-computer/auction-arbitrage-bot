@@ -6,7 +6,7 @@ for the auction.
 from typing import Any
 from cosmpy.aerial.contract import LedgerContract  # type: ignore
 from cosmpy.aerial.client import LedgerClient  # type: ignore
-from src.util import NEUTRON_NETWORK_CONFIG, WithContract
+from src.util import NEUTRON_NETWORK_CONFIG, WithContract, ContractInfo
 
 
 class AuctionProvider(WithContract):
@@ -16,13 +16,11 @@ class AuctionProvider(WithContract):
 
     def __init__(
         self,
-        contract_info: tuple[dict[str, Any], LedgerClient, str],
+        contract_info: ContractInfo,
         asset_a: str,
         asset_b: str,
     ):
-        WithContract.__init__(
-            self, contract_info[0], contract_info[1], contract_info[2], "auction"
-        )
+        WithContract.__init__(self, contract_info)
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b
 
@@ -39,7 +37,7 @@ class AuctionProvider(WithContract):
 
         # Calculate prices manually by following the
         # pricing curve to the given block
-        current_block_height = self.client.query_height()
+        current_block_height = self.contract_info.client.query_height()
 
         start_price = float(auction_info["start_price"])
         end_price = float(auction_info["end_price"])
@@ -80,7 +78,7 @@ class AuctionProvider(WithContract):
         return float(self.contract.query("get_auction")["available_amount"])
 
     def __hash__(self) -> int:
-        return hash(self.address)
+        return hash(self.contract_info.address)
 
 
 class AuctionDirectory:
@@ -114,7 +112,7 @@ class AuctionDirectory:
             asset_a, asset_b = pair
 
             provider = AuctionProvider(
-                (self.deployment_info, self.client, addr),
+                ContractInfo(self.deployment_info, self.client, addr, "auction"),
                 asset_a,
                 asset_b,
             )

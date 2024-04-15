@@ -9,7 +9,7 @@ from cosmpy.aerial.contract import LedgerContract  # type: ignore
 from cosmpy.aerial.client import LedgerClient  # type: ignore
 from grpc._channel import _InactiveRpcError  # type: ignore
 from src.contracts.pool.provider import PoolProvider
-from src.util import NEUTRON_NETWORK_CONFIG, WithContract
+from src.util import NEUTRON_NETWORK_CONFIG, WithContract, ContractInfo
 
 
 @dataclass
@@ -72,13 +72,11 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
 
     def __init__(
         self,
-        contract_info: tuple[dict[str, Any], LedgerClient, str],
+        contract_info: ContractInfo,
         asset_a: Token | NativeToken,
         asset_b: Token | NativeToken,
     ):
-        WithContract.__init__(
-            self, contract_info[0], contract_info[1], contract_info[2], "pair"
-        )
+        WithContract.__init__(self, contract_info)
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b
 
@@ -119,7 +117,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         return token_to_addr(self.asset_b_denom)
 
     def __hash__(self) -> int:
-        return hash(self.address)
+        return hash(self.contract_info.address)
 
 
 class NeutronAstroportPoolDirectory:
@@ -178,7 +176,9 @@ class NeutronAstroportPoolDirectory:
                 continue
 
             provider = NeutronAstroportPoolProvider(
-                (self.deployment_info, self.client, pool["contract_addr"]),
+                ContractInfo(
+                    self.deployment_info, self.client, pool["contract_addr"], "pair"
+                ),
                 pair[0],
                 pair[1],
             )

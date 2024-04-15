@@ -68,15 +68,25 @@ def denom_on_chain(src_chain: str, src_denom: str, dest_chain: str) -> Optional[
 
 
 @dataclass
-class WithContract:
+class ContractInfo:
     """
-    Provides instantiation and methods for accessing the contract backing a provider.
+    Represents the information required to lazily construct a LedgerContract for
+    a contract wrapper class.
     """
 
     deployment_info: dict[str, Any]
     client: LedgerClient
     address: str
     deployment_item: str
+
+
+@dataclass
+class WithContract:
+    """
+    Provides instantiation and methods for accessing the contract backing a provider.
+    """
+
+    contract_info: ContractInfo
 
     @cached_property
     def contract(self) -> LedgerContract:
@@ -85,7 +95,9 @@ class WithContract:
         """
 
         return LedgerContract(
-            self.deployment_info[self.deployment_item]["src"],
-            self.client,
-            address=self.address,
+            self.contract_info.deployment_info[self.contract_info.deployment_item][
+                "src"
+            ],
+            self.contract_info.client,
+            address=self.contract_info.address,
         )
