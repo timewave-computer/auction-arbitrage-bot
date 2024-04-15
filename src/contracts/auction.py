@@ -37,7 +37,7 @@ class AuctionProvider(WithContract):
         if auction_info["status"] != "started":
             return 0
 
-        # Calcualte prices manually by following the
+        # Calculate prices manually by following the
         # pricing curve to the given block
         current_block_height = self.client.query_height()
 
