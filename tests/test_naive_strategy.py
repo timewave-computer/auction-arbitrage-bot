@@ -9,7 +9,7 @@ from src.strategies.naive import (
 )
 from src.scheduler import Scheduler
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
-from src.contracts.pool.astroport import AstroportPoolDirectory
+from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
 from src.contracts.auction import AuctionDirectory
 from src.util import deployments
 from tests.test_scheduler import ctx, strategy
@@ -29,7 +29,7 @@ def test_fmt_route_leg() -> None:
     assert fmt_route_leg(pool) == "osmosis"
 
     # Check that astroport legs can be formatted
-    astro = AstroportPoolDirectory(deployments())
+    astro = NeutronAstroportPoolDirectory(deployments())
     astro_pool = list(list(astro.pools().values())[0].values())[0]
 
     assert fmt_route_leg(astro_pool) == "astroport"
@@ -51,7 +51,7 @@ def test_get_routes_with_depth_limit_bfs() -> None:
     sched = Scheduler(ctx(), strategy)
 
     osmosis = OsmosisPoolDirectory()
-    astro = AstroportPoolDirectory(deployments())
+    astro = NeutronAstroportPoolDirectory(deployments())
 
     osmo_pools = osmosis.pools()
     astro_pools = astro.pools()
@@ -94,7 +94,7 @@ def test_route_base_denom_profit() -> None:
     sched = Scheduler(ctx(), strategy)
 
     osmosis = OsmosisPoolDirectory()
-    astro = AstroportPoolDirectory(deployments())
+    astro = NeutronAstroportPoolDirectory(deployments())
 
     osmo_pools = osmosis.pools()
     astro_pools = astro.pools()

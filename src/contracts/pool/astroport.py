@@ -65,7 +65,7 @@ def token_to_asset_info(token: NativeToken | Token) -> dict[str, Any]:
     return {"token": {"contract_addr": token.contract_addr}}
 
 
-class AstroportPoolProvider(PoolProvider, WithContract):
+class NeutronAstroportPoolProvider(PoolProvider, WithContract):
     """
     Provides pricing and asset information for an arbitrary pair on astroport.
     """
@@ -122,11 +122,11 @@ class AstroportPoolProvider(PoolProvider, WithContract):
         return hash(self.address)
 
 
-class AstroportPoolDirectory:
+class NeutronAstroportPoolDirectory:
     """
     A wrapper around Astroport's factory providing:
     - Accessors for all pairs on Astroport
-    - AstroportPoolProviders for each pair
+    - NeutronAstroportPoolProviders for each pair
     """
 
     def __init__(self, deployments: dict[str, Any]):
@@ -138,9 +138,9 @@ class AstroportPoolDirectory:
             deployment_info["src"], self.client, address=deployment_info["address"]
         )
 
-    def pools(self) -> dict[str, dict[str, AstroportPoolProvider]]:
+    def pools(self) -> dict[str, dict[str, NeutronAstroportPoolProvider]]:
         """
-        Gets an AstroportPoolProvider for every pair on Astroport.
+        Gets an NeutronAstroportPoolProvider for every pair on Astroport.
         """
 
         # Load all pools in 10-pool batches
@@ -166,7 +166,7 @@ class AstroportPoolDirectory:
             prev_pool_page = next_pools
 
         # All denom symbols and token contract addresses
-        asset_pools: dict[str, dict[str, AstroportPoolProvider]] = {}
+        asset_pools: dict[str, dict[str, NeutronAstroportPoolProvider]] = {}
 
         # Pool wrappers for each asset
         for pool in pools:
@@ -177,7 +177,7 @@ class AstroportPoolDirectory:
             if "<" in pair_addrs[0] or "<" in pair_addrs[1]:
                 continue
 
-            provider = AstroportPoolProvider(
+            provider = NeutronAstroportPoolProvider(
                 (self.deployment_info, self.client, pool["contract_addr"]),
                 pair[0],
                 pair[1],

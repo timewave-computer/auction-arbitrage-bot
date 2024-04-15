@@ -10,7 +10,7 @@ from cosmpy.aerial.client import LedgerClient  # type: ignore
 from src.scheduler import Scheduler, Ctx
 from src.util import deployments, NEUTRON_NETWORK_CONFIG
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
-from src.contracts.pool.astroport import AstroportPoolDirectory
+from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
 from src.strategies.naive import strategy
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         prog="arbbot",
         description="""Identifies and executes arbitrage
-            opportunities between Valence, Osmosis, and Astroport.""",
+            opportunities between Neutron and Osmosis via Astroport and Valence.""",
     )
     parser.add_argument("-p", "--poll_interval", default=120)
     parser.add_argument("-d", "--discovery_interval", default=600)
@@ -68,7 +68,7 @@ def main() -> None:
 
     # Register Osmosis and Astroport providers
     osmosis = OsmosisPoolDirectory()
-    astro = AstroportPoolDirectory(deployments())
+    astro = NeutronAstroportPoolDirectory(deployments())
 
     osmo_pools = osmosis.pools()
     astro_pools = astro.pools()

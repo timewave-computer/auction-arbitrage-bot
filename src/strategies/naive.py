@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import logging
 from src.contracts.pool.provider import PoolProvider
 from src.contracts.pool.osmosis import OsmosisPoolProvider
-from src.contracts.pool.astroport import AstroportPoolProvider
+from src.contracts.pool.astroport import NeutronAstroportPoolProvider
 from src.contracts.auction import AuctionProvider
 from src.scheduler import Ctx
 from src.util import denom_on_chain, decimal_to_int
@@ -149,7 +149,7 @@ def fmt_route_leg(leg: Union[PoolProvider, AuctionProvider]) -> str:
     if isinstance(leg, OsmosisPoolProvider):
         return "osmosis"
 
-    if isinstance(leg, AstroportPoolProvider):
+    if isinstance(leg, NeutronAstroportPoolProvider):
         return "astroport"
 
     if isinstance(leg, AuctionProvider):

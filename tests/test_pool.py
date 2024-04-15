@@ -3,8 +3,8 @@ Tests that the osmosis and astroport pools work as expected.
 """
 
 from src.contracts.pool.astroport import (
-    AstroportPoolDirectory,
-    AstroportPoolProvider,
+    NeutronAstroportPoolDirectory,
+    NeutronAstroportPoolProvider,
 )
 from src.contracts.pool.osmosis import OsmosisPoolDirectory, OsmosisPoolProvider
 from src.util import deployments
@@ -16,14 +16,14 @@ def test_astroport_pools() -> None:
     and that it has some pools.
     """
 
-    astroport = AstroportPoolDirectory(deployments())
+    astroport = NeutronAstroportPoolDirectory(deployments())
     pools = astroport.pools()
 
     assert len(pools) != 0
 
     for base in pools.values():
         for pool in base.values():
-            assert isinstance(pool, AstroportPoolProvider)
+            assert isinstance(pool, NeutronAstroportPoolProvider)
 
 
 def test_osmosis_pools() -> None:
@@ -48,7 +48,7 @@ def test_astroport_provider() -> None:
     for simulation information and basic information
     """
 
-    astroport = AstroportPoolDirectory(deployments())
+    astroport = NeutronAstroportPoolDirectory(deployments())
     pools = astroport.pools()
 
     # All pools must have assets

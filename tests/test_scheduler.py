@@ -7,7 +7,7 @@ from cosmpy.aerial.client import LedgerClient  # type: ignore
 from src.scheduler import Scheduler, Ctx
 from src.util import deployments, NEUTRON_NETWORK_CONFIG
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
-from src.contracts.pool.astroport import AstroportPoolDirectory
+from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
 from src.contracts.pool.provider import PoolProvider
 from src.contracts.auction import AuctionProvider
 
@@ -79,7 +79,7 @@ def test_poll() -> None:
     """
 
     osmosis = OsmosisPoolDirectory()
-    astroport = AstroportPoolDirectory(deployments())
+    astroport = NeutronAstroportPoolDirectory(deployments())
 
     def simple_strategy(
         strat_ctx: Ctx,
