@@ -13,7 +13,7 @@ from src.contracts.pool.osmosis import OsmosisPoolProvider
 from src.contracts.pool.astroport import NeutronAstroportPoolProvider
 from src.contracts.auction import AuctionProvider
 from src.scheduler import Ctx
-from src.util import denom_on_chain, decimal_to_int
+from src.util import denom_on_chain
 
 logger = logging.getLogger(__name__)
 
