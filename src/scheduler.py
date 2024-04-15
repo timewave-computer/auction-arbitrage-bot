@@ -1,5 +1,5 @@
 """
-Implements a strategy runner with an arbitrary provider set in an even-loop style.
+Implements a strategy runner with an arbitrary provider set in an event-loop style.
 """
 
 from typing import Callable, List, Any, Self, Optional
