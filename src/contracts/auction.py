@@ -41,13 +41,19 @@ class AuctionProvider(WithContract):
         # pricing curve to the given block
         current_block_height = self.client.query_height()
 
+        start_price = float(auction_info["start_price"])
+        end_price = float(auction_info["end_price"])
+        start_block = float(auction_info["start_block"])
+        end_block = float(auction_info["end_block"])
+
         # The change in price per block
-        price_delta_per_block: float = (
-            float(auction_info["start_price"]) - float(auction_info["end_price"])
-        ) / (float(auction_info["end_block"]) - float(auction_info["start_block"]))
-        current_price: float = float(auction_info["start_price"]) - (
-            price_delta_per_block
-            * (current_block_height - float(auction_info["start_block"]))
+        price_delta_per_block: float = (start_price - end_price) / (
+            end_block - start_block
+        )
+
+        # The current price
+        current_price: float = start_price - (
+            price_delta_per_block * (current_block_height - start_block)
         )
 
         return current_price
