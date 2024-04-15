@@ -43,7 +43,7 @@ class State:
         if (
             self.last_discovered is not None
             and (datetime.now() - self.last_discovered).total_seconds()
-            < ctx.cfg["discovery_interval"]
+            < ctx.cli_args["discovery_interval"]
         ):
             return self
 
@@ -56,15 +56,15 @@ class State:
         # routes with increasing hops
         logger.info(
             "Building route tree from %s with %d vertices (this may take a while)",
-            ctx.cfg["base_denom"],
+            ctx.cli_args["base_denom"],
             vertices,
         )
 
         self.routes: List[List[Union[PoolProvider, AuctionProvider]]] = (
             get_routes_with_depth_limit_bfs(
-                ctx.cfg["max_hops"],
-                ctx.cfg["num_routes_considered"],
-                ctx.cfg["base_denom"],
+                ctx.cli_args["max_hops"],
+                ctx.cli_args["num_routes_considered"],
+                ctx.cli_args["base_denom"],
                 pools,
                 auctions,
             )
@@ -99,14 +99,14 @@ def strategy(
     # to the user
     for route in ctx.state.routes:
         profit = route_base_denom_profit(
-            ctx.cfg["base_denom"],
+            ctx.cli_args["base_denom"],
             ctx.client.query_bank_balance(
-                ctx.cfg["wallet_address"], ctx.cfg["base_denom"]
+                ctx.cli_args["wallet_address"], ctx.cli_args["base_denom"]
             ),
             route,
         )
 
-        if profit > ctx.cfg["profit_margin"]:
+        if profit > ctx.cli_args["profit_margin"]:
             profitable_routes.append((route, profit))
 
     # Report route stats to user

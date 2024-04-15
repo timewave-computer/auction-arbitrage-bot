@@ -19,7 +19,7 @@ class Ctx:
     """
 
     client: LedgerClient
-    cfg: dict[str, Any]
+    cli_args: dict[str, Any]
     state: Optional[Any]
 
     def with_state(self, state: Any) -> Self:
