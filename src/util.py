@@ -11,6 +11,7 @@ import urllib3
 from cosmpy.aerial.client import NetworkConfig, LedgerClient  # type: ignore
 from cosmpy.aerial.contract import LedgerContract  # type: ignore
 
+# TODO: Use multiple RPC's
 NEUTRON_NETWORK_CONFIG = NetworkConfig(
     chain_id="neutron-1",
     url="grpc+https://neutron-grpc.publicnode.com:443",

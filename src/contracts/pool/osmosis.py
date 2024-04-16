@@ -19,6 +19,8 @@ class OsmosisPoolProvider(PoolProvider):
         """
 
         self.client = urllib3.PoolManager()
+
+        # TODO: Allow multiple RPC's
         self.endpoint = "https://lcd.osmosis.zone"
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b

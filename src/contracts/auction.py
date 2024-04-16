@@ -55,6 +55,8 @@ class AuctionProvider(WithContract):
             price_delta_per_block * (current_block_height - start_block)
         )
 
+        # TODO: Look into big int for python
+
         return decimal_to_int(current_price)
 
     def asset_a(self) -> str:

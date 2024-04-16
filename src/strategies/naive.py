@@ -106,7 +106,7 @@ def strategy(
             route,
         )
 
-        if profit > ctx.cli_args["profit_margin"]:
+        if profit >= ctx.cli_args["profit_margin"]:
             profitable_routes.append((route, profit))
 
     # Report route stats to user
@@ -216,6 +216,9 @@ def get_routes_with_depth_limit_bfs(
     )
     paths: List[List[Union[PoolProvider, AuctionProvider]]] = []
     denom_cache = {}
+
+    # TODO: Add a heuristic for ordering of routes (e.g., most liquid routes)
+    # TODO: Find routes that start at the auctions
 
     # Perform a breadth-first traversal, exploring all possible
     # routes from `src` back to itself

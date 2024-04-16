@@ -66,6 +66,8 @@ def main() -> None:
     )
     sched = Scheduler(ctx, strategy)
 
+    # TODO: Add a flag for loading pools to/from a file
+    # TODO: Flag for dumping pools to a file
     # Register Osmosis and Astroport providers
     osmosis = OsmosisPoolDirectory()
     astro = NeutronAstroportPoolDirectory(deployments())
