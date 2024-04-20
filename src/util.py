@@ -4,14 +4,13 @@ Implements utilities for implementing arbitrage bots.
 
 import json
 from decimal import Decimal
-from typing import Any, cast, Optional, Callable
+from typing import Any, cast, Optional, Callable, TypeVar
 from functools import cached_property
 from dataclasses import dataclass
 import urllib3
 from cosmpy.aerial.client import NetworkConfig, LedgerClient  # type: ignore
 from cosmpy.aerial.contract import LedgerContract  # type: ignore
 
-# TODO: Use multiple RPC's
 NEUTRON_NETWORK_CONFIG = NetworkConfig(
     chain_id="neutron-1",
     url="grpc+https://neutron-grpc.publicnode.com:443",
@@ -19,6 +18,86 @@ NEUTRON_NETWORK_CONFIG = NetworkConfig(
     fee_denomination="untrn",
     staking_denomination="untrn",
 )
+
+
+def custom_neutron_network_config(url: str) -> NetworkConfig:
+    """
+    Creates a neutron client NetworkConfig with a specific RPC URL.
+    """
+
+    return NetworkConfig(
+        chain_id="neutron-1",
+        url=url,
+        fee_minimum_gas_price=0.0053,
+        fee_denomination="untrn",
+        staking_denomination="untrn",
+    )
+
+
+def try_multiple_rest_endpoints(
+    endpoints: list[str], route: str
+) -> Optional[dict[str, Any]]:
+    """
+    Returns the response from the first queried endpoint that responds successfully.
+    """
+
+    client = urllib3.PoolManager()
+
+    for endpoint in endpoints:
+        try:
+            return cast(
+                dict[str, Any],
+                json.loads(
+                    client.request(
+                        "GET",
+                        f"{endpoint}{route}",
+                    ).data
+                ),
+            )
+        except RuntimeError:
+            continue
+        except ValueError:
+            continue
+
+    return None
+
+
+T = TypeVar("T")
+
+
+def try_multiple_clients(
+    clients: list[LedgerClient], f: Callable[[LedgerClient], T]
+) -> Optional[T]:
+    """
+    Executes a lambda function on the first available client.
+    """
+
+    for client in clients:
+        try:
+            return f(client)
+        except RuntimeError:
+            continue
+        except ValueError:
+            continue
+
+    return None
+
+
+def try_query_multiple(providers: list[LedgerContract], query: Any) -> Optional[Any]:
+    """
+    Attempts to query the first LedgerConract in the list, falling back to
+    further providers.
+    """
+
+    for prov in providers:
+        try:
+            return cast(dict[str, Any], prov.query(query))
+        except RuntimeError:
+            continue
+        except ValueError:
+            continue
+
+    return None
 
 
 def deployments() -> dict[str, Any]:
@@ -77,9 +156,9 @@ class ContractInfo:
     """
 
     deployment_info: dict[str, Any]
-    client: LedgerClient
+    clients: list[LedgerClient]
     address: str
-    deployment_item: Callable[[dict[str, Any]], dict[str, Any]]
+    deployment_item: str
 
 
 @dataclass
@@ -91,15 +170,18 @@ class WithContract:
     contract_info: ContractInfo
 
     @cached_property
-    def contract(self) -> LedgerContract:
+    def contracts(self) -> list[LedgerContract]:
         """
         Gets the LedgerContract backing the auction wrapper.
         """
 
-        return LedgerContract(
-            self.contract_info.deployment_info[self.contract_info.deployment_item][
-                "src"
-            ],
-            self.contract_info.client,
-            address=self.contract_info.address,
-        )
+        return [
+            LedgerContract(
+                self.contract_info.deployment_info[self.contract_info.deployment_item][
+                    "src"
+                ],
+                client,
+                address=self.contract_info.address,
+            )
+            for client in self.contract_info.clients
+        ]

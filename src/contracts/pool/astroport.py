@@ -3,14 +3,18 @@ Implemens contract wrappers for Astroport, providing pricing information for
 Astroport pools.
 """
 
-import json
 from typing import Any, cast, Optional, List
 from dataclasses import dataclass
 from cosmpy.aerial.contract import LedgerContract  # type: ignore
-from cosmpy.aerial.client import LedgerClient  # type: ignore
+from cosmpy.aerial.client import LedgerClient, NetworkConfig  # type: ignore
 from grpc._channel import _InactiveRpcError  # type: ignore
-from src.contracts.pool.provider import PoolProvider
-from src.util import NEUTRON_NETWORK_CONFIG, WithContract, ContractInfo
+from src.contracts.pool.provider import PoolProvider, cached_pools
+from src.util import (
+    NEUTRON_NETWORK_CONFIG,
+    WithContract,
+    ContractInfo,
+    try_query_multiple,
+)
 
 
 @dataclass
@@ -85,7 +89,8 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         self, asset_a: Token | NativeToken, asset_b: Token | NativeToken, amount: int
     ) -> int:
         try:
-            simulated_pricing_info = self.contract.query(
+            simulated_pricing_info = try_query_multiple(
+                self.contracts,
                 {
                     "simulation": {
                         "offer_asset": {
@@ -94,8 +99,11 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
                         },
                         "ask_asset_info": token_to_asset_info(asset_b),
                     }
-                }
+                },
             )
+
+            if not simulated_pricing_info:
+                return 0
 
             return int(simulated_pricing_info["return_amount"])
         except _InactiveRpcError as e:
@@ -142,26 +150,25 @@ class NeutronAstroportPoolDirectory:
     cached_pools: Optional[list[dict[str, Any]]]
 
     def __init__(
-        self, deployments: dict[str, Any], poolfile_path: Optional[str] = None
+        self,
+        deployments: dict[str, Any],
+        poolfile_path: Optional[str] = None,
+        network_configs: Optional[list[NetworkConfig]] = None,
     ):
         self.deployment_info = deployments["pools"]["astroport"]["neutron"]
-        self.client = LedgerClient(NEUTRON_NETWORK_CONFIG)
-        self.cached_pools = None
-
-        # If the user specifies a pool dump to use, use that
-        if poolfile_path is not None:
-            with open(poolfile_path, "r", encoding="utf-8") as f:
-                poolfile_cts = json.load(f)
-
-                if "pools" in poolfile_cts:
-                    self.cached_pools = poolfile_cts["pools"]["neutron_astroport"]
-
-                    return
+        self.clients = [
+            LedgerClient(NEUTRON_NETWORK_CONFIG),
+            *(network_configs if network_configs else []),
+        ]
+        self.cached_pools = cached_pools(poolfile_path, "neutron_astroport")
 
         deployment_info = self.deployment_info["directory"]
-        self.directory_contract = LedgerContract(
-            deployment_info["src"], self.client, address=deployment_info["address"]
-        )
+        self.directory_contract = [
+            LedgerContract(
+                deployment_info["src"], client, address=deployment_info["address"]
+            )
+            for client in self.clients
+        ]
 
     def __pools_cached(self) -> dict[str, dict[str, NeutronAstroportPoolProvider]]:
         """
@@ -184,7 +191,10 @@ class NeutronAstroportPoolDirectory:
             )
             provider = NeutronAstroportPoolProvider(
                 ContractInfo(
-                    self.deployment_info, self.client, poolfile_entry["address"], "pair"
+                    self.deployment_info,
+                    self.clients,
+                    poolfile_entry["address"],
+                    "pair",
                 ),
                 asset_a,
                 asset_b,
@@ -220,14 +230,20 @@ class NeutronAstroportPoolDirectory:
             if prev_pool_page is not None:
                 start_after = prev_pool_page[-1]["asset_infos"]
 
-            next_pools = self.directory_contract.query(
+            maybe_next_pools = try_query_multiple(
+                self.directory_contract,
                 {
                     "pairs": {
                         "start_after": start_after,
                         "limit": 10,
                     }
-                }
-            )["pairs"]
+                },
+            )
+
+            if not maybe_next_pools:
+                break
+
+            next_pools = maybe_next_pools["pairs"]
 
             pools.extend(next_pools)
             prev_pool_page = next_pools
@@ -246,7 +262,7 @@ class NeutronAstroportPoolDirectory:
 
             provider = NeutronAstroportPoolProvider(
                 ContractInfo(
-                    self.deployment_info, self.client, pool["contract_addr"], "pair"
+                    self.deployment_info, self.clients, pool["contract_addr"], "pair"
                 ),
                 pair[0],
                 pair[1],
@@ -264,7 +280,7 @@ class NeutronAstroportPoolDirectory:
 
         return asset_pools
 
-    def contract(self) -> LedgerContract:
+    def contract(self) -> list[LedgerContract]:
         """
         Gets the contract backing the pool provider.
         """

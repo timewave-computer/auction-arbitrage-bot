@@ -17,7 +17,7 @@ from src.contracts.pool.astroport import (
 )
 from src.contracts.auction import AuctionProvider
 from src.scheduler import Ctx
-from src.util import denom_on_chain, ContractInfo, deployments
+from src.util import denom_on_chain, ContractInfo, deployments, try_multiple_clients
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,12 @@ class State:
         ):
             return self
 
+        endpoints = ["https://lcd.osmosis.zone"]
+
+        if ctx.cli_args["net_config"] is not None:
+            with open(ctx.cli_args["net_config"], "r", encoding="utf-8") as f:
+                endpoints = [*endpoints, json.load(f)["osmosis"]]
+
         # Check for a poolfile to specify routes
         if ctx.cli_args["pool_file"] is not None:
             with open(ctx.cli_args["pool_file"], "r", encoding="utf-8") as f:
@@ -61,6 +67,7 @@ class State:
                 ) -> Union[PoolProvider, AuctionProvider]:
                     if "osmosis" in ent:
                         return OsmosisPoolProvider(
+                            endpoints,
                             ent["osmosis"]["pool_id"],
                             ent["osmosis"]["asset_a"],
                             ent["osmosis"]["asset_b"],
@@ -70,7 +77,7 @@ class State:
                         return NeutronAstroportPoolProvider(
                             ContractInfo(
                                 deployments()["pools"]["astroport"]["neutron"],
-                                ctx.client,
+                                ctx.clients,
                                 ent["neutron_astroport"]["address"],
                                 "pair",
                             ),
@@ -82,7 +89,7 @@ class State:
                         return AuctionProvider(
                             ContractInfo(
                                 deployments()["auctions"]["neutron"],
-                                ctx.client,
+                                ctx.clients,
                                 ent["auction"]["address"],
                                 "auction",
                             ),
@@ -184,11 +191,19 @@ def strategy(
     # Calculate profitability of all routes, and report them
     # to the user
     for route in ctx.state.routes:
-        profit = route_base_denom_profit(
-            ctx.cli_args["base_denom"],
-            ctx.client.query_bank_balance(
+        balance_resp = try_multiple_clients(
+            ctx.clients,
+            lambda client: client.query_bank_balance(
                 ctx.cli_args["wallet_address"], ctx.cli_args["base_denom"]
             ),
+        )
+
+        if not balance_resp:
+            continue
+
+        profit = route_base_denom_profit(
+            ctx.cli_args["base_denom"],
+            balance_resp,
             route,
         )
 
@@ -303,9 +318,6 @@ def get_routes_with_depth_limit_bfs(
     paths: List[List[Union[PoolProvider, AuctionProvider]]] = []
     denom_cache = {}
 
-    # TODO: Add a heuristic for ordering of routes (e.g., most liquid routes)
-    # TODO: Find routes that start at the auctions
-
     # Perform a breadth-first traversal, exploring all possible
     # routes from `src` back to itself
     while len(to_explore) > 0 and len(paths) < limit:
@@ -348,6 +360,18 @@ def get_routes_with_depth_limit_bfs(
 
             continue
 
+        # Check auctions first for exploration
+        if pair_denom in auctions:
+            for candidate_auction in auctions[pair_denom].values():
+                if candidate_auction not in path[1] and pool != candidate_auction:
+                    to_explore.append(
+                        (
+                            candidate_auction,
+                            (path[0] + [pool], path[1] | {pool}),
+                            pair_denom,
+                        )
+                    )
+
         for candidate_pool in (
             pool for pool_set in pools[pair_denom].values() for pool in pool_set
         ):
@@ -371,18 +395,6 @@ def get_routes_with_depth_limit_bfs(
                     to_explore.append(
                         (
                             candidate_pool,
-                            (path[0] + [pool], path[1] | {pool}),
-                            pair_denom,
-                        )
-                    )
-
-        # Neither might the auctions
-        if pair_denom in auctions:
-            for candidate_auction in auctions[pair_denom].values():
-                if candidate_auction not in path[1] and pool != candidate_auction:
-                    to_explore.append(
-                        (
-                            candidate_auction,
                             (path[0] + [pool], path[1] | {pool}),
                             pair_denom,
                         )

@@ -3,9 +3,9 @@ Implements a pool provider for osmosis.
 """
 
 from typing import Any, Optional, List
-import json
 import urllib3
-from src.contracts.pool.provider import PoolProvider
+from src.util import try_multiple_rest_endpoints
+from src.contracts.pool.provider import PoolProvider, cached_pools
 
 
 class OsmosisPoolProvider(PoolProvider):
@@ -13,32 +13,32 @@ class OsmosisPoolProvider(PoolProvider):
     Provides pricing and asset information for an arbitrary pair on osmosis.
     """
 
-    def __init__(self, pool_id: int, asset_a: str, asset_b: str):
+    def __init__(self, endpoints: list[str], pool_id: int, asset_a: str, asset_b: str):
         """
         Initializes the Osmosis pool provider.
         """
 
         self.client = urllib3.PoolManager()
 
-        # TODO: Allow multiple RPC's
-        self.endpoint = "https://lcd.osmosis.zone"
+        self.endpoints = endpoints
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b
         self.pool_id = pool_id
 
     def __exchange_rate(self, asset_a: str, asset_b: str, amount: int) -> int:
-        return int(
-            json.loads(
-                self.client.request(
-                    "GET",
-                    (
-                        f"{self.endpoint}/osmosis/poolmanager/v1beta1/{self.pool_id}"
-                        f"/estimate/single_pool_swap_exact_amount_in?pool_id={self.pool_id}"
-                        f"&token_in={amount}{asset_a}&token_out_denom={asset_b}"
-                    ),
-                ).data
-            )["token_out_amount"]
+        res = try_multiple_rest_endpoints(
+            self.endpoints,
+            (
+                f"/osmosis/poolmanager/v1beta1/{self.pool_id}"
+                f"/estimate/single_pool_swap_exact_amount_in?pool_id={self.pool_id}"
+                f"&token_in={amount}{asset_a}&token_out_denom={asset_b}"
+            ),
         )
+
+        if not res:
+            return 0
+
+        return int(res["token_out_amount"])
 
     def simulate_swap_asset_a(self, amount: int) -> int:
         return self.__exchange_rate(self.asset_a_denom, self.asset_b_denom, amount)
@@ -73,21 +73,13 @@ class OsmosisPoolDirectory:
 
     cached_pools: Optional[list[dict[str, Any]]]
 
-    def __init__(self, poolfile_path: Optional[str] = None) -> None:
-        self.cached_pools = None
-
-        # If the user specifies a pool dump to use, use that
-        if poolfile_path is not None:
-            with open(poolfile_path, "r", encoding="utf-8") as f:
-                poolfile_cts = json.load(f)
-
-                if "pools" in poolfile_cts:
-                    self.cached_pools = poolfile_cts["pools"]["osmosis"]
-
-                    return
+    def __init__(
+        self, poolfile_path: Optional[str] = None, endpoints: Optional[list[str]] = None
+    ) -> None:
+        self.cached_pools = cached_pools(poolfile_path, "osmosis")
 
         self.client = urllib3.PoolManager()
-        self.endpoint = "https://lcd.osmosis.zone"
+        self.endpoints = ["https://lcd.osmosis.zone", *(endpoints if endpoints else [])]
 
     def __pools_cached(self) -> dict[str, dict[str, OsmosisPoolProvider]]:
         """
@@ -101,7 +93,9 @@ class OsmosisPoolDirectory:
 
         for poolfile_entry in self.cached_pools:
             asset_a, asset_b = (poolfile_entry["asset_a"], poolfile_entry["asset_b"])
-            provider = OsmosisPoolProvider(poolfile_entry["pool_id"], asset_a, asset_b)
+            provider = OsmosisPoolProvider(
+                self.endpoints, poolfile_entry["pool_id"], asset_a, asset_b
+            )
 
             # Register the pool
             if asset_a not in pools:
@@ -135,11 +129,14 @@ class OsmosisPoolDirectory:
 
             return []
 
-        pools = json.loads(
-            self.client.request(
-                "GET", f"{self.endpoint}/osmosis/poolmanager/v1beta1/all-pools"
-            ).data
-        )["pools"]
+        pools_res = try_multiple_rest_endpoints(
+            self.endpoints, "/osmosis/poolmanager/v1beta1/all-pools"
+        )
+
+        if not pools_res:
+            return {}
+
+        pools = pools_res["pools"]
 
         # Match each symbol with multiple trading pairs
         asset_pools: dict[str, dict[str, OsmosisPoolProvider]] = {}
@@ -150,7 +147,7 @@ class OsmosisPoolDirectory:
             if len(denom_addrs) != 2:
                 continue
 
-            provider = OsmosisPoolProvider(pool_id, *denom_addrs)
+            provider = OsmosisPoolProvider(self.endpoints, pool_id, *denom_addrs)
 
             # Register the pool
             if denom_addrs[0] not in asset_pools:
@@ -164,12 +161,12 @@ class OsmosisPoolDirectory:
 
         return asset_pools
 
-    def set_endpoint(self, endpoint: str) -> None:
+    def set_endpoints(self, endpoints: list[str]) -> None:
         """
         Changes the endpoint used by the wrapper to communicate with Osmosis.
         """
 
-        self.endpoint = endpoint
+        self.endpoints = endpoints
 
     @staticmethod
     def dump_pools(

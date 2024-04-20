@@ -41,6 +41,7 @@ The auction arbitrage bot can be run with only one required flag: `wallet_addres
 * `-b` (`--base_denom`): Specifies the denom in which profits are denominated. The default value is the Neutron Noble USDC denom (`ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81`)
 * `-pm` (`--profit_margin`): Specifies the quantity of the base denom that must be obtained from an arbitrage opportunity to consider it. The default value is `10`.
 * `-w` (`--wallet_address`): Specifies the address of the wallet from which funds should be used to execute trades. This flag is **required**.
+* `-c` (`--net_config`): Specifies a path to a file containing RPC URL's to use for different networks.
 
 The bot may be run by executing:
 
@@ -54,6 +55,23 @@ The bot may also be supplied a command (an argument with no hyphens). The availa
 
 * `dump`: Explores all known pools with the given `--max_hops` and `--limit`, and writes discovered routes to a file, exiting immediately after. Results will be written in JSON format, following conventions outlined below.
   * Sample execution: `python main.py --wallet_address <WALLET_ADDRESS> dump`
+
+### Custom RPC's
+
+Custom RPC providers may be specified with the `--net_config` flag. This flag specifies a path to a JSON file with the following format:
+
+```json
+{
+  "neutron": [
+    "grpc+https://neutron-grpc.publicnode.com:443"
+  ],
+  "osmosis": [
+    "https://lcd.osmosis.zone"
+  ]
+}
+```
+
+Currently, only HTTP/REST endpoints are supported for Osmosis.
 
 ### Custom Pools
 

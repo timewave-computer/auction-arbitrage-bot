@@ -7,8 +7,15 @@ import json
 from decimal import Decimal
 from typing import Any, List, Optional
 from cosmpy.aerial.contract import LedgerContract  # type: ignore
-from cosmpy.aerial.client import LedgerClient  # type: ignore
-from src.util import NEUTRON_NETWORK_CONFIG, WithContract, ContractInfo, decimal_to_int
+from cosmpy.aerial.client import LedgerClient, NetworkConfig  # type: ignore
+from src.util import (
+    NEUTRON_NETWORK_CONFIG,
+    WithContract,
+    ContractInfo,
+    decimal_to_int,
+    try_query_multiple,
+    try_multiple_clients,
+)
 
 
 class AuctionProvider(WithContract):
@@ -31,7 +38,10 @@ class AuctionProvider(WithContract):
         Gets the number of asset_b required to purchase a single asset_a.
         """
 
-        auction_info = self.contract.query("get_auction")
+        auction_info = try_query_multiple(self.contracts, "get_auction")
+
+        if not auction_info:
+            return 0
 
         # No swap is possible since the auction is closed
         if auction_info["status"] != "started":
@@ -39,7 +49,12 @@ class AuctionProvider(WithContract):
 
         # Calculate prices manually by following the
         # pricing curve to the given block
-        current_block_height = self.contract_info.client.query_height()
+        current_block_height = try_multiple_clients(
+            self.contract_info.clients, lambda client: client.query_height()
+        )
+
+        if not current_block_height:
+            return 0
 
         start_price = Decimal(auction_info["start_price"])
         end_price = Decimal(auction_info["end_price"])
@@ -55,8 +70,6 @@ class AuctionProvider(WithContract):
         current_price: Decimal = start_price - (
             price_delta_per_block * (current_block_height - start_block)
         )
-
-        # TODO: Look into big int for python
 
         return decimal_to_int(current_price)
 
@@ -79,7 +92,12 @@ class AuctionProvider(WithContract):
         Gets the amount of the asking asset left in the auction.
         """
 
-        return int(self.contract.query("get_auction")["available_amount"])
+        res = try_query_multiple(self.contracts, "get_auction")
+
+        if not res:
+            return 0
+
+        return int(res["available_amount"])
 
     def __hash__(self) -> int:
         return hash(self.contract_info.address)
@@ -95,9 +113,15 @@ class AuctionDirectory:
     cached_auctions: Optional[list[dict[str, Any]]]
 
     def __init__(
-        self, deployments: dict[str, Any], poolfile_path: Optional[str] = None
+        self,
+        deployments: dict[str, Any],
+        poolfile_path: Optional[str] = None,
+        network_configs: Optional[list[NetworkConfig]] = None,
     ) -> None:
-        self.client = LedgerClient(NEUTRON_NETWORK_CONFIG)
+        self.clients = [
+            LedgerClient(NEUTRON_NETWORK_CONFIG),
+            *(network_configs if network_configs else []),
+        ]
         self.deployment_info = deployments["auctions"]["neutron"]
         self.cached_auctions = None
 
@@ -112,9 +136,12 @@ class AuctionDirectory:
                     return
 
         deployment_info = self.deployment_info["auctions_manager"]
-        self.directory_contract = LedgerContract(
-            deployment_info["src"], self.client, address=deployment_info["address"]
-        )
+        self.directory_contract = [
+            LedgerContract(
+                deployment_info["src"], client, address=deployment_info["address"]
+            )
+            for client in self.clients
+        ]
 
     def __auctions_cached(self) -> dict[str, dict[str, AuctionProvider]]:
         """
@@ -134,7 +161,7 @@ class AuctionDirectory:
             provider = AuctionProvider(
                 ContractInfo(
                     self.deployment_info,
-                    self.client,
+                    self.clients,
                     poolfile_entry["address"],
                     "auction",
                 ),
@@ -162,9 +189,13 @@ class AuctionDirectory:
         if self.cached_auctions is not None:
             return self.__auctions_cached()
 
-        auction_infos = self.directory_contract.query(
-            {"get_pairs": {"start_after": None, "limit": None}}
+        auction_infos = try_query_multiple(
+            self.directory_contract, {"get_pairs": {"start_after": None, "limit": None}}
         )
+
+        if not auction_infos:
+            return {}
+
         auctions: dict[str, dict[str, AuctionProvider]] = {}
 
         for auction in auction_infos:
@@ -172,7 +203,7 @@ class AuctionDirectory:
             asset_a, asset_b = pair
 
             provider = AuctionProvider(
-                ContractInfo(self.deployment_info, self.client, addr, "auction"),
+                ContractInfo(self.deployment_info, self.clients, addr, "auction"),
                 asset_a,
                 asset_b,
             )
@@ -184,7 +215,7 @@ class AuctionDirectory:
 
         return auctions
 
-    def contract(self) -> Optional[LedgerContract]:
+    def contract(self) -> Optional[list[LedgerContract]]:
         """
         Gets the contract backing the auction directory.
         """

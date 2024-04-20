@@ -11,7 +11,7 @@ from os import path
 import schedule
 from cosmpy.aerial.client import LedgerClient  # type: ignore
 from src.scheduler import Scheduler, Ctx
-from src.util import deployments, NEUTRON_NETWORK_CONFIG
+from src.util import deployments, NEUTRON_NETWORK_CONFIG, custom_neutron_network_config
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
 from src.strategies.naive import strategy
@@ -50,6 +50,7 @@ def main() -> None:
         "-w",
         "--wallet_address",
     )
+    parser.add_argument("-c", "--net_config")
     parser.add_argument("cmd", nargs="?", default=None)
 
     args = parser.parse_args()
@@ -64,10 +65,25 @@ def main() -> None:
                 f,
             )
 
+    # The user may want to use custom RPC providers
+    endpoints: dict[str, list[str]] = {"neutron": [], "osmosis": []}
+
+    if args.net_config is not None:
+        logger.info("Applying net config")
+
+        with open(args.net_config, "r", encoding="utf-8") as f:
+            endpoints = json.load(f)
+
     logger.info("Building pool catalogue")
 
     ctx = Ctx(
-        LedgerClient(NEUTRON_NETWORK_CONFIG),
+        [
+            LedgerClient(NEUTRON_NETWORK_CONFIG),
+            *[
+                custom_neutron_network_config(endpoint)
+                for endpoint in endpoints["neutron"]
+            ],
+        ],
         {
             "pool_file": args.pool_file,
             "poll_interval": int(args.poll_interval),
@@ -78,6 +94,7 @@ def main() -> None:
             "profit_margin": int(args.profit_margin),
             "wallet_address": args.wallet_address,
             "cmd": args.cmd,
+            "net_config": args.net_config,
         },
         None,
         False,
@@ -85,8 +102,16 @@ def main() -> None:
     sched = Scheduler(ctx, strategy)
 
     # Register Osmosis and Astroport providers
-    osmosis = OsmosisPoolDirectory(poolfile_path=args.pool_file)
-    astro = NeutronAstroportPoolDirectory(deployments(), poolfile_path=args.pool_file)
+    osmosis = OsmosisPoolDirectory(
+        poolfile_path=args.pool_file, endpoints=endpoints["osmosis"]
+    )
+    astro = NeutronAstroportPoolDirectory(
+        deployments(),
+        poolfile_path=args.pool_file,
+        network_configs=[
+            custom_neutron_network_config(endpoint) for endpoint in endpoints["neutron"]
+        ],
+    )
 
     osmo_pools = osmosis.pools()
     astro_pools = astro.pools()

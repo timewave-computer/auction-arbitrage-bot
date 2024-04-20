@@ -18,7 +18,7 @@ class Ctx:
     - User state
     """
 
-    client: LedgerClient
+    clients: list[LedgerClient]
     cli_args: dict[str, Any]
     state: Optional[Any]
     terminated: bool
