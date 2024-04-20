@@ -4,7 +4,7 @@ Implements utilities for implementing arbitrage bots.
 
 import json
 from decimal import Decimal
-from typing import Any, cast, Optional
+from typing import Any, cast, Optional, Callable
 from functools import cached_property
 from dataclasses import dataclass
 import urllib3
@@ -79,7 +79,7 @@ class ContractInfo:
     deployment_info: dict[str, Any]
     client: LedgerClient
     address: str
-    deployment_item: str
+    deployment_item: Callable[[dict[str, Any]], dict[str, Any]]
 
 
 @dataclass

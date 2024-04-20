@@ -3,6 +3,7 @@ Implemens contract wrappers for Astroport, providing pricing information for
 Astroport pools.
 """
 
+import json
 from typing import Any, cast, Optional, List
 from dataclasses import dataclass
 from cosmpy.aerial.contract import LedgerContract  # type: ignore
@@ -116,6 +117,17 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
     def asset_b(self) -> str:
         return token_to_addr(self.asset_b_denom)
 
+    def dump(self) -> dict[str, Any]:
+        """
+        Gets a JSON representation of the pool.
+        """
+
+        return {
+            "asset_a": token_to_asset_info(self.asset_a_denom),
+            "asset_b": token_to_asset_info(self.asset_b_denom),
+            "address": self.contract_info.address,
+        }
+
     def __hash__(self) -> int:
         return hash(self.contract_info.address)
 
@@ -127,19 +139,76 @@ class NeutronAstroportPoolDirectory:
     - NeutronAstroportPoolProviders for each pair
     """
 
-    def __init__(self, deployments: dict[str, Any]):
-        self.client = LedgerClient(NEUTRON_NETWORK_CONFIG)
+    cached_pools: Optional[list[dict[str, Any]]]
+
+    def __init__(
+        self, deployments: dict[str, Any], poolfile_path: Optional[str] = None
+    ):
         self.deployment_info = deployments["pools"]["astroport"]["neutron"]
+        self.client = LedgerClient(NEUTRON_NETWORK_CONFIG)
+        self.cached_pools = None
+
+        # If the user specifies a pool dump to use, use that
+        if poolfile_path is not None:
+            with open(poolfile_path, "r", encoding="utf-8") as f:
+                poolfile_cts = json.load(f)
+
+                if "pools" in poolfile_cts:
+                    self.cached_pools = poolfile_cts["pools"]["neutron_astroport"]
+
+                    return
 
         deployment_info = self.deployment_info["directory"]
         self.directory_contract = LedgerContract(
             deployment_info["src"], self.client, address=deployment_info["address"]
         )
 
+    def __pools_cached(self) -> dict[str, dict[str, NeutronAstroportPoolProvider]]:
+        """
+        Reads the pools in the AstroportPoolProvider from the contents of the pool file.
+        """
+
+        if self.cached_pools is None:
+            return {}
+
+        pools: dict[str, dict[str, NeutronAstroportPoolProvider]] = {}
+
+        for poolfile_entry in self.cached_pools:
+            asset_a, asset_b = (
+                asset_info_to_token(poolfile_entry["asset_a"]),
+                asset_info_to_token(poolfile_entry["asset_b"]),
+            )
+            asset_a_addr, asset_b_addr = (
+                token_to_addr(asset_a),
+                token_to_addr(asset_b),
+            )
+            provider = NeutronAstroportPoolProvider(
+                ContractInfo(
+                    self.deployment_info, self.client, poolfile_entry["address"], "pair"
+                ),
+                asset_a,
+                asset_b,
+            )
+
+            # Register the pool
+            if asset_a_addr not in pools:
+                pools[asset_a_addr] = {}
+
+            if asset_b_addr not in pools:
+                pools[asset_b_addr] = {}
+
+            pools[asset_a_addr][asset_b_addr] = provider
+            pools[asset_b_addr][asset_a_addr] = provider
+
+        return pools
+
     def pools(self) -> dict[str, dict[str, NeutronAstroportPoolProvider]]:
         """
         Gets an NeutronAstroportPoolProvider for every pair on Astroport.
         """
+
+        if self.cached_pools is not None:
+            return self.__pools_cached()
 
         # Load all pools in 10-pool batches
         pools = []
@@ -201,3 +270,19 @@ class NeutronAstroportPoolDirectory:
         """
 
         return self.directory_contract
+
+    @staticmethod
+    def dump_pools(
+        pools: dict[str, dict[str, NeutronAstroportPoolProvider]]
+    ) -> List[dict[str, Any]]:
+        """
+        Constructs a JSON representation of the pools in the AstroportPoolProvider.
+        """
+
+        return list(
+            {
+                pool.contract_info.address: pool.dump()
+                for base in pools.values()
+                for pool in base.values()
+            }.values()
+        )

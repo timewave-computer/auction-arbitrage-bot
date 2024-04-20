@@ -2,6 +2,11 @@
 
 An extensible arbitrage bot for trading against valence auctions and Astroport and Osmosis.
 
+TODO: Add idea about threading
+TODO: Track which pools have been touched to inform route samping, or get a price feed from coingecko, and just filter for the coins that are relevant to the DEX you're looking at and query for large price movements, and you can pick the top 10 to inform route collection
+TODO: Look at Yan's contract and do backtesting (95% of blocks)
+TODO: Trailing 7 days simulated number of auctions
+
 ## Installation
 
 Installation requires Python 3.11.
@@ -28,6 +33,7 @@ pip install -r requirements.txt
 
 The auction arbitrage bot can be run with only one required flag: `wallet_address`. This flag specifies where to look for initial funds for arbitrage. All available flags are:
 
+* `-f` (`--pool_file`): Specifies which pools to use for the Neutron Astroport and Osmosis pool providers, and which routes to use for the Scheduler. Can also be used to cache requests required to obtain pool information.
 * `-p` (`--poll_interval`): Specifies how frequently the arbitrage strategy should be run (in seconds). The default value is `120`.
 * `-d` (`--discovery_interval`): Specifies how frequently new arbitrage routes should be discovered (in seconds). The default value is `600`.
 * `-m` (`--max_hops`): Specifies the maximum number of "hops" in a single arbitrage trade. The default value is `3`. Note that increasing this value increases the time for the discovery algorithm to run.
@@ -40,6 +46,86 @@ The bot may be run by executing:
 
 ```sh
 python main.py --wallet_address <WALLET_ADDRESS>
+```
+
+### Commands
+
+The bot may also be supplied a command (an argument with no hyphens). The available commands are as follows:
+
+* `dump`: Explores all known pools with the given `--max_hops` and `--limit`, and writes discovered routes to a file, exiting immediately after. Results will be written in JSON format, following conventions outlined below.
+  * Sample execution: `python main.py --wallet_address <WALLET_ADDRESS> dump`
+
+### Custom Pools
+
+Custom pools and routes may be provided by utilizing a "pool file" via the `--pool_file` flag. Using this flag will avoid external calls to obtain pool listings, and will result in calls to `Directory` class' `.pools` methods looking up available pools from this file. Furthermore, if routes are specified, no route discovery will be performed, and the routes provided will be used. An example pool file is as follows:
+
+```json
+{
+  "pools": {
+    "neutron_astroport": [
+      {
+	    "asset_a": {
+	      "native_token": {
+		    "denom": "<DENOM>"
+		  }
+	    },
+	    "asset_b": {
+	      "token": {
+		    "contract_addr": "<DENOM>"
+		 }
+	    },
+	    "address": "<ADDR>"
+	  }
+    ],
+    "osmosis": [
+      {
+	    "asset_a": "<DENOM>",
+	    "asset_b": "<DENOM>,
+	    "pool_id": 1234
+	  }
+    ]
+  },
+  "auctions": [
+    {
+	  "asset_a": "<DENOM>",
+	  "asset_b": "<DENOM>",
+	  "address": "<ADDR>"
+	}
+  ],
+  "routes": [
+    [
+	  {
+	    "osmosis": {
+		  "asset_a": "<DENOM>",
+		  "asset_b": "<DENOM>",
+		  "pool_id": 1234
+		}
+	  },
+	  {
+	    "neutron_astroport": {
+	      "asset_a": {
+	        "native_token": {
+		      "denom": "<DENOM>"
+		    }
+          },
+	      "asset_b": {
+	        "token": {
+		      "contract_addr": "<DENOM>"
+		    }
+	      },
+	      "address": "<ADDR>"
+		}
+	  },
+	  {
+	    "auction": {
+	      "asset_a": "<DENOM>",
+	      "asset_b": "<DENOM>",
+	      "address": "<ADDR>"		  
+		}
+	  }
+	]
+  ]
+}
 ```
 
 ### Output logs

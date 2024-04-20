@@ -2,6 +2,8 @@
 Defines an interface for all providers of pricing information to fulfill.
 """
 
+from typing import Any
+
 
 class PoolProvider:
     """
@@ -36,6 +38,13 @@ class PoolProvider:
         """
         Gets the contract address or ticker (if a native asset) of the second denomination
         in the pair.
+        """
+
+        raise NotImplementedError
+
+    def dump(self) -> dict[str, Any]:
+        """
+        Gets a JSON representation of the pool.
         """
 
         raise NotImplementedError

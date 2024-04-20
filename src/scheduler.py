@@ -21,6 +21,7 @@ class Ctx:
     client: LedgerClient
     cli_args: dict[str, Any]
     state: Optional[Any]
+    terminated: bool
 
     def with_state(self, state: Any) -> Self:
         """
@@ -29,6 +30,15 @@ class Ctx:
         """
 
         self.state = state
+
+        return self
+
+    def cancel(self) -> Self:
+        """
+        Marks the event loop for termination.
+        """
+
+        self.terminated = True
 
         return self
 
@@ -50,6 +60,7 @@ class Scheduler:
         Ctx,
     ]
     providers: dict[str, dict[str, List[PoolProvider]]]
+    auction_manager: AuctionDirectory
     auctions: dict[str, dict[str, AuctionProvider]]
 
     def __init__(
@@ -73,8 +84,10 @@ class Scheduler:
         self.strategy = strategy
         self.providers: dict[str, dict[str, List[PoolProvider]]] = {}
 
-        auction_manager = AuctionDirectory(deployments())
-        self.auctions = auction_manager.auctions()
+        self.auction_manager = AuctionDirectory(
+            deployments(), poolfile_path=ctx.cli_args["pool_file"]
+        )
+        self.auctions = self.auction_manager.auctions()
 
     def register_provider(self, provider: PoolProvider) -> None:
         """
