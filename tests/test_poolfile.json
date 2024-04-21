@@ -1,0 +1,51 @@
+{
+    "pools": {
+        "osmosis": [
+            {
+              "asset_a": "ibc/27394FB092D2ECCD5612…DA9CA97EA622B25F41E5EB2",
+              "asset_b": "uosmo",
+              "pool_id": 1
+            },
+            {
+                "asset_a": "uion",
+                "asset_b": "uosmo",
+                "pool_id": 2
+            }
+        ],
+        "neutron_astroport": [
+            {
+                "asset_a": {
+                    "native_token": {
+                        "denom": "factory/neutron1xnf8cc4g5yhu6msvlj83zhw6lkvn97jpxfr8fd/99500000000000"
+                    }
+                },
+                "asset_b": {
+                    "native_token": {
+                        "denom": "untrn"
+                    }
+                },
+                "address": "neutron1t7esx64dk9zdh2v5yxxs23favd43rdlvcda7huc60np7jcutxdlqm4vmdx"
+            },
+            {
+                "asset_a": {
+                    "native_token": {
+                        "denom": "factory/inj1h0ypsdtjfcjynqu3m75z2zwwz5mmrj8rtk2g52/uhava"
+                    }
+                },
+                "asset_b": {
+                    "native_token": {
+                        "denom": "untrn"
+                    }
+                },
+                "address": "neutron1sxdz9tt20njwk46z6j9r27m2zh8c8ng4xzscvstazmmra8p9v9sqw3esr2"
+            }
+        ]
+    },
+    "auctions": [
+        {
+            "asset_a": "untrn",
+            "asset_b": "factory/neutron1p8d89wvxyjcnawmgw72klknr3lg9gwwl6ypxda/newt",
+            "address": "neutron1zvw9l8c82hnvwsntpuy89p86ztfmmudd9usfmnpa2tnqws74zsxq56sczm"
+        }
+    ]
+}
