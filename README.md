@@ -2,11 +2,6 @@
 
 An extensible arbitrage bot for trading against valence auctions and Astroport and Osmosis.
 
-TODO: Add idea about threading
-TODO: Track which pools have been touched to inform route samping, or get a price feed from coingecko, and just filter for the coins that are relevant to the DEX you're looking at and query for large price movements, and you can pick the top 10 to inform route collection
-TODO: Look at Yan's contract and do backtesting (95% of blocks)
-TODO: Trailing 7 days simulated number of auctions
-
 ## Installation
 
 Installation requires Python 3.11.
@@ -170,3 +165,9 @@ INFO:src.strategies.naive:Candidate arbitrage opportunity #1 with profit of 6223
 INFO:src.strategies.naive:Candidate arbitrage opportunity #2 with profit of 6223766 and route with 3 hop(s): astroport: factory/neutron154gg0wtm2v4h9ur8xg32ep64e8ef0g5twlsgvfeajqwghdryvyqsqhgk8e/APOLLO - ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81 -> astroport: factory/neutron154gg0wtm2v4h9ur8xg32ep64e8ef0g5twlsgvfeajqwghdryvyqsqhgk8e/APOLLO - ibc/F082B65C88E4B6D5EF1DB243CDA1D331D002759E938A0F5CD3FFDC5D53B3E349 -> astroport: ibc/F082B65C88E4B6D5EF1DB243CDA1D331D002759E938A0F5CD3FFDC5D53B3E349 - ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81
 ...
 ```
+
+# To Do
+
+- [ ] Add an example strategy for docs that uses threading
+- [ ] Track which pools have been touched to inform route samping, or get a price feed from coingecko, and just filter for the coins that are relevant to the DEX you're looking at and query for large price movements, and you can pick the top 10 to inform route collection
+- [ ] Look at Yan's contract and do backtesting (95% of blocks): trailing 7 days simulated number of auctions
