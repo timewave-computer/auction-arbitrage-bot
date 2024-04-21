@@ -2,7 +2,6 @@
 Implements a command-line interface for running arbitrage strategies.
 """
 
-from typing import List
 import json
 import argparse
 import logging
@@ -126,7 +125,6 @@ def main() -> None:
                 sys.exit(1)
 
             with open(args.pool_file, "r+", encoding="utf-8") as f:
-                poolfile_cts = json.load(f)
                 f.seek(0)
                 json.dump(
                     {
