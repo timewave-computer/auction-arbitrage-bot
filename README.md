@@ -32,7 +32,7 @@ The auction arbitrage bot can be run with only one required flag: `wallet_addres
 * `-p` (`--poll_interval`): Specifies how frequently the arbitrage strategy should be run (in seconds). The default value is `120`.
 * `-d` (`--discovery_interval`): Specifies how frequently new arbitrage routes should be discovered (in seconds). The default value is `600`.
 * `-m` (`--max_hops`): Specifies the maximum number of "hops" in a single arbitrage trade. The default value is `3`. Note that increasing this value increases the time for the discovery algorithm to run.
-* `n` (`--num_routes_considered`): Specifies the number of routes to discover. The default value is `30`. Note that increasing this value increases the time for the discovery algorithm to run.
+* `-n` (`--num_routes_considered`): Specifies the number of routes to discover. The default value is `30`. Note that increasing this value increases the time for the discovery algorithm to run.
 * `-b` (`--base_denom`): Specifies the denom in which profits are denominated. The default value is the Neutron Noble USDC denom (`ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81`)
 * `-pm` (`--profit_margin`): Specifies the quantity of the base denom that must be obtained from an arbitrage opportunity to consider it. The default value is `10`.
 * `-w` (`--wallet_address`): Specifies the address of the wallet from which funds should be used to execute trades. This flag is **required**.
