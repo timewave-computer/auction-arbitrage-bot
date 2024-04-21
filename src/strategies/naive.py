@@ -32,6 +32,57 @@ class State:
     last_discovered: Optional[datetime]
     routes: Optional[List[List[Union[PoolProvider, AuctionProvider]]]]
 
+    def __load_poolfile(self, ctx: Ctx, endpoints: list[str]) -> None:
+        """
+        Loads routes from the poolfile provided in the --pool_file flag.
+        """
+
+        with open(ctx.cli_args["pool_file"], "r", encoding="utf-8") as f:
+            poolfile_cts = json.load(f)
+
+            def poolfile_ent_to_leg(
+                ent: dict[str, Any]
+            ) -> Union[PoolProvider, AuctionProvider]:
+                if "osmosis" in ent:
+                    return OsmosisPoolProvider(
+                        endpoints,
+                        ent["osmosis"]["pool_id"],
+                        ent["osmosis"]["asset_a"],
+                        ent["osmosis"]["asset_b"],
+                    )
+
+                if "neutron_astroport" in ent:
+                    return NeutronAstroportPoolProvider(
+                        ContractInfo(
+                            deployments()["pools"]["astroport"]["neutron"],
+                            ctx.clients,
+                            ent["neutron_astroport"]["address"],
+                            "pair",
+                        ),
+                        asset_info_to_token(ent["neutron_astroport"]["asset_a"]),
+                        asset_info_to_token(ent["neutron_astroport"]["asset_b"]),
+                    )
+
+                if "auction" in ent:
+                    return AuctionProvider(
+                        ContractInfo(
+                            deployments()["auctions"]["neutron"],
+                            ctx.clients,
+                            ent["auction"]["address"],
+                            "auction",
+                        ),
+                        ent["auction"]["asset_a"],
+                        ent["auction"]["asset_b"],
+                    )
+
+                raise ValueError("Invalid route leg type.")
+
+            if "routes" in poolfile_cts:
+                self.routes = [
+                    [poolfile_ent_to_leg(ent) for ent in route]
+                    for route in poolfile_cts["routes"]
+                ]
+
     def poll(
         self,
         ctx: Ctx,
@@ -59,51 +110,7 @@ class State:
 
         # Check for a poolfile to specify routes
         if ctx.cli_args["pool_file"] is not None:
-            with open(ctx.cli_args["pool_file"], "r", encoding="utf-8") as f:
-                poolfile_cts = json.load(f)
-
-                def poolfile_ent_to_leg(
-                    ent: dict[str, Any]
-                ) -> Union[PoolProvider, AuctionProvider]:
-                    if "osmosis" in ent:
-                        return OsmosisPoolProvider(
-                            endpoints,
-                            ent["osmosis"]["pool_id"],
-                            ent["osmosis"]["asset_a"],
-                            ent["osmosis"]["asset_b"],
-                        )
-
-                    if "neutron_astroport" in ent:
-                        return NeutronAstroportPoolProvider(
-                            ContractInfo(
-                                deployments()["pools"]["astroport"]["neutron"],
-                                ctx.clients,
-                                ent["neutron_astroport"]["address"],
-                                "pair",
-                            ),
-                            asset_info_to_token(ent["neutron_astroport"]["asset_a"]),
-                            asset_info_to_token(ent["neutron_astroport"]["asset_b"]),
-                        )
-
-                    if "auction" in ent:
-                        return AuctionProvider(
-                            ContractInfo(
-                                deployments()["auctions"]["neutron"],
-                                ctx.clients,
-                                ent["auction"]["address"],
-                                "auction",
-                            ),
-                            ent["auction"]["asset_a"],
-                            ent["auction"]["asset_b"],
-                        )
-
-                    raise ValueError("Invalid route leg type.")
-
-                if "routes" in poolfile_cts:
-                    self.routes = [
-                        [poolfile_ent_to_leg(ent) for ent in route]
-                        for route in poolfile_cts["routes"]
-                    ]
+            self.__load_poolfile(ctx, endpoints)
 
         # Store all built routes
         vertices = sum(
