@@ -2,13 +2,15 @@
 Implements a command-line interface for running arbitrage strategies.
 """
 
+import json
 import argparse
 import logging
 import sys
+from os import path
 import schedule
 from cosmpy.aerial.client import LedgerClient  # type: ignore
 from src.scheduler import Scheduler, Ctx
-from src.util import deployments, NEUTRON_NETWORK_CONFIG
+from src.util import deployments, NEUTRON_NETWORK_CONFIG, custom_neutron_network_config
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
 from src.strategies.naive import strategy
@@ -28,6 +30,7 @@ def main() -> None:
         description="""Identifies and executes arbitrage
             opportunities between Neutron and Osmosis via Astroport and Valence.""",
     )
+    parser.add_argument("-f", "--pool_file", default=None)
     parser.add_argument("-p", "--poll_interval", default=120)
     parser.add_argument("-d", "--discovery_interval", default=600)
     parser.add_argument("-m", "--max_hops", default=3)
@@ -46,14 +49,42 @@ def main() -> None:
         "-w",
         "--wallet_address",
     )
+    parser.add_argument("-c", "--net_config")
+    parser.add_argument("cmd", nargs="?", default=None)
 
     args = parser.parse_args()
+
+    # If the user specified a poolfile, create the poolfile if it is empty
+    if args.pool_file is not None and not path.isfile(args.pool_file):
+        logger.info("Creating pool file")
+
+        with open(args.pool_file, "w+", encoding="utf-8") as f:
+            json.dump(
+                {},
+                f,
+            )
+
+    # The user may want to use custom RPC providers
+    endpoints: dict[str, list[str]] = {"neutron": [], "osmosis": []}
+
+    if args.net_config is not None:
+        logger.info("Applying net config")
+
+        with open(args.net_config, "r", encoding="utf-8") as f:
+            endpoints = json.load(f)
 
     logger.info("Building pool catalogue")
 
     ctx = Ctx(
-        LedgerClient(NEUTRON_NETWORK_CONFIG),
+        [
+            LedgerClient(NEUTRON_NETWORK_CONFIG),
+            *[
+                custom_neutron_network_config(endpoint)
+                for endpoint in endpoints["neutron"]
+            ],
+        ],
         {
+            "pool_file": args.pool_file,
             "poll_interval": int(args.poll_interval),
             "discovery_interval": int(args.discovery_interval),
             "max_hops": int(args.max_hops),
@@ -61,17 +92,52 @@ def main() -> None:
             "base_denom": args.base_denom,
             "profit_margin": int(args.profit_margin),
             "wallet_address": args.wallet_address,
+            "cmd": args.cmd,
+            "net_config": args.net_config,
         },
         None,
+        False,
     )
     sched = Scheduler(ctx, strategy)
 
     # Register Osmosis and Astroport providers
-    osmosis = OsmosisPoolDirectory()
-    astro = NeutronAstroportPoolDirectory(deployments())
+    osmosis = OsmosisPoolDirectory(
+        poolfile_path=args.pool_file, endpoints=endpoints["osmosis"]
+    )
+    astro = NeutronAstroportPoolDirectory(
+        deployments(),
+        poolfile_path=args.pool_file,
+        network_configs=[
+            custom_neutron_network_config(endpoint) for endpoint in endpoints["neutron"]
+        ],
+    )
 
     osmo_pools = osmosis.pools()
     astro_pools = astro.pools()
+
+    # Save pools to the specified file if the user wants to dump pools
+    if args.cmd is not None:
+        if args.cmd == "dump":
+            # The user wants to dump to a nonexistent file
+            if args.pool_file is None:
+                logger.error("Dump command provided but no poolfile specified.")
+
+                sys.exit(1)
+
+            with open(args.pool_file, "r+", encoding="utf-8") as f:
+                f.seek(0)
+                json.dump(
+                    {
+                        "pools": {
+                            "osmosis": OsmosisPoolDirectory.dump_pools(osmo_pools),
+                            "neutron_astroport": NeutronAstroportPoolDirectory.dump_pools(
+                                astro_pools
+                            ),
+                        },
+                        "auctions": sched.auction_manager.dump_auctions(sched.auctions),
+                    },
+                    f,
+                )
 
     for osmo_base in osmo_pools.values():
         for osmo_pool in osmo_base.values():
@@ -93,7 +159,7 @@ def main() -> None:
     schedule.every(args.poll_interval).seconds.do(sched.poll)
     sched.poll()
 
-    while True:
+    while not sched.ctx.terminated:
         schedule.run_pending()
 
 

@@ -6,10 +6,15 @@ Astroport pools.
 from typing import Any, cast, Optional, List
 from dataclasses import dataclass
 from cosmpy.aerial.contract import LedgerContract  # type: ignore
-from cosmpy.aerial.client import LedgerClient  # type: ignore
+from cosmpy.aerial.client import LedgerClient, NetworkConfig  # type: ignore
 from grpc._channel import _InactiveRpcError  # type: ignore
-from src.contracts.pool.provider import PoolProvider
-from src.util import NEUTRON_NETWORK_CONFIG, WithContract, ContractInfo
+from src.contracts.pool.provider import PoolProvider, cached_pools
+from src.util import (
+    NEUTRON_NETWORK_CONFIG,
+    WithContract,
+    ContractInfo,
+    try_query_multiple,
+)
 
 
 @dataclass
@@ -84,7 +89,8 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         self, asset_a: Token | NativeToken, asset_b: Token | NativeToken, amount: int
     ) -> int:
         try:
-            simulated_pricing_info = self.contract.query(
+            simulated_pricing_info = try_query_multiple(
+                self.contracts,
                 {
                     "simulation": {
                         "offer_asset": {
@@ -93,8 +99,11 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
                         },
                         "ask_asset_info": token_to_asset_info(asset_b),
                     }
-                }
+                },
             )
+
+            if not simulated_pricing_info:
+                return 0
 
             return int(simulated_pricing_info["return_amount"])
         except _InactiveRpcError as e:
@@ -116,6 +125,17 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
     def asset_b(self) -> str:
         return token_to_addr(self.asset_b_denom)
 
+    def dump(self) -> dict[str, Any]:
+        """
+        Gets a JSON representation of the pool.
+        """
+
+        return {
+            "asset_a": token_to_asset_info(self.asset_a_denom),
+            "asset_b": token_to_asset_info(self.asset_b_denom),
+            "address": self.contract_info.address,
+        }
+
     def __hash__(self) -> int:
         return hash(self.contract_info.address)
 
@@ -127,19 +147,78 @@ class NeutronAstroportPoolDirectory:
     - NeutronAstroportPoolProviders for each pair
     """
 
-    def __init__(self, deployments: dict[str, Any]):
-        self.client = LedgerClient(NEUTRON_NETWORK_CONFIG)
+    cached_pools: Optional[list[dict[str, Any]]]
+
+    def __init__(
+        self,
+        deployments: dict[str, Any],
+        poolfile_path: Optional[str] = None,
+        network_configs: Optional[list[NetworkConfig]] = None,
+    ):
         self.deployment_info = deployments["pools"]["astroport"]["neutron"]
+        self.clients = [
+            LedgerClient(NEUTRON_NETWORK_CONFIG),
+            *(network_configs if network_configs else []),
+        ]
+        self.cached_pools = cached_pools(poolfile_path, "neutron_astroport")
 
         deployment_info = self.deployment_info["directory"]
-        self.directory_contract = LedgerContract(
-            deployment_info["src"], self.client, address=deployment_info["address"]
-        )
+        self.directory_contract = [
+            LedgerContract(
+                deployment_info["src"], client, address=deployment_info["address"]
+            )
+            for client in self.clients
+        ]
+
+    def __pools_cached(self) -> dict[str, dict[str, NeutronAstroportPoolProvider]]:
+        """
+        Reads the pools in the AstroportPoolProvider from the contents of the pool file.
+        """
+
+        if self.cached_pools is None:
+            return {}
+
+        pools: dict[str, dict[str, NeutronAstroportPoolProvider]] = {}
+
+        for poolfile_entry in self.cached_pools:
+            asset_a, asset_b = (
+                asset_info_to_token(poolfile_entry["asset_a"]),
+                asset_info_to_token(poolfile_entry["asset_b"]),
+            )
+            asset_a_addr, asset_b_addr = (
+                token_to_addr(asset_a),
+                token_to_addr(asset_b),
+            )
+            provider = NeutronAstroportPoolProvider(
+                ContractInfo(
+                    self.deployment_info,
+                    self.clients,
+                    poolfile_entry["address"],
+                    "pair",
+                ),
+                asset_a,
+                asset_b,
+            )
+
+            # Register the pool
+            if asset_a_addr not in pools:
+                pools[asset_a_addr] = {}
+
+            if asset_b_addr not in pools:
+                pools[asset_b_addr] = {}
+
+            pools[asset_a_addr][asset_b_addr] = provider
+            pools[asset_b_addr][asset_a_addr] = provider
+
+        return pools
 
     def pools(self) -> dict[str, dict[str, NeutronAstroportPoolProvider]]:
         """
         Gets an NeutronAstroportPoolProvider for every pair on Astroport.
         """
+
+        if self.cached_pools is not None:
+            return self.__pools_cached()
 
         # Load all pools in 10-pool batches
         pools = []
@@ -151,14 +230,20 @@ class NeutronAstroportPoolDirectory:
             if prev_pool_page is not None:
                 start_after = prev_pool_page[-1]["asset_infos"]
 
-            next_pools = self.directory_contract.query(
+            maybe_next_pools = try_query_multiple(
+                self.directory_contract,
                 {
                     "pairs": {
                         "start_after": start_after,
                         "limit": 10,
                     }
-                }
-            )["pairs"]
+                },
+            )
+
+            if not maybe_next_pools:
+                break
+
+            next_pools = maybe_next_pools["pairs"]
 
             pools.extend(next_pools)
             prev_pool_page = next_pools
@@ -177,7 +262,7 @@ class NeutronAstroportPoolDirectory:
 
             provider = NeutronAstroportPoolProvider(
                 ContractInfo(
-                    self.deployment_info, self.client, pool["contract_addr"], "pair"
+                    self.deployment_info, self.clients, pool["contract_addr"], "pair"
                 ),
                 pair[0],
                 pair[1],
@@ -195,9 +280,25 @@ class NeutronAstroportPoolDirectory:
 
         return asset_pools
 
-    def contract(self) -> LedgerContract:
+    def contract(self) -> list[LedgerContract]:
         """
         Gets the contract backing the pool provider.
         """
 
         return self.directory_contract
+
+    @staticmethod
+    def dump_pools(
+        pools: dict[str, dict[str, NeutronAstroportPoolProvider]]
+    ) -> List[dict[str, Any]]:
+        """
+        Constructs a JSON representation of the pools in the AstroportPoolProvider.
+        """
+
+        return list(
+            {
+                pool.contract_info.address: pool.dump()
+                for base in pools.values()
+                for pool in base.values()
+            }.values()
+        )

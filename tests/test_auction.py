@@ -2,9 +2,7 @@
 Tests that the auction directory and providers work as expected.
 """
 
-from src.contracts.auction import (
-    AuctionDirectory,
-)
+from src.contracts.auction import AuctionDirectory, AuctionProvider
 from src.util import deployments
 
 
@@ -32,3 +30,19 @@ def test_auction_provider() -> None:
 
             price = auction.exchange_rate()
             assert price >= 0
+
+
+def test_auctions_poolfile() -> None:
+    """
+    Tests that auctions can be loaded from a poolfile.
+    """
+
+    auctions = AuctionDirectory(
+        deployments(), poolfile_path="tests/test_poolfile.json"
+    ).auctions()
+
+    assert len([pair for base in auctions.values() for pair in base.values()]) == 2
+
+    for base in auctions.values():
+        for pool in base.values():
+            assert isinstance(pool, AuctionProvider)
