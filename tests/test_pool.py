@@ -164,7 +164,7 @@ def test_osmosis_dump() -> None:
             dump = pool.dump()
 
             keys = ["asset_a", "asset_b", "pool_id"]
-            assert all([k in dump for k in keys])
+            assert all((k in dump for k in keys))
 
 
 def test_astroport_dump() -> None:
@@ -187,4 +187,4 @@ def test_astroport_dump() -> None:
             dump = pool.dump()
 
             keys = ["asset_a", "asset_b", "address"]
-            assert all([k in dump for k in keys])
+            assert all((k in dump for k in keys))
