@@ -9,6 +9,7 @@ import sys
 from os import path
 import schedule
 from cosmpy.aerial.client import LedgerClient  # type: ignore
+from cosmpy.aerial.wallet import LocalWallet  # type: ignore
 from src.scheduler import Scheduler, Ctx
 from src.util import deployments, NEUTRON_NETWORK_CONFIG, custom_neutron_network_config
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
@@ -47,7 +48,7 @@ def main() -> None:
     )
     parser.add_argument(
         "-w",
-        "--wallet_address",
+        "--wallet_mnemonic",
     )
     parser.add_argument("-c", "--net_config")
     parser.add_argument("cmd", nargs="?", default=None)
@@ -83,6 +84,7 @@ def main() -> None:
                 for endpoint in endpoints["neutron"]
             ],
         ],
+        LocalWallet.from_mnemonic(args.wallet_mnemonic),
         {
             "pool_file": args.pool_file,
             "poll_interval": int(args.poll_interval),
@@ -91,7 +93,7 @@ def main() -> None:
             "num_routes_considered": int(args.num_routes_considered),
             "base_denom": args.base_denom,
             "profit_margin": int(args.profit_margin),
-            "wallet_address": args.wallet_address,
+            "wallet_mnemonic": args.wallet_mnemonic,
             "cmd": args.cmd,
             "net_config": args.net_config,
         },

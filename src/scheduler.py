@@ -5,6 +5,7 @@ Implements a strategy runner with an arbitrary provider set in an event-loop sty
 from typing import Callable, List, Any, Self, Optional
 from dataclasses import dataclass
 from cosmpy.aerial.client import LedgerClient  # type: ignore
+from cosmpy.aerial.wallet import LocalWallet  # type: ignore
 from src.contracts.auction import AuctionDirectory, AuctionProvider
 from src.contracts.pool.provider import PoolProvider
 from src.util import deployments
@@ -19,6 +20,7 @@ class Ctx:
     """
 
     clients: list[LedgerClient]
+    wallet: LocalWallet
     cli_args: dict[str, Any]
     state: Optional[Any]
     terminated: bool

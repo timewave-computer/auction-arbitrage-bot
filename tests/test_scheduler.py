@@ -4,12 +4,18 @@ Tests that the scheduler works as expected.
 
 from typing import List
 from cosmpy.aerial.client import LedgerClient  # type: ignore
+from cosmpy.aerial.wallet import LocalWallet  # type: ignore
 from src.scheduler import Scheduler, Ctx
 from src.util import deployments, NEUTRON_NETWORK_CONFIG
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
 from src.contracts.pool.provider import PoolProvider
 from src.contracts.auction import AuctionProvider
+
+# Note: this account has no funds and is not used for anything
+TEST_WALLET_MNEMONIC = (
+    "update armed valve web gate shiver birth exclude curtain cotton juice property"
+)
 
 
 def strategy(
@@ -31,6 +37,7 @@ def ctx() -> Ctx:
 
     return Ctx(
         LedgerClient(NEUTRON_NETWORK_CONFIG),
+        LocalWallet.from_mnemonic(TEST_WALLET_MNEMONIC),
         {
             "pool_file": None,
             "poll_interval": 120,
@@ -39,7 +46,7 @@ def ctx() -> Ctx:
             "num_routes_considered": 20,
             "base_denom": "ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81",
             "profit_margin": 10,
-            "wallet_address": "neutron1cm9ckhh8839tpwvpqqqsdvvra32z5p8w97trje",
+            "wallet_mnemonic": TEST_WALLET_MNEMONIC,
             "cmd": None,
         },
         None,

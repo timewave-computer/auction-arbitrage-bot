@@ -26,7 +26,7 @@ pip install -r requirements.txt
 
 ## Usage
 
-The auction arbitrage bot can be run with only one required flag: `wallet_address`. This flag specifies where to look for initial funds for arbitrage. All available flags are:
+The auction arbitrage bot can be run with only one required flag: `wallet_mnemonic`. This flag specifies where to look for initial funds for arbitrage. All available flags are:
 
 * `-f` (`--pool_file`): Specifies which pools to use for the Neutron Astroport and Osmosis pool providers, and which routes to use for the Scheduler. Can also be used to cache requests required to obtain pool information.
 * `-p` (`--poll_interval`): Specifies how frequently the arbitrage strategy should be run (in seconds). The default value is `120`.
@@ -35,13 +35,13 @@ The auction arbitrage bot can be run with only one required flag: `wallet_addres
 * `-n` (`--num_routes_considered`): Specifies the number of routes to discover. The default value is `30`. Note that increasing this value increases the time for the discovery algorithm to run.
 * `-b` (`--base_denom`): Specifies the denom in which profits are denominated. The default value is the Neutron Noble USDC denom (`ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81`)
 * `-pm` (`--profit_margin`): Specifies the quantity of the base denom that must be obtained from an arbitrage opportunity to consider it. The default value is `10`.
-* `-w` (`--wallet_address`): Specifies the address of the wallet from which funds should be used to execute trades. This flag is **required**.
+* `-w` (`--wallet_mnemonic`): Specifies the mnemonic of the wallet from which funds should be used to execute trades. This flag is **required**.
 * `-c` (`--net_config`): Specifies a path to a file containing RPC URL's to use for different networks.
 
 The bot may be run by executing:
 
 ```sh
-python main.py --wallet_address <WALLET_ADDRESS>
+python main.py --wallet_mnemonic <WALLET_MNEMONIC>
 ```
 
 ### Commands
@@ -49,7 +49,7 @@ python main.py --wallet_address <WALLET_ADDRESS>
 The bot may also be supplied a command (an argument with no hyphens). The available commands are as follows:
 
 * `dump`: Explores all known pools with the given `--max_hops` and `--limit`, and writes discovered routes to a file, exiting immediately after. Results will be written in JSON format, following conventions outlined below.
-  * Sample execution: `python main.py --wallet_address <WALLET_ADDRESS> dump`
+  * Sample execution: `python main.py --wallet_mnemonic <WALLET_MNEMONIC> dump`
 
 ### Custom RPC's
 

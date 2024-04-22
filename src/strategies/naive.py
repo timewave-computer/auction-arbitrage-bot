@@ -91,7 +91,7 @@ class State:
     ) -> Self:
         """
         Polls the state for a potential update, leaving the state
-        along, or producing a new state.
+        alone, or producing a new state.
         """
 
         # No need to update the state
@@ -201,7 +201,7 @@ def strategy(
         balance_resp = try_multiple_clients(
             ctx.clients,
             lambda client: client.query_bank_balance(
-                ctx.cli_args["wallet_address"], ctx.cli_args["base_denom"]
+                ctx.wallet.address(), ctx.cli_args["base_denom"]
             ),
         )
 
@@ -245,6 +245,11 @@ def strategy(
                 )
             ),
         )
+
+    logger.info(
+        "Executing %d arbitrage opportunities",
+        len(profitable_routes),
+    )
 
     return ctx.with_state(state)
 
