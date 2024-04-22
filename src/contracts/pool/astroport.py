@@ -6,6 +6,8 @@ Astroport pools.
 from typing import Any, cast, Optional, List
 from dataclasses import dataclass
 from cosmpy.aerial.contract import LedgerContract  # type: ignore
+from cosmpy.aerial.wallet import LocalWallet  # type: ignore
+from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
 from cosmpy.aerial.client import LedgerClient, NetworkConfig  # type: ignore
 from grpc._channel import _InactiveRpcError  # type: ignore
 from src.contracts.pool.provider import PoolProvider, cached_pools
@@ -14,6 +16,7 @@ from src.util import (
     WithContract,
     ContractInfo,
     try_query_multiple,
+    try_exec_multiple,
 )
 
 
@@ -113,7 +116,53 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
 
             raise e
 
-    def simulate_swap_asset_a(self, amount: int) -> int:
+    def __swap(
+        self,
+        wallet: LocalWallet,
+        assets: tuple[Token | NativeToken, Token | NativeToken],
+        amount_price_spread: tuple[int, int, int],
+    ) -> SubmittedTx:
+        asset_a, asset_b = assets
+        amount, price, max_spread = amount_price_spread
+
+        return try_exec_multiple(
+            self.contracts,
+            wallet,
+            {
+                "swap": {
+                    "offer_asset": {
+                        "info": token_to_asset_info(asset_a),
+                        "amount": str(amount),
+                    },
+                    "ask_asset_info": token_to_asset_info(asset_b),
+                    "belief_price": str(price),
+                    "max_spread": str(max_spread),
+                }
+            },
+        )
+
+    def swap_asset_a(
+        self, wallet: LocalWallet, amount: int, price: int, max_spread: int
+    ) -> SubmittedTx:
+        return self.__swap(
+            wallet,
+            (self.asset_a_denom, self.asset_b_denom),
+            (amount, price, max_spread),
+        )
+
+    def swap_asset_b(
+        self, wallet: LocalWallet, amount: int, price: int, max_spread: int
+    ) -> SubmittedTx:
+        return self.__swap(
+            wallet,
+            (self.asset_b_denom, self.asset_a_denom),
+            (amount, price, max_spread),
+        )
+
+    def simulate_swap_asset_a(
+        self,
+        amount: int,
+    ) -> int:
         return self.__exchange_rate(self.asset_a_denom, self.asset_b_denom, amount)
 
     def simulate_swap_asset_b(self, amount: int) -> int:

@@ -10,6 +10,9 @@ from dataclasses import dataclass
 import urllib3
 from cosmpy.aerial.client import NetworkConfig, LedgerClient  # type: ignore
 from cosmpy.aerial.contract import LedgerContract  # type: ignore
+from cosmpy.aerial.wallet import LocalWallet  # type: ignore
+from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
+
 
 NEUTRON_NETWORK_CONFIG = NetworkConfig(
     chain_id="neutron-1",
@@ -85,7 +88,7 @@ def try_multiple_clients(
 
 def try_query_multiple(providers: list[LedgerContract], query: Any) -> Optional[Any]:
     """
-    Attempts to query the first LedgerConract in the list, falling back to
+    Attempts to query the first LedgerContract in the list, falling back to
     further providers.
     """
 
@@ -95,6 +98,37 @@ def try_query_multiple(providers: list[LedgerContract], query: Any) -> Optional[
         except RuntimeError:
             continue
         except ValueError:
+            continue
+
+    return None
+
+
+def try_exec_multiple(
+    providers: list[LedgerContract],
+    wallet: LocalWallet,
+    msg: Any,
+    gas_limit: Optional[int] = None,
+    funds: Optional[str] = None,
+) -> SubmittedTx:
+    """
+    Attempts to execute a message via the first LedgerContract in the list, falling
+    back to further providers.
+
+    Throws an exception if no provider can execute the message.
+    """
+
+    for i, prov in enumerate(providers):
+        try:
+            return prov.execute(msg, wallet, gas_limit, funds)
+        except RuntimeError as e:
+            if i == len(providers) - 1:
+                raise e
+
+            continue
+        except ValueError as e:
+            if i == len(providers) - 1:
+                raise e
+
             continue
 
     return None
