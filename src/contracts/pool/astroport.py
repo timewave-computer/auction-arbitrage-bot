@@ -1,3 +1,4 @@
+# pylint: disable=duplicate-code
 """
 Implemens contract wrappers for Astroport, providing pricing information for
 Astroport pools.
@@ -16,7 +17,7 @@ from src.util import (
     WithContract,
     ContractInfo,
     try_query_multiple,
-    try_exec_multiple,
+    try_exec_multiple_fatal,
 )
 
 
@@ -125,7 +126,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         asset_a, asset_b = assets
         amount, price, max_spread = amount_price_spread
 
-        return try_exec_multiple(
+        return try_exec_multiple_fatal(
             self.contracts,
             wallet,
             {

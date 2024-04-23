@@ -66,7 +66,10 @@ def main() -> None:
             )
 
     # The user may want to use custom RPC providers
-    endpoints: dict[str, list[str]] = {"neutron": [], "osmosis": []}
+    endpoints: dict[str, list[str]] = {
+        "neutron": [],
+        "osmosis": {"http": [], "grpc": []},
+    }
 
     if args.net_config is not None:
         logger.info("Applying net config")
@@ -104,7 +107,9 @@ def main() -> None:
 
     # Register Osmosis and Astroport providers
     osmosis = OsmosisPoolDirectory(
-        poolfile_path=args.pool_file, endpoints=endpoints["osmosis"]
+        poolfile_path=args.pool_file,
+        endpoints=endpoints["osmosis"]["http"],
+        grpc_endpoints=endpoints["osmosis"]["grpc"],
     )
     astro = NeutronAstroportPoolDirectory(
         deployments(),

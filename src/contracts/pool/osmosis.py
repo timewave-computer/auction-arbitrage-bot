@@ -4,8 +4,19 @@ Implements a pool provider for osmosis.
 
 from typing import Any, Optional, List
 import urllib3
-from src.util import try_multiple_rest_endpoints
+from cosmpy.aerial.wallet import LocalWallet  # type: ignore
+from cosmpy.aerial.tx import Transaction  # type: ignore
+from cosmpy.aerial.client import NetworkConfig, LedgerClient  # type: ignore
+from cosmpy.aerial.client.utils import prepare_and_broadcast_basic_transaction  # type: ignore
+from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
+from osmosis_protobuf.osmosis.poolmanager.v1beta1 import tx_pb2  # type: ignore
+from osmosis_protobuf.osmosis.poolmanager.v1beta1 import swap_route_pb2
+from osmosis_protobuf.cosmos.base.v1beta1 import coin_pb2  # type: ignore
 from src.contracts.pool.provider import PoolProvider, cached_pools
+from src.util import (
+    try_multiple_rest_endpoints,
+    try_multiple_clients_fatal,
+)
 
 
 class OsmosisPoolProvider(PoolProvider):
@@ -13,14 +24,35 @@ class OsmosisPoolProvider(PoolProvider):
     Provides pricing and asset information for an arbitrary pair on osmosis.
     """
 
-    def __init__(self, endpoints: list[str], pool_id: int, asset_a: str, asset_b: str):
+    def __init__(
+        self,
+        endpoints: dict[str, list[str]],
+        address: str,
+        pool_id: int,
+        assets: tuple[str, str],
+    ):
         """
         Initializes the Osmosis pool provider.
         """
 
-        self.client = urllib3.PoolManager()
+        asset_a, asset_b = assets
 
-        self.endpoints = endpoints
+        self.client = urllib3.PoolManager()
+        self.ledgers = [
+            LedgerClient(
+                NetworkConfig(
+                    chain_id="osmosis-1",
+                    url=f"grpc+{url}",
+                    fee_minimum_gas_price=0.0025,
+                    fee_denomination="uosmo",
+                    staking_denomination="uosmo",
+                )
+            )
+            for url in endpoints["grpc"]
+        ]
+
+        self.endpoints = endpoints["http"]
+        self.address = address
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b
         self.pool_id = pool_id
@@ -40,11 +72,61 @@ class OsmosisPoolProvider(PoolProvider):
 
         return int(res["token_out_amount"])
 
+    def __swap(
+        self,
+        wallet: LocalWallet,
+        assets: tuple[str, str],
+        amount_price_spread: tuple[int, int, int],
+    ) -> SubmittedTx:
+        asset_a, asset_b = assets
+        amount, price, max_spread = amount_price_spread
+
+        # The minimum amount of tokens we want to receive
+        min_token_out_amount = amount * price - max_spread
+
+        # Perform the swap using the Osmosis pool manager
+        tx = Transaction(  # pylint: disable=too-many-function-args
+            tx_pb2.MsgSwapExactAmountIn(  # pylint: disable=maybe-no-member
+                sender=wallet.address(),
+                routes=[
+                    swap_route_pb2.SwapAmountInRoute(  # pylint: disable=maybe-no-member
+                        pool_id=self.pool_id, token_out_denom=asset_b
+                    )
+                ],
+                token_in=coin_pb2.Coin(  # pylint: disable=maybe-no-member
+                    denom=asset_a, amount=amount
+                ),
+                token_out_min_amount=min_token_out_amount,
+            )
+        )
+        return try_multiple_clients_fatal(
+            self.ledgers,
+            lambda client: prepare_and_broadcast_basic_transaction(client, tx, wallet),
+        )
+
     def simulate_swap_asset_a(self, amount: int) -> int:
         return self.__exchange_rate(self.asset_a_denom, self.asset_b_denom, amount)
 
     def simulate_swap_asset_b(self, amount: int) -> int:
         return self.__exchange_rate(self.asset_b_denom, self.asset_a_denom, amount)
+
+    def swap_asset_a(
+        self, wallet: LocalWallet, amount: int, price: int, max_spread: int
+    ) -> SubmittedTx:  # pylint: disable=duplicate-code
+        return self.__swap(
+            wallet,
+            (self.asset_a_denom, self.asset_b_denom),
+            (amount, price, max_spread),
+        )
+
+    def swap_asset_b(
+        self, wallet: LocalWallet, amount: int, price: int, max_spread: int
+    ) -> SubmittedTx:
+        return self.__swap(
+            wallet,
+            (self.asset_b_denom, self.asset_a_denom),
+            (amount, price, max_spread),
+        )
 
     def asset_a(self) -> str:
         return self.asset_a_denom
@@ -74,12 +156,21 @@ class OsmosisPoolDirectory:
     cached_pools: Optional[list[dict[str, Any]]]
 
     def __init__(
-        self, poolfile_path: Optional[str] = None, endpoints: Optional[list[str]] = None
+        self,
+        poolfile_path: Optional[str] = None,
+        endpoints: Optional[dict[str, list[str]]] = None,
     ) -> None:
         self.cached_pools = cached_pools(poolfile_path, "osmosis")
 
         self.client = urllib3.PoolManager()
-        self.endpoints = ["https://lcd.osmosis.zone", *(endpoints if endpoints else [])]
+        self.endpoints = (
+            endpoints
+            if endpoints
+            else {
+                "http": ["https://lcd.osmosis.zone"],
+                "grpc": ["osmosis-grpc.publicnode.com:443"],
+            }
+        )
 
     def __pools_cached(self) -> dict[str, dict[str, OsmosisPoolProvider]]:
         """
@@ -94,7 +185,10 @@ class OsmosisPoolDirectory:
         for poolfile_entry in self.cached_pools:
             asset_a, asset_b = (poolfile_entry["asset_a"], poolfile_entry["asset_b"])
             provider = OsmosisPoolProvider(
-                self.endpoints, poolfile_entry["pool_id"], asset_a, asset_b
+                self.endpoints,
+                poolfile_entry["pool_id"],
+                asset_a,
+                asset_b,
             )
 
             # Register the pool
@@ -130,7 +224,7 @@ class OsmosisPoolDirectory:
             return []
 
         pools_res = try_multiple_rest_endpoints(
-            self.endpoints, "/osmosis/poolmanager/v1beta1/all-pools"
+            self.endpoints["http"], "/osmosis/poolmanager/v1beta1/all-pools"
         )
 
         if not pools_res:
@@ -147,7 +241,12 @@ class OsmosisPoolDirectory:
             if len(denom_addrs) != 2:
                 continue
 
-            provider = OsmosisPoolProvider(self.endpoints, pool_id, *denom_addrs)
+            provider = OsmosisPoolProvider(
+                self.endpoints,
+                pool["address"],
+                pool_id,
+                (denom_addrs[0], denom_addrs[1]),
+            )
 
             # Register the pool
             if denom_addrs[0] not in asset_pools:
@@ -161,7 +260,7 @@ class OsmosisPoolDirectory:
 
         return asset_pools
 
-    def set_endpoints(self, endpoints: list[str]) -> None:
+    def set_endpoints(self, endpoints: dict[str, list[str]]) -> None:
         """
         Changes the endpoint used by the wrapper to communicate with Osmosis.
         """

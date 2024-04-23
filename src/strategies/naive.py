@@ -32,7 +32,11 @@ class State:
     last_discovered: Optional[datetime]
     routes: Optional[List[List[Union[PoolProvider, AuctionProvider]]]]
 
-    def __load_poolfile(self, ctx: Ctx, endpoints: list[str]) -> None:
+    def __load_poolfile(
+        self,
+        ctx: Ctx,
+        endpoints: dict[str, list[str]],
+    ) -> None:
         """
         Loads routes from the poolfile provided in the --pool_file flag.
         """
@@ -102,11 +106,17 @@ class State:
         ):
             return self
 
-        endpoints = ["https://lcd.osmosis.zone"]
+        endpoints = {
+            "http": ["https://lcd.osmosis.zone"],
+            "grpc": ["osmosis-grpc.publicnode.com:443"],
+        }
 
         if ctx.cli_args["net_config"] is not None:
             with open(ctx.cli_args["net_config"], "r", encoding="utf-8") as f:
-                endpoints = [*endpoints, json.load(f)["osmosis"]]
+                osmo_netconfig = json.load(f)["osmosis"]
+
+                endpoints["http"] = [*endpoints["http"], *osmo_netconfig["http"]]
+                endpoints["grpc"] = [*endpoints["grpc"], *osmo_netconfig["grpc"]]
 
         # Check for a poolfile to specify routes
         if ctx.cli_args["pool_file"] is not None:

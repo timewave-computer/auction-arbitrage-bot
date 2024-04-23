@@ -8,6 +8,7 @@ from typing import Any, cast, Optional, Callable, TypeVar
 from functools import cached_property
 from dataclasses import dataclass
 import urllib3
+import grpc  # type: ignore
 from cosmpy.aerial.client import NetworkConfig, LedgerClient  # type: ignore
 from cosmpy.aerial.contract import LedgerContract  # type: ignore
 from cosmpy.aerial.wallet import LocalWallet  # type: ignore
@@ -65,6 +66,26 @@ def try_multiple_rest_endpoints(
     return None
 
 
+def try_multiple_grpc_endpoints(
+    endpoints: list[str], method: str, request: Any
+) -> Optional[Any]:
+    """
+    Returns the response from the first queried grpc endpoint that responds successfully.
+    """
+
+    channels = [grpc.insecure_channel(endpoint) for endpoint in endpoints]
+
+    for channel in channels:
+        try:
+            return channel.unary_unary(method).with_call(request)
+        except RuntimeError:
+            continue
+        except ValueError:
+            continue
+
+    return None
+
+
 T = TypeVar("T")
 
 
@@ -86,6 +107,30 @@ def try_multiple_clients(
     return None
 
 
+def try_multiple_clients_fatal(
+    clients: list[LedgerClient], f: Callable[[LedgerClient], T]
+) -> T:
+    """
+    Executes a lambda function on the first available client.
+    """
+
+    for i, client in enumerate(clients):
+        try:
+            return f(client)
+        except RuntimeError as e:
+            if i == len(clients) - 1:
+                raise e
+
+            continue
+        except ValueError as e:
+            if i == len(clients) - 1:
+                raise e
+
+            continue
+
+    assert False
+
+
 def try_query_multiple(providers: list[LedgerContract], query: Any) -> Optional[Any]:
     """
     Attempts to query the first LedgerContract in the list, falling back to
@@ -103,7 +148,7 @@ def try_query_multiple(providers: list[LedgerContract], query: Any) -> Optional[
     return None
 
 
-def try_exec_multiple(
+def try_exec_multiple_fatal(
     providers: list[LedgerContract],
     wallet: LocalWallet,
     msg: Any,
@@ -131,7 +176,7 @@ def try_exec_multiple(
 
             continue
 
-    return None
+    assert False
 
 
 def deployments() -> dict[str, Any]:

@@ -60,9 +60,10 @@ Custom RPC providers may be specified with the `--net_config` flag. This flag sp
   "neutron": [
     "grpc+https://neutron-grpc.publicnode.com:443"
   ],
-  "osmosis": [
-    "https://lcd.osmosis.zone"
-  ]
+  "osmosis": {
+    "http": ["https://lcd.osmosis.zone"],
+	"grpc": ["osmosis-grpc.publicnode.com:443"]
+  }
 }
 ```
 
