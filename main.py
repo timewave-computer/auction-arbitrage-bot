@@ -66,8 +66,8 @@ def main() -> None:
             )
 
     # The user may want to use custom RPC providers
-    endpoints: dict[str, list[str]] = {
-        "neutron": [],
+    endpoints: dict[str, dict[str, list[str]]] = {
+        "neutron": {"http": [], "grpc": []},
         "osmosis": {"http": [], "grpc": []},
     }
 
@@ -84,7 +84,7 @@ def main() -> None:
             LedgerClient(NEUTRON_NETWORK_CONFIG),
             *[
                 custom_neutron_network_config(endpoint)
-                for endpoint in endpoints["neutron"]
+                for endpoint in endpoints["neutron"]["http"]
             ],
         ],
         LocalWallet.from_mnemonic(args.wallet_mnemonic),
@@ -108,8 +108,7 @@ def main() -> None:
     # Register Osmosis and Astroport providers
     osmosis = OsmosisPoolDirectory(
         poolfile_path=args.pool_file,
-        endpoints=endpoints["osmosis"]["http"],
-        grpc_endpoints=endpoints["osmosis"]["grpc"],
+        endpoints=endpoints["osmosis"],
     )
     astro = NeutronAstroportPoolDirectory(
         deployments(),
