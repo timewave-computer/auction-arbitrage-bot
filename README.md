@@ -2,6 +2,14 @@
 
 An extensible arbitrage bot for trading against valence auctions and Astroport and Osmosis.
 
+## Dependencies
+
+This tool requires the following to be installed:
+
+* Python 3.11
+* `protoc`
+* `make`
+
 ## Installation
 
 Installation requires Python 3.11.
@@ -22,6 +30,12 @@ Then, install the required dependencies:
 
 ```sh
 pip install -r requirements.txt
+```
+
+Then, compile cosmos and osmosis protobuf stubs:
+
+```sh
+make proto
 ```
 
 ## Usage

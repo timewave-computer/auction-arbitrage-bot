@@ -9,7 +9,7 @@ from cosmpy.aerial.tx import Transaction  # type: ignore
 from cosmpy.aerial.client import NetworkConfig, LedgerClient  # type: ignore
 from cosmpy.aerial.client.utils import prepare_and_broadcast_basic_transaction  # type: ignore
 from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
-from osmosis_protobuf.osmosis.poolmanager.v1beta1 import tx_pb2  # type: ignore
+from osmosis_protobuf.osmosis.poolmanager.v1beta1 import tx_pb2, swap_route_pb2  # type: ignore
 from osmosis_protobuf.osmosis.poolmanager.v1beta1 import swap_route_pb2
 from osmosis_protobuf.cosmos.base.v1beta1 import coin_pb2  # type: ignore
 from src.contracts.pool.provider import PoolProvider, cached_pools
