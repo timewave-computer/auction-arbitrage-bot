@@ -19,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Run unit tests
-        run: python -m pytest tests
+        run: PYTHONPATH=src:build/gen python -m pytest tests
       - name: Check src mypy
         run: MYPYPATH=src:build/gen mypy src --install-types --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs --strict
       - name: Check tests mypy
