@@ -18,23 +18,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Run unit tests
-        run: PYTHONPATH=src:build/gen python -m pytest tests
-      - name: Check src mypy
-        run: MYPYPATH=src:build/gen mypy src --install-types --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs --strict
-      - name: Check tests mypy
-        run: MYPYPATH=src:build/gen mypy tests --install-types --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs --strict
-      - name: Check main mypy
-        run: MYPYPATH=src:build/gen mypy main.py --install-types --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs --strict
-      - name: Check linter
-        run: ruff check src
-      - name: Check linter tests
-        run: ruff check tests
-      - name: Check linter main
-        run: ruff check main.py
-      - name: Check linter (pylint)
-        run: PYTHONPATH=src:build/gen python -m pylint src
-      - name: PYTHONPATH=src:build/gen Check linter tests (pylint)
-        run: PYTHONPATH=src:build/gen python -m pylint tests
-      - name: Check linter main (pylint)
-        run: PYTHONPATH=src:build/gen python -m pylint main.py
+      - name: Compile protobuf
+        run: make proto
+      - name: Lint
+        run: make lint
+      - name: Run tests
+        run: make test
+        
