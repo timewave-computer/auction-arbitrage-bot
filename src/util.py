@@ -8,7 +8,7 @@ from typing import Any, cast, Optional, Callable, TypeVar
 from functools import cached_property
 from dataclasses import dataclass
 import urllib3
-import grpc  # type: ignore
+import grpc
 from cosmpy.aerial.client import NetworkConfig, LedgerClient  # type: ignore
 from cosmpy.aerial.contract import LedgerContract  # type: ignore
 from cosmpy.aerial.wallet import LocalWallet  # type: ignore
@@ -77,7 +77,7 @@ def try_multiple_grpc_endpoints(
 
     for channel in channels:
         try:
-            return channel.unary_unary(method).with_call(request)
+            return channel.unary_unary(method, None, None).with_call(request)
         except RuntimeError:
             continue
         except ValueError:

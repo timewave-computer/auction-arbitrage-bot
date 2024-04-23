@@ -10,7 +10,7 @@ from cosmpy.aerial.contract import LedgerContract  # type: ignore
 from cosmpy.aerial.wallet import LocalWallet  # type: ignore
 from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
 from cosmpy.aerial.client import LedgerClient, NetworkConfig  # type: ignore
-from grpc._channel import _InactiveRpcError  # type: ignore
+from grpc._channel import _InactiveRpcError
 from src.contracts.pool.provider import PoolProvider, cached_pools
 from src.util import (
     NEUTRON_NETWORK_CONFIG,
@@ -111,8 +111,10 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
 
             return int(simulated_pricing_info["return_amount"])
         except _InactiveRpcError as e:
+            details = e.details()
+
             # The pool has no assets in it
-            if "One of the pools is empty" in e.details():
+            if details is not None and "One of the pools is empty" in details:
                 return 0
 
             raise e
