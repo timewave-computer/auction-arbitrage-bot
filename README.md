@@ -76,7 +76,7 @@ Custom RPC providers may be specified with the `--net_config` flag. This flag sp
   ],
   "osmosis": {
     "http": ["https://lcd.osmosis.zone"],
-	"grpc": ["osmosis-grpc.publicnode.com:443"]
+	"grpc": ["https://osmosis-rpc.publicnode.com:443"]
   }
 }
 ```
@@ -108,8 +108,9 @@ Custom pools and routes may be provided by utilizing a "pool file" via the `--po
     "osmosis": [
       {
 	    "asset_a": "<DENOM>",
-	    "asset_b": "<DENOM>,
-	    "pool_id": 1234
+	    "asset_b": "<DENOM>",
+	    "pool_id": 1234,
+		"address": "<ADDR>"
 	  }
     ]
   },

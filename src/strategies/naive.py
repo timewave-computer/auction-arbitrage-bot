@@ -108,7 +108,7 @@ class State:
 
         endpoints = {
             "http": ["https://lcd.osmosis.zone"],
-            "grpc": ["osmosis-grpc.publicnode.com:443"],
+            "grpc": ["https://osmosis-rpc.publicnode.com:443"],
         }
 
         if ctx.cli_args["net_config"] is not None:

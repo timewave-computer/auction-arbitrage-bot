@@ -4,12 +4,14 @@
             {
               "asset_a": "ibc/27394FB092D2ECCD5612…DA9CA97EA622B25F41E5EB2",
               "asset_b": "uosmo",
-              "pool_id": 1
+              "pool_id": 1,
+              "address": "osmo1mw0ac6rwlp5r8wapwk3…dzw9emkne6c8wjp9q0t3v8t"
             },
             {
-                "asset_a": "uion",
-                "asset_b": "uosmo",
-                "pool_id": 2
+              "asset_a": "uion",
+              "asset_b": "uosmo",
+              "pool_id": 2,
+              "address": "osmo1500hy75krs9e8t50aav…40qwvvn8tcprkk6wszun4a5"
             }
         ],
         "neutron_astroport": [

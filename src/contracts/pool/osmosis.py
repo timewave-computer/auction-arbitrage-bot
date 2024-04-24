@@ -142,6 +142,7 @@ class OsmosisPoolProvider(PoolProvider):
             "asset_a": self.asset_a(),
             "asset_b": self.asset_b(),
             "pool_id": self.pool_id,
+            "address": self.address,
         }
 
 
@@ -167,7 +168,7 @@ class OsmosisPoolDirectory:
             if endpoints
             else {
                 "http": ["https://lcd.osmosis.zone"],
-                "grpc": ["osmosis-grpc.publicnode.com:443"],
+                "grpc": ["https://osmosis-rpc.publicnode.com:443"],
             }
         )
 
@@ -185,9 +186,9 @@ class OsmosisPoolDirectory:
             asset_a, asset_b = (poolfile_entry["asset_a"], poolfile_entry["asset_b"])
             provider = OsmosisPoolProvider(
                 self.endpoints,
+                poolfile_entry["address"],
                 poolfile_entry["pool_id"],
-                asset_a,
-                asset_b,
+                (asset_a, asset_b),
             )
 
             # Register the pool
