@@ -7,7 +7,9 @@ import json
 from decimal import Decimal
 from typing import Any, List, Optional
 from cosmpy.aerial.contract import LedgerContract  # type: ignore
+from cosmpy.aerial.wallet import LocalWallet  # type: ignore
 from cosmpy.aerial.client import LedgerClient, NetworkConfig  # type: ignore
+from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
 from src.util import (
     NEUTRON_NETWORK_CONFIG,
     WithContract,
@@ -15,6 +17,7 @@ from src.util import (
     decimal_to_int,
     try_query_multiple,
     try_multiple_clients,
+    try_exec_multiple_fatal,
 )
 
 
@@ -86,6 +89,13 @@ class AuctionProvider(WithContract):
         """
 
         return self.asset_b_denom
+
+    def swap_asset_a(
+        self, wallet: LocalWallet, amount: int, price: int, max_spread: int
+    ) -> SubmittedTx:
+        return try_exec_multiple_fatal(
+            self.contracts, wallet, {"bid": {}}, funds=f"{amount}{self.asset_a_denom}"
+        )
 
     def remaining_asset_a(self) -> int:
         """
