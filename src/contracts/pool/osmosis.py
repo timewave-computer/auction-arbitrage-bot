@@ -49,6 +49,7 @@ class OsmosisPoolProvider(PoolProvider):
             )
             for url in endpoints["grpc"]
         ]
+        self.chain_id = "osmosis-1"
 
         self.endpoints = endpoints["http"]
         self.address = address
@@ -84,7 +85,8 @@ class OsmosisPoolProvider(PoolProvider):
         min_token_out_amount = amount * price - max_spread
 
         # Perform the swap using the Osmosis pool manager
-        tx = Transaction(  # pylint: disable=too-many-function-args
+        tx = Transaction()
+        tx.add_message(
             tx_pb2.MsgSwapExactAmountIn(  # pylint: disable=maybe-no-member
                 sender=wallet.address(),
                 routes=[

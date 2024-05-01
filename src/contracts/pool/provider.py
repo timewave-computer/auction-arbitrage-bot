@@ -4,6 +4,7 @@ Defines an interface for all providers of pricing information to fulfill.
 
 import json
 from typing import Any, Optional, cast
+from abc import ABC, abstractmethod
 from cosmpy.aerial.wallet import LocalWallet  # type: ignore
 from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
 
@@ -28,13 +29,23 @@ def cached_pools(
     return None
 
 
-class PoolProvider:
+class PoolProvider(ABC):
     """
     A base abstract class representing a pair between two denominations.
     The provider is chain and exchange agnostic, and pricing functionality should be
     exchange and chain-specific via extension of this base class.
     """
 
+    @property
+    @abstractmethod
+    def chain_id(self) -> str:
+        """
+        Gets the chain ID where the transfer is occurring.
+        """
+
+        raise NotImplementedError
+
+    @abstractmethod
     def simulate_swap_asset_a(self, amount: int) -> int:
         """
         Gets the current exchange rate per quantity of asset a in the base denomination.
@@ -42,6 +53,7 @@ class PoolProvider:
 
         raise NotImplementedError
 
+    @abstractmethod
     def simulate_swap_asset_b(self, amount: int) -> int:
         """
         Gets the current exchange rate per quantity of asset b in the base denomination.
@@ -49,6 +61,7 @@ class PoolProvider:
 
         raise NotImplementedError
 
+    @abstractmethod
     def swap_asset_a(
         self, wallet: LocalWallet, amount: int, price: int, max_spread: int
     ) -> SubmittedTx:
@@ -61,6 +74,7 @@ class PoolProvider:
 
         raise NotImplementedError
 
+    @abstractmethod
     def swap_asset_b(
         self, wallet: LocalWallet, amount: int, price: int, max_spread: int
     ) -> SubmittedTx:
@@ -73,6 +87,7 @@ class PoolProvider:
 
         raise NotImplementedError
 
+    @abstractmethod
     def asset_a(self) -> str:
         """
         Gets the contract address or ticker (if a native asset) of the first denomination
@@ -81,6 +96,7 @@ class PoolProvider:
 
         raise NotImplementedError
 
+    @abstractmethod
     def asset_b(self) -> str:
         """
         Gets the contract address or ticker (if a native asset) of the second denomination
@@ -89,6 +105,7 @@ class PoolProvider:
 
         raise NotImplementedError
 
+    @abstractmethod
     def dump(self) -> dict[str, Any]:
         """
         Gets a JSON representation of the pool.

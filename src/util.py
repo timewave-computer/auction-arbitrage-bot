@@ -24,6 +24,11 @@ NEUTRON_NETWORK_CONFIG = NetworkConfig(
 )
 
 
+IBC_TRANSFER_TIMEOUT_SEC = 5 * 60
+
+IBC_TRANSFER_POLL_INTERVAL_SEC = 30
+
+
 def custom_neutron_network_config(url: str) -> NetworkConfig:
     """
     Creates a neutron client NetworkConfig with a specific RPC URL.
@@ -196,9 +201,18 @@ def decimal_to_int(dec: Decimal) -> int:
     return int(dec * 10**18)
 
 
-def denom_on_chain(src_chain: str, src_denom: str, dest_chain: str) -> Optional[str]:
+@dataclass
+class DenomChainInfo:
+    denom: str
+    port: str
+    channel: str
+
+
+def denom_info_on_chain(
+    src_chain: str, src_denom: str, dest_chain: str
+) -> Optional[DenomChainInfo]:
     """
-    Gets a neutron denom's denom on another chain.
+    Gets a neutron denom's denom and channel on/to another chain.
     """
 
     client = urllib3.PoolManager()
@@ -222,7 +236,10 @@ def denom_on_chain(src_chain: str, src_denom: str, dest_chain: str) -> Optional[
     dests = resp.json()["dest_assets"]
 
     if dest_chain in dests:
-        return str(dests[dest_chain]["assets"][0]["denom"])
+        info = dests[dest_chain]["assets"]
+        port, channel = info["trace"].split("/")
+
+        return DenomChainInfo(denom=info["denom"], port=port, channel=channel)
 
     return None
 

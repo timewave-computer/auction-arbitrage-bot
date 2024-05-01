@@ -35,6 +35,7 @@ class AuctionProvider(WithContract):
         WithContract.__init__(self, contract_info)
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b
+        self.chain_id = contract_info.clients[0].query_chain_id()
 
     def exchange_rate(self) -> int:
         """
@@ -90,9 +91,7 @@ class AuctionProvider(WithContract):
 
         return self.asset_b_denom
 
-    def swap_asset_a(
-        self, wallet: LocalWallet, amount: int, price: int, max_spread: int
-    ) -> SubmittedTx:
+    def swap_asset_a(self, wallet: LocalWallet, amount: int) -> SubmittedTx:
         return try_exec_multiple_fatal(
             self.contracts, wallet, {"bid": {}}, funds=f"{amount}{self.asset_a_denom}"
         )

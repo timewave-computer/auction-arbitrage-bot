@@ -3,9 +3,10 @@ Implements an arbitrage strategy with an arbitrary number
 of hops using all available providers.
 """
 
+from decimal import Decimal
 import json
 from typing import List, Union, Optional, Self, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import deque
 from dataclasses import dataclass
 import logging
@@ -17,7 +18,26 @@ from src.contracts.pool.astroport import (
 )
 from src.contracts.auction import AuctionProvider
 from src.scheduler import Ctx
-from src.util import denom_on_chain, ContractInfo, deployments, try_multiple_clients
+from src.util import (
+    denom_info_on_chain,
+    ContractInfo,
+    deployments,
+    try_multiple_clients,
+    try_multiple_clients_fatal,
+    try_multiple_rest_endpoints,
+    decimal_to_int,
+    IBC_TRANSFER_TIMEOUT_SEC,
+    IBC_TRANSFER_POLL_INTERVAL_SEC,
+)
+from cosmospy_protobuf.ibc.applications.transfer.v1 import tx_pb2
+from cosmospy_protobuf.ibc.core.channel.v1 import query_pb2
+from cosmospy_protobuf.ibc.core.channel.v1 import query_grpc
+from cosmpy.crypto.address import Address
+from cosmpy.aerial.tx import Transaction  # type: ignore
+from cosmpy.aerial.client.utils import prepare_and_broadcast_basic_transaction  # type: ignore
+import grpc
+import schedule
+from schedule import Scheduler
 
 logger = logging.getLogger(__name__)
 
@@ -203,39 +223,45 @@ def strategy(
 
     state = ctx.state.poll(ctx, pools, auctions)
 
-    profitable_routes: List[tuple[List[Union[PoolProvider, AuctionProvider]], int]] = []
+    routes: List[List[Union[PoolProvider, AuctionProvider]]] = []
+    route_profit: List[int] = []
+
+    # Prices at which each leg in an arb will be executed
+    route_price: List[List[int]] = []
+
+    balance_resp = try_multiple_clients(
+        ctx.clients,
+        lambda client: client.query_bank_balance(
+            ctx.wallet.address(), ctx.cli_args["base_denom"]
+        ),
+    )
+
+    if not balance_resp:
+        return ctx
 
     # Calculate profitability of all routes, and report them
     # to the user
     for route in ctx.state.routes:
-        balance_resp = try_multiple_clients(
-            ctx.clients,
-            lambda client: client.query_bank_balance(
-                ctx.wallet.address(), ctx.cli_args["base_denom"]
-            ),
-        )
-
-        if not balance_resp:
-            continue
-
-        profit = route_base_denom_profit(
+        profit, prices = route_base_denom_profit_prices(
             ctx.cli_args["base_denom"],
             balance_resp,
             route,
         )
 
         if profit >= ctx.cli_args["profit_margin"]:
-            profitable_routes.append((route, profit))
+            routes.append(route)
+            route_profit.append(profit)
+            route_price.append(prices)
 
     # Report route stats to user
     logger.info(
         "Found %d profitable routes, with max profit of %d and min profit of %d",
-        len(profitable_routes),
-        max(profitable_routes, key=lambda route: route[1])[1],
-        min(profitable_routes, key=lambda route: route[1])[1],
+        len(routes),
+        max(route_profit),
+        min(route_profit),
     )
 
-    for i, (route, profit) in enumerate(profitable_routes):
+    for i, (route, profit) in enumerate(zip(routes, route_profit)):
         logger.info(
             (
                 "Candidate arbitrage opportunity #%d with "
@@ -258,8 +284,41 @@ def strategy(
 
     logger.info(
         "Executing %d arbitrage opportunities",
-        len(profitable_routes),
+        len(routes),
     )
+
+    swap_balance = balance_resp
+    prev_leg: Optional[Union[PoolProvider, AuctionProvider]] = None
+
+    # Submit arb trades for all profitable routes
+    for route, leg_prices in zip(routes, route_price):
+        for leg, price in zip(route, leg_prices):
+            # If the arb leg is on osmosis, move funds to Osmosis
+            # and then execute the swap
+            if isinstance(leg, OsmosisPoolProvider):
+                # The funds are not already on osmosis, so they need to be moved
+                if prev_leg and prev_leg.chain_id() != "osmosis-1":
+                    transfer_osmosis()
+
+                # Submit the arb trade
+                leg.swap_asset_a(
+                    ctx.wallet,
+                    swap_balance,
+                    price,
+                    ctx.cli_args["profit_margin"],
+                )
+
+            # If the arb leg is on astroport, simply execute the swap
+            # on asset A, producing asset B
+            if isinstance(leg, NeutronAstroportPoolProvider):
+                leg.swap_asset_a(
+                    ctx.wallet, swap_balance, price, ctx.cli_args["profit_margin"]
+                )
+
+            if isinstance(leg, AuctionProvider):
+                leg.swap_asset_a(ctx.wallet, swap_balance)
+
+            prev_leg = leg
 
     return ctx.with_state(state)
 
@@ -281,17 +340,85 @@ def fmt_route_leg(leg: Union[PoolProvider, AuctionProvider]) -> str:
     return "unknown pool"
 
 
-def route_base_denom_profit(
+def transfer_osmosis():
+    denom_info_osmo = denom_info_on_chain(
+        src_chain=prev_chain,
+        src_denom=prev_leg.asset_b(),
+        dest_chain=leg.chain_id(),
+    )
+
+    # Create a messate transfering the funds
+    msg = tx_pb2.MsgTransfer(
+        source_port=denom_info_osmo.port,
+        source_channel=denom_info_osmo.channel,
+        sender=ctx.wallet.address(),
+        receiver=Address(ctx.wallet.public_key(), prefix=leg.chain_id.split("-")[0]),
+        token=f"{swap_balance}{prev_leg.asset_b()}",
+    )
+
+    tx = Transaction()
+    tx.add_msg(msg)
+
+    submitted = try_multiple_clients_fatal(
+        ctx.clients,
+        lambda client: prepare_and_broadcast_basic_transaction(client, tx, ctx.wallet),
+    )
+
+    logger.info(
+        "Submitted IBC transfer from src %s to %s: %s",
+        prev_leg.chain_id(),
+        leg.chain_id(),
+        submitted.tx_hash,
+    )
+
+    # The IBC transfer failed, so we cannot execute the arb
+    if not submitted.response.ensure_successful():
+        break
+
+    # Continuously check for a package acknowledgement
+    # or cancel the arb if the timeout passes
+    # Future note: This could be async so other arbs can make
+    # progress while this is happening
+    def transfer_or_continue():
+        if not isinstance(leg, OsmosisPoolProvider):
+            return
+
+        leg: OsmosisPoolProvider
+
+        # Check for a package acknowledgement by querying osmosis
+        ack_resp = try_multiple_rest_endpoints(
+            leg.endpoints,
+            (
+                f"/ibc/core/channel/v1/channels/{denom_info_osmo.channel}/"
+                f"ports/{denom_info_osmo.port}/packet_acknowledgement/{submitted.response.events['send_packet']['packet_sequence']}"
+            ),
+        )
+
+        # Try again
+        if not ack_resp:
+            return
+
+        # Stop trying, since the transfer succeede
+        schedule.clear()
+
+    schedule.every(IBC_TRANSFER_POLL_INTERVAL_SEC).seconds.until(
+        timedelta(seconds=IBC_TRANSFER_TIMEOUT_SEC)
+    ).do(transfer_or_continue)
+    schedule.run_all()
+
+
+def route_base_denom_profit_prices(
     base_denom: str,
     starting_amount: int,
     route: List[Union[PoolProvider, AuctionProvider]],
-) -> int:
+) -> tuple[int, list[int]]:
     """
     Calculates the profit that can be obtained by following the route.
     """
 
     prev_asset = base_denom
     quantity_received = starting_amount
+    prices: list[int] = []
 
     for leg in route:
         if quantity_received == 0:
@@ -299,14 +426,31 @@ def route_base_denom_profit(
 
         if isinstance(leg, PoolProvider):
             if prev_asset == leg.asset_a():
-                quantity_received = int(leg.simulate_swap_asset_a(quantity_received))
+                new_quantity_received = int(
+                    leg.simulate_swap_asset_a(quantity_received)
+                )
+                prices.append(
+                    decimal_to_int(
+                        Decimal(new_quantity_received) / Decimal(quantity_received)
+                    )
+                )
+                quantity_received = new_quantity_received
             else:
-                quantity_received = int(leg.simulate_swap_asset_b(quantity_received))
+                new_quantity_received = int(
+                    leg.simulate_swap_asset_b(quantity_received)
+                )
+                prices.append(
+                    decimal_to_int(
+                        Decimal(new_quantity_received) / Decimal(quantity_received)
+                    )
+                )
+                quantity_received = new_quantity_received
         else:
             if prev_asset == leg.asset_a():
                 quantity_received = leg.exchange_rate() * quantity_received
+                prices.append(leg.exchange_rate())
 
-    return quantity_received - starting_amount
+    return (quantity_received - starting_amount, prices)
 
 
 def get_routes_with_depth_limit_bfs(
@@ -347,9 +491,9 @@ def get_routes_with_depth_limit_bfs(
         pair_denom = pool.asset_a() if pool.asset_a() != base_denom else pool.asset_b()
 
         if pair_denom not in denom_cache:
-            denom_cache[pair_denom] = denom_on_chain(
+            denom_cache[pair_denom] = denom_info_on_chain(
                 "neutron-1", pair_denom, "osmosis-1"
-            )
+            ).denom
 
         pair_denom_osmo = denom_cache[pair_denom]
 
