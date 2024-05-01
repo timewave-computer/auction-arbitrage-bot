@@ -29,10 +29,10 @@ from src.util import (
     IBC_TRANSFER_TIMEOUT_SEC,
     IBC_TRANSFER_POLL_INTERVAL_SEC,
 )
-from cosmospy_protobuf.ibc.applications.transfer.v1 import tx_pb2
-from cosmospy_protobuf.ibc.core.channel.v1 import query_pb2
+from cosmospy_protobuf.ibc.applications.transfer.v1 import tx_pb2  # type: ignore
+from cosmospy_protobuf.ibc.core.channel.v1 import query_pb2  # type: ignore
 from cosmospy_protobuf.ibc.core.channel.v1 import query_grpc
-from cosmpy.crypto.address import Address
+from cosmpy.crypto.address import Address  # type: ignore
 from cosmpy.aerial.tx import Transaction  # type: ignore
 from cosmpy.aerial.client.utils import prepare_and_broadcast_basic_transaction  # type: ignore
 import grpc
@@ -297,8 +297,8 @@ def strategy(
             # and then execute the swap
             if isinstance(leg, OsmosisPoolProvider):
                 # The funds are not already on osmosis, so they need to be moved
-                if prev_leg and prev_leg.chain_id() != "osmosis-1":
-                    transfer_osmosis()
+                if prev_leg and prev_leg.chain_id != "osmosis-1":
+                    transfer_osmosis(prev_leg, leg, ctx, swap_balance)
 
                 # Submit the arb trade
                 leg.swap_asset_a(
@@ -340,12 +340,28 @@ def fmt_route_leg(leg: Union[PoolProvider, AuctionProvider]) -> str:
     return "unknown pool"
 
 
-def transfer_osmosis():
+def transfer_osmosis(
+    prev_leg: Union[PoolProvider, AuctionProvider],
+    leg: Union[PoolProvider, AuctionProvider],
+    ctx: Ctx,
+    swap_balance: int,
+) -> bool:
+    """
+    Synchronously executes an IBC transfer from one leg in an arbitrage
+    trade to the next, moving `swap_balance` of the asset_b in the source
+    leg to asset_a in the destination leg. Returns true if the transfer
+    succeeded.
+    """
+
     denom_info_osmo = denom_info_on_chain(
-        src_chain=prev_chain,
+        src_chain=prev_leg.chain_id,
         src_denom=prev_leg.asset_b(),
-        dest_chain=leg.chain_id(),
+        dest_chain=leg.chain_id,
     )
+
+    # Not enough info to complete the transfer
+    if not denom_info_osmo:
+        return False
 
     # Create a messate transfering the funds
     msg = tx_pb2.MsgTransfer(
@@ -366,24 +382,22 @@ def transfer_osmosis():
 
     logger.info(
         "Submitted IBC transfer from src %s to %s: %s",
-        prev_leg.chain_id(),
-        leg.chain_id(),
+        prev_leg.chain_id,
+        leg.chain_id,
         submitted.tx_hash,
     )
 
     # The IBC transfer failed, so we cannot execute the arb
     if not submitted.response.ensure_successful():
-        break
+        return False
 
     # Continuously check for a package acknowledgement
     # or cancel the arb if the timeout passes
     # Future note: This could be async so other arbs can make
     # progress while this is happening
-    def transfer_or_continue():
+    def transfer_or_continue() -> None:
         if not isinstance(leg, OsmosisPoolProvider):
             return
-
-        leg: OsmosisPoolProvider
 
         # Check for a package acknowledgement by querying osmosis
         ack_resp = try_multiple_rest_endpoints(
@@ -405,6 +419,8 @@ def transfer_osmosis():
         timedelta(seconds=IBC_TRANSFER_TIMEOUT_SEC)
     ).do(transfer_or_continue)
     schedule.run_all()
+
+    return True
 
 
 def route_base_denom_profit_prices(
@@ -491,9 +507,12 @@ def get_routes_with_depth_limit_bfs(
         pair_denom = pool.asset_a() if pool.asset_a() != base_denom else pool.asset_b()
 
         if pair_denom not in denom_cache:
-            denom_cache[pair_denom] = denom_info_on_chain(
-                "neutron-1", pair_denom, "osmosis-1"
-            ).denom
+            denom_info = denom_info_on_chain("neutron-1", pair_denom, "osmosis-1")
+
+            if not denom_info:
+                continue
+
+            denom_cache[pair_denom] = denom_info.denom
 
         pair_denom_osmo = denom_cache[pair_denom]
 

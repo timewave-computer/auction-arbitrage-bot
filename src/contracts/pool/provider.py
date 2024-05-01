@@ -36,14 +36,7 @@ class PoolProvider(ABC):
     exchange and chain-specific via extension of this base class.
     """
 
-    @property
-    @abstractmethod
-    def chain_id(self) -> str:
-        """
-        Gets the chain ID where the transfer is occurring.
-        """
-
-        raise NotImplementedError
+    chain_id: str
 
     @abstractmethod
     def simulate_swap_asset_a(self, amount: int) -> int:
