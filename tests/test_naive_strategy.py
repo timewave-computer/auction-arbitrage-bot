@@ -5,7 +5,7 @@ Tests the naive strategy.
 from src.strategies.naive import (
     fmt_route_leg,
     get_routes_with_depth_limit_bfs,
-    route_base_denom_profit,
+    route_base_denom_profit_prices,
 )
 from src.scheduler import Scheduler
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
@@ -86,7 +86,7 @@ def test_get_routes_with_depth_limit_bfs() -> None:
     assert len(routes_min) > 0
 
 
-def test_route_base_denom_profit() -> None:
+def test_route_base_denom_profit_prices() -> None:
     """
     Tests the route profit calculator against USDC.
     """
@@ -120,7 +120,7 @@ def test_route_base_denom_profit() -> None:
 
     # Check that all routes can calculate profit successfully
     for route in routes:
-        route_base_denom_profit(
+        route_base_denom_profit_prices(
             "ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81",
             10000,
             route,

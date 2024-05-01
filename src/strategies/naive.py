@@ -29,9 +29,10 @@ from src.util import (
     IBC_TRANSFER_TIMEOUT_SEC,
     IBC_TRANSFER_POLL_INTERVAL_SEC,
 )
-from cosmospy_protobuf.ibc.applications.transfer.v1 import tx_pb2  # type: ignore
-from cosmospy_protobuf.ibc.core.channel.v1 import query_pb2  # type: ignore
-from cosmospy_protobuf.ibc.core.channel.v1 import query_grpc
+from ibc.applications.transfer.v1 import tx_pb2
+from ibc.core.channel.v1 import query_pb2
+from ibc.core.channel.v1 import query_pb2_grpc
+from cosmos.base.v1beta1 import coin_pb2
 from cosmpy.crypto.address import Address  # type: ignore
 from cosmpy.aerial.tx import Transaction  # type: ignore
 from cosmpy.aerial.client.utils import prepare_and_broadcast_basic_transaction  # type: ignore
@@ -375,7 +376,7 @@ def transfer_osmosis(
     )
 
     # Not enough info to complete the transfer
-    if not denom_info_osmo:
+    if not denom_info_osmo or not denom_info_osmo.port or not denom_info_osmo.channel:
         return False
 
     # Create a messate transfering the funds
@@ -384,7 +385,9 @@ def transfer_osmosis(
         source_channel=denom_info_osmo.channel,
         sender=ctx.wallet.address(),
         receiver=Address(ctx.wallet.public_key(), prefix=leg.chain_id.split("-")[0]),
-        token=f"{swap_balance}{prev_leg.asset_b()}",
+        token=coin_pb2.Coin(  # pylint: disable=maybe-no-member
+            denom=prev_leg.asset_b(), amount=str(swap_balance)
+        ),
     )
 
     tx = Transaction()

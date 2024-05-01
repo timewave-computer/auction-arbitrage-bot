@@ -8,6 +8,7 @@ This tool requires the following to be installed:
 
 * Python 3.11
 * `protoc`
+* `protoc-gen-grpc`
 * `make`
 
 ## Installation

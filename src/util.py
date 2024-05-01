@@ -210,8 +210,8 @@ class DenomChainInfo:
     """
 
     denom: str
-    port: str
-    channel: str
+    port: Optional[str]
+    channel: Optional[str]
 
 
 def denom_info_on_chain(
@@ -242,10 +242,14 @@ def denom_info_on_chain(
     dests = resp.json()["dest_assets"]
 
     if dest_chain in dests:
-        info = dests[dest_chain]["assets"]
-        port, channel = info["trace"].split("/")
+        info = dests[dest_chain]["assets"][0]
 
-        return DenomChainInfo(denom=info["denom"], port=port, channel=channel)
+        if info["trace"] != "":
+            port, channel = info["trace"].split("/")
+
+            return DenomChainInfo(denom=info["denom"], port=port, channel=channel)
+
+        return DenomChainInfo(denom=info["denom"], port=None, channel=None)
 
     return None
 

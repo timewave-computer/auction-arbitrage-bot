@@ -6,7 +6,7 @@ build/gen:
 
 .PHONY: proto
 proto: build/gen $(PROTO_SOURCES)
-	protoc --proto_path=$(PROTO_DIR) --python_out=build/gen --mypy_out=build/gen $(PROTO_SOURCES)
+	protoc --proto_path=$(PROTO_DIR) --python_out=build/gen --mypy_out=build/gen --go-grpc_out=build/gen --mypy_grpc_out=build/gen $(PROTO_SOURCES)
 
 .PHONY: test
 test:
