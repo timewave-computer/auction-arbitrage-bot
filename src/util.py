@@ -203,6 +203,12 @@ def decimal_to_int(dec: Decimal) -> int:
 
 @dataclass
 class DenomChainInfo:
+    """
+    Represents information about a denomination
+    on a particular destination chain from a
+    given source chain.
+    """
+
     denom: str
     port: str
     channel: str

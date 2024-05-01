@@ -287,7 +287,41 @@ def strategy(
         len(routes),
     )
 
-    swap_balance = balance_resp
+    exec_arbs(balance_resp, routes, route_price, ctx)
+
+    return ctx.with_state(state)
+
+
+def fmt_route_leg(leg: Union[PoolProvider, AuctionProvider]) -> str:
+    """
+    Returns the nature of the route leg (i.e., "osmosis," "astroport," or, "valence.")
+    """
+
+    if isinstance(leg, OsmosisPoolProvider):
+        return "osmosis"
+
+    if isinstance(leg, NeutronAstroportPoolProvider):
+        return "astroport"
+
+    if isinstance(leg, AuctionProvider):
+        return "valence"
+
+    return "unknown pool"
+
+
+def exec_arbs(
+    swap_balance: int,
+    routes: List[List[Union[AuctionProvider, PoolProvider]]],
+    route_price: List[List[int]],
+    ctx: Ctx,
+) -> None:
+    """
+    Executes a list of arbitrage trades composed of multiple hops.
+
+    Takes a list of arbitrage trades, and a list of prices for each hop
+    in each trade.
+    """
+
     prev_leg: Optional[Union[PoolProvider, AuctionProvider]] = None
 
     # Submit arb trades for all profitable routes
@@ -320,25 +354,6 @@ def strategy(
 
             prev_leg = leg
 
-    return ctx.with_state(state)
-
-
-def fmt_route_leg(leg: Union[PoolProvider, AuctionProvider]) -> str:
-    """
-    Returns the nature of the route leg (i.e., "osmosis," "astroport," or, "valence.")
-    """
-
-    if isinstance(leg, OsmosisPoolProvider):
-        return "osmosis"
-
-    if isinstance(leg, NeutronAstroportPoolProvider):
-        return "astroport"
-
-    if isinstance(leg, AuctionProvider):
-        return "valence"
-
-    return "unknown pool"
-
 
 def transfer_osmosis(
     prev_leg: Union[PoolProvider, AuctionProvider],
@@ -364,7 +379,7 @@ def transfer_osmosis(
         return False
 
     # Create a messate transfering the funds
-    msg = tx_pb2.MsgTransfer(
+    msg = tx_pb2.MsgTransfer(  # pylint: disable=no-member
         source_port=denom_info_osmo.port,
         source_channel=denom_info_osmo.channel,
         sender=ctx.wallet.address(),
@@ -373,7 +388,7 @@ def transfer_osmosis(
     )
 
     tx = Transaction()
-    tx.add_msg(msg)
+    tx.add_msg(msg)  # pylint: disable=no-member
 
     submitted = try_multiple_clients_fatal(
         ctx.clients,
@@ -404,7 +419,8 @@ def transfer_osmosis(
             leg.endpoints,
             (
                 f"/ibc/core/channel/v1/channels/{denom_info_osmo.channel}/"
-                f"ports/{denom_info_osmo.port}/packet_acknowledgement/{submitted.response.events['send_packet']['packet_sequence']}"
+                f"ports/{denom_info_osmo.port}/packet_acknowledgement/"
+                f"{submitted.response.events['send_packet']['packet_sequence']}"
             ),
         )
 
@@ -514,8 +530,6 @@ def get_routes_with_depth_limit_bfs(
 
             denom_cache[pair_denom] = denom_info.denom
 
-        pair_denom_osmo = denom_cache[pair_denom]
-
         if len(path[0]) + 1 > depth:
             continue
 
@@ -566,14 +580,14 @@ def get_routes_with_depth_limit_bfs(
                 )
 
         # Osmosis may not have a matching pool
-        if pair_denom_osmo in pools:
+        if denom_cache[pair_denom] in pools:
             for candidate_pool in (
                 (
                     pool
-                    for pool_set in pools[pair_denom_osmo].values()
+                    for pool_set in pools[denom_cache[pair_denom]].values()
                     for pool in pool_set
                 )
-                if pair_denom_osmo is not None
+                if denom_cache[pair_denom] is not None
                 else []
             ):
                 if candidate_pool not in path[1] and pool != candidate_pool:
