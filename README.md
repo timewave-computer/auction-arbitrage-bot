@@ -188,3 +188,5 @@ INFO:src.strategies.naive:Candidate arbitrage opportunity #2 with profit of 6223
 - [ ] Add an example strategy for docs that uses threading
 - [ ] Track which pools have been touched to inform route samping, or get a price feed from coingecko, and just filter for the coins that are relevant to the DEX you're looking at and query for large price movements, and you can pick the top 10 to inform route collection
 - [ ] Look at Yan's contract and do backtesting (95% of blocks): trailing 7 days simulated number of auctions
+- [ ] Add a flag to filter by valence auctions
+- [ ] Add a flag for filter by a specific pool

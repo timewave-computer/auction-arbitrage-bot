@@ -2,6 +2,7 @@
 Implements a pool provider for osmosis.
 """
 
+from functools import cached_property
 from typing import Any, Optional, List
 import urllib3
 from cosmpy.aerial.wallet import LocalWallet  # type: ignore
@@ -37,7 +38,18 @@ class OsmosisPoolProvider(PoolProvider):
         asset_a, asset_b = assets
 
         self.client = urllib3.PoolManager()
-        self.ledgers = [
+        self.chain_id = "osmosis-1"
+
+        self.endpoints = endpoints["http"]
+        self.grpc_endpoints = endpoints["grpc"]
+        self.address = address
+        self.asset_a_denom = asset_a
+        self.asset_b_denom = asset_b
+        self.pool_id = pool_id
+
+    @cached_property
+    def ledgers(self) -> List[LedgerClient]:
+        return [
             LedgerClient(
                 NetworkConfig(
                     chain_id="osmosis-1",
@@ -47,15 +59,8 @@ class OsmosisPoolProvider(PoolProvider):
                     staking_denomination="uosmo",
                 )
             )
-            for url in endpoints["grpc"]
+            for url in self.grpc_endpoints
         ]
-        self.chain_id = "osmosis-1"
-
-        self.endpoints = endpoints["http"]
-        self.address = address
-        self.asset_a_denom = asset_a
-        self.asset_b_denom = asset_b
-        self.pool_id = pool_id
 
     def __exchange_rate(self, asset_a: str, asset_b: str, amount: int) -> int:
         res = try_multiple_rest_endpoints(

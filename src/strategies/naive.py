@@ -36,6 +36,7 @@ from cosmos.base.v1beta1 import coin_pb2
 from cosmpy.crypto.address import Address  # type: ignore
 from cosmpy.aerial.tx import Transaction  # type: ignore
 from cosmpy.aerial.client.utils import prepare_and_broadcast_basic_transaction  # type: ignore
+from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
 import grpc
 import schedule
 from schedule import Scheduler
@@ -161,6 +162,7 @@ class State:
                 get_routes_with_depth_limit_bfs(
                     ctx.cli_args["max_hops"],
                     ctx.cli_args["num_routes_considered"],
+                    ctx.cli_args["valence_only"],
                     ctx.cli_args["base_denom"],
                     pools,
                     auctions,
@@ -233,20 +235,46 @@ def strategy(
     balance_resp = try_multiple_clients(
         ctx.clients,
         lambda client: client.query_bank_balance(
-            ctx.wallet.address(), ctx.cli_args["base_denom"]
+            Address(ctx.wallet.public_key(), prefix="neutron"),
+            ctx.cli_args["base_denom"],
         ),
     )
 
     if not balance_resp:
         return ctx
 
+    # Report route stats to user
+    logger.info(
+        "Finding profitable routes",
+    )
+
     # Calculate profitability of all routes, and report them
     # to the user
-    for route in ctx.state.routes:
+    for i, route in enumerate(ctx.state.routes):
         profit, prices = route_base_denom_profit_prices(
             ctx.cli_args["base_denom"],
             balance_resp,
             route,
+        )
+
+        logger.info(
+            (
+                "Candidate arbitrage opportunity #%d with "
+                "profit of %d and route with %d hop(s): %s"
+            ),
+            i + 1,
+            profit,
+            len(route),
+            " -> ".join(
+                map(
+                    lambda route_leg: fmt_route_leg(route_leg)
+                    + ": "
+                    + route_leg.asset_a()
+                    + " - "
+                    + route_leg.asset_b(),
+                    route,
+                )
+            ),
         )
 
         if profit >= ctx.cli_args["profit_margin"]:
@@ -254,13 +282,18 @@ def strategy(
             route_profit.append(profit)
             route_price.append(prices)
 
-    # Report route stats to user
-    logger.info(
-        "Found %d profitable routes, with max profit of %d and min profit of %d",
-        len(routes),
-        max(route_profit),
-        min(route_profit),
-    )
+    if len(routes) > 0:
+        # Report route stats to user
+        logger.info(
+            "Found %d profitable routes, with max profit of %d and min profit of %d",
+            len(routes),
+            max(route_profit),
+            min(route_profit),
+        )
+    else:
+        logger.info(
+            "Found no profitable routes",
+        )
 
     for i, (route, profit) in enumerate(zip(routes, route_profit)):
         logger.info(
@@ -324,36 +357,102 @@ def exec_arbs(
     """
 
     prev_leg: Optional[Union[PoolProvider, AuctionProvider]] = None
+    prev_asset = ctx.cli_args["base_denom"]
 
     # Submit arb trades for all profitable routes
     for route, leg_prices in zip(routes, route_price):
-        for leg, price in zip(route, leg_prices):
-            # If the arb leg is on osmosis, move funds to Osmosis
-            # and then execute the swap
-            if isinstance(leg, OsmosisPoolProvider):
-                # The funds are not already on osmosis, so they need to be moved
-                if prev_leg and prev_leg.chain_id != "osmosis-1":
-                    transfer_osmosis(prev_leg, leg, ctx, swap_balance)
-
-                # Submit the arb trade
-                leg.swap_asset_a(
-                    ctx.wallet,
-                    swap_balance,
-                    price,
-                    ctx.cli_args["profit_margin"],
+        logger.info(
+            (
+                "Queueing candidate arbitrage opportunity with "
+                "route with %d hop(s): %s"
+            ),
+            len(route),
+            " -> ".join(
+                map(
+                    lambda route_leg: fmt_route_leg(route_leg)
+                    + ": "
+                    + route_leg.asset_a()
+                    + " - "
+                    + route_leg.asset_b(),
+                    route,
                 )
+            ),
+        )
+
+        for leg, price in zip(route, leg_prices):
+            tx: Optional[SubmittedTx] = None
+
+            # Match the previous leg's swapped-to asset with
+            # the current leg's swap from asset
+            assets = (
+                [leg.asset_a, leg.asset_b]
+                if prev_asset == leg.asset_a()
+                else [leg.asset_b, leg.asset_a]
+            )
+
+            logger.info(
+                "Executing arb leg on %s with %d %s -> %s",
+                fmt_route_leg(leg),
+                swap_balance,
+                assets[0](),
+                assets[1](),
+            )
+
+            # The funds are not already on osmosis, so they need to be moved
+            if (
+                isinstance(leg, OsmosisPoolProvider)
+                and prev_leg
+                and prev_leg.chain_id != "osmosis-1"
+            ):
+                transfer_osmosis(prev_leg, leg, ctx, swap_balance)
 
             # If the arb leg is on astroport, simply execute the swap
             # on asset A, producing asset B
-            if isinstance(leg, NeutronAstroportPoolProvider):
-                leg.swap_asset_a(
-                    ctx.wallet, swap_balance, price, ctx.cli_args["profit_margin"]
+            if isinstance(leg, PoolProvider):
+                if isinstance(leg, NeutronAstroportPoolProvider):
+                    logger.info(
+                        "Submitting arb to contract: %s", leg.contract_info.address
+                    )
+
+                # Submit the arb trade
+                if assets[0] == leg.asset_a:
+                    to_swap = swap_balance
+                    swap_balance = leg.simulate_swap_asset_a(to_swap)
+
+                    tx = leg.swap_asset_a(
+                        ctx.wallet,
+                        to_swap,
+                        price,
+                        Decimal("0.005"),
+                    ).wait_to_complete()
+                else:
+                    to_swap = swap_balance
+                    swap_balance = leg.simulate_swap_asset_b(to_swap)
+
+                    tx = leg.swap_asset_b(
+                        ctx.wallet,
+                        to_swap,
+                        price,
+                        Decimal("0.005"),
+                    ).wait_to_complete()
+
+            if isinstance(leg, AuctionProvider) and assets[0] == leg.asset_a:
+                to_swap = swap_balance
+                swap_balance = leg.exchange_rate() * to_swap
+
+                tx = leg.swap_asset_a(ctx.wallet, to_swap).wait_to_complete()
+
+            if tx:
+                # Notify the user of the arb trade
+                logger.info(
+                    "Executed leg %s -> %s: %s",
+                    assets[0](),
+                    assets[1](),
+                    tx.tx_hash,
                 )
 
-            if isinstance(leg, AuctionProvider):
-                leg.swap_asset_a(ctx.wallet, swap_balance)
-
             prev_leg = leg
+            prev_asset = assets[1]()
 
 
 def transfer_osmosis(
@@ -456,6 +555,12 @@ def route_base_denom_profit_prices(
     prices: list[int] = []
 
     for leg in route:
+        assets = (
+            [leg.asset_a, leg.asset_b]
+            if prev_asset == leg.asset_a()
+            else [leg.asset_b, leg.asset_a]
+        )
+
         if quantity_received == 0:
             break
 
@@ -485,6 +590,8 @@ def route_base_denom_profit_prices(
                 quantity_received = leg.exchange_rate() * quantity_received
                 prices.append(leg.exchange_rate())
 
+        prev_asset = assets[1]()
+
     return (quantity_received - starting_amount, prices)
 
 
@@ -492,6 +599,7 @@ def get_routes_with_depth_limit_bfs(
     depth: int,
     limit: int,
     src: str,
+    valence_only: bool,
     pools: dict[str, dict[str, List[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
 ) -> List[List[Union[PoolProvider, AuctionProvider]]]:
@@ -557,6 +665,12 @@ def get_routes_with_depth_limit_bfs(
                     )
                 ),
             )
+
+            # Check that the route includes an auction if the user wants
+            if valence_only and (
+                not any((isinstance(prov, AuctionProvider) for prov in path[0]))
+            ):
+                continue
 
             paths.append(path[0])
 

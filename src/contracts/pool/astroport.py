@@ -4,6 +4,8 @@ Implemens contract wrappers for Astroport, providing pricing information for
 Astroport pools.
 """
 
+from decimal import Decimal
+from functools import cached_property
 from typing import Any, cast, Optional, List
 from dataclasses import dataclass
 from cosmpy.aerial.contract import LedgerContract  # type: ignore
@@ -124,7 +126,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         self,
         wallet: LocalWallet,
         assets: tuple[Token | NativeToken, Token | NativeToken],
-        amount_price_spread: tuple[int, int, int],
+        amount_price_spread: tuple[int, int, Decimal],
     ) -> SubmittedTx:
         asset_a, asset_b = assets
         amount, price, max_spread = amount_price_spread
@@ -143,10 +145,12 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
                     "max_spread": str(max_spread),
                 }
             },
+            funds=f"{amount}{token_to_addr(asset_a)}",
+            gas_limit=3000000,
         )
 
     def swap_asset_a(
-        self, wallet: LocalWallet, amount: int, price: int, max_spread: int
+        self, wallet: LocalWallet, amount: int, price: int, max_spread: Decimal
     ) -> SubmittedTx:
         return self.__swap(
             wallet,
@@ -155,7 +159,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         )
 
     def swap_asset_b(
-        self, wallet: LocalWallet, amount: int, price: int, max_spread: int
+        self, wallet: LocalWallet, amount: int, price: int, max_spread: Decimal
     ) -> SubmittedTx:
         return self.__swap(
             wallet,
@@ -209,10 +213,7 @@ class NeutronAstroportPoolDirectory:
         network_configs: Optional[list[NetworkConfig]] = None,
     ):
         self.deployment_info = deployments["pools"]["astroport"]["neutron"]
-        self.clients = [
-            LedgerClient(NEUTRON_NETWORK_CONFIG),
-            *(network_configs if network_configs else []),
-        ]
+        self.network_configs = network_configs
         self.cached_pools = cached_pools(poolfile_path, "neutron_astroport")
 
         deployment_info = self.deployment_info["directory"]
@@ -221,6 +222,13 @@ class NeutronAstroportPoolDirectory:
                 deployment_info["src"], client, address=deployment_info["address"]
             )
             for client in self.clients
+        ]
+
+    @cached_property
+    def clients(self) -> List[LedgerClient]:
+        return [
+            LedgerClient(NEUTRON_NETWORK_CONFIG),
+            *(LedgerClient(conf) for conf in (self.network_configs or [])),
         ]
 
     def __pools_cached(self) -> dict[str, dict[str, NeutronAstroportPoolProvider]]:

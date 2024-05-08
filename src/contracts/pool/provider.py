@@ -3,6 +3,7 @@ Defines an interface for all providers of pricing information to fulfill.
 """
 
 import json
+from decimal import Decimal
 from typing import Any, Optional, cast
 from abc import ABC, abstractmethod
 from cosmpy.aerial.wallet import LocalWallet  # type: ignore
@@ -56,7 +57,7 @@ class PoolProvider(ABC):
 
     @abstractmethod
     def swap_asset_a(
-        self, wallet: LocalWallet, amount: int, price: int, max_spread: int
+        self, wallet: LocalWallet, amount: int, price: int, max_spread: Decimal
     ) -> SubmittedTx:
         """
         Submits a transaction executing a swap with some quantity of asset a
@@ -69,7 +70,7 @@ class PoolProvider(ABC):
 
     @abstractmethod
     def swap_asset_b(
-        self, wallet: LocalWallet, amount: int, price: int, max_spread: int
+        self, wallet: LocalWallet, amount: int, price: int, max_spread: Decimal
     ) -> SubmittedTx:
         """
         Submits a transaction executing a swap with some quantity of asset b

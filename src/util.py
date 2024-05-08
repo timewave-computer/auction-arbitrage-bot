@@ -17,7 +17,7 @@ from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
 
 NEUTRON_NETWORK_CONFIG = NetworkConfig(
     chain_id="neutron-1",
-    url="grpc+https://neutron-grpc.publicnode.com:443",
+    url="grpc+http://grpc-kralum.neutron-1.neutron.org:80",
     fee_minimum_gas_price=0.0053,
     fee_denomination="untrn",
     staking_denomination="untrn",
@@ -148,6 +148,8 @@ def try_query_multiple(providers: list[LedgerContract], query: Any) -> Optional[
         except RuntimeError:
             continue
         except ValueError:
+            continue
+        except grpc._channel._InactiveRpcError:
             continue
 
     return None

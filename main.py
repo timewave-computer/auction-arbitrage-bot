@@ -36,6 +36,7 @@ def main() -> None:
     parser.add_argument("-d", "--discovery_interval", default=600)
     parser.add_argument("-m", "--max_hops", default=3)
     parser.add_argument("-n", "--num_routes_considered", default=30)
+    parser.add_argument("-v", "--valence_only", default=False)
     parser.add_argument(
         "-b",
         "--base_denom",
@@ -44,7 +45,7 @@ def main() -> None:
     parser.add_argument(
         "-pm",
         "--profit_margin",
-        default=10,
+        default=2000000,
     )
     parser.add_argument(
         "-w",
@@ -83,17 +84,18 @@ def main() -> None:
         [
             LedgerClient(NEUTRON_NETWORK_CONFIG),
             *[
-                custom_neutron_network_config(endpoint)
+                LedgerClient(custom_neutron_network_config(endpoint))
                 for endpoint in endpoints["neutron"]["http"]
             ],
         ],
-        LocalWallet.from_mnemonic(args.wallet_mnemonic),
+        LocalWallet.from_mnemonic(args.wallet_mnemonic, prefix="neutron"),
         {
             "pool_file": args.pool_file,
             "poll_interval": int(args.poll_interval),
             "discovery_interval": int(args.discovery_interval),
             "max_hops": int(args.max_hops),
             "num_routes_considered": int(args.num_routes_considered),
+            "valence_only": bool(args.valence_only),
             "base_denom": args.base_denom,
             "profit_margin": int(args.profit_margin),
             "wallet_mnemonic": args.wallet_mnemonic,
@@ -114,7 +116,14 @@ def main() -> None:
         deployments(),
         poolfile_path=args.pool_file,
         network_configs=[
-            custom_neutron_network_config(endpoint) for endpoint in endpoints["neutron"]
+            *[
+                custom_neutron_network_config(endpoint)
+                for endpoint in endpoints["neutron"]["http"]
+            ],
+            *[
+                custom_neutron_network_config(endpoint)
+                for endpoint in endpoints["neutron"]["grpc"]
+            ],
         ],
     )
 
