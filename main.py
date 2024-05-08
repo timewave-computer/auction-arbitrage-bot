@@ -36,7 +36,9 @@ def main() -> None:
     parser.add_argument("-d", "--discovery_interval", default=600)
     parser.add_argument("-m", "--max_hops", default=3)
     parser.add_argument("-n", "--num_routes_considered", default=30)
-    parser.add_argument("-v", "--valence_only", default=False)
+    parser.add_argument(
+        "-v", "--valence_only", default=False, action=argparse.BooleanOptionalAction
+    )
     parser.add_argument(
         "-b",
         "--base_denom",

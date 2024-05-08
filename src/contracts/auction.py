@@ -216,7 +216,11 @@ class AuctionDirectory:
             if asset_a not in auctions:
                 auctions[asset_a] = {}
 
+            if asset_b not in auctions:
+                auctions[asset_b] = {}
+
             auctions[asset_a][asset_b] = provider
+            auctions[asset_b][asset_a] = provider
 
         return auctions
 
