@@ -19,7 +19,9 @@ from src.contracts.pool.astroport import (
 from src.contracts.auction import AuctionProvider
 from src.scheduler import Ctx
 from src.util import (
+    DenomChainInfo,
     denom_info_on_chain,
+    denom_info,
     ContractInfo,
     deployments,
     try_multiple_clients,
@@ -73,8 +75,8 @@ class State:
                     return OsmosisPoolProvider(
                         endpoints,
                         ent["osmosis"]["pool_id"],
-                        ent["osmosis"]["asset_a"],
-                        ent["osmosis"]["asset_b"],
+                        ent["osmosis"]["address"],
+                        (ent["osmosis"]["asset_a"], ent["osmosis"]["asset_b"]),
                     )
 
                 if "neutron_astroport" in ent:
@@ -160,10 +162,10 @@ class State:
         if self.routes is None:
             self.routes: List[List[Union[PoolProvider, AuctionProvider]]] = (
                 get_routes_with_depth_limit_dfs(
-                    ctx.cli_args["max_hops"],
+                    ctx.cli_args["hops"],
                     ctx.cli_args["num_routes_considered"],
                     ctx.cli_args["base_denom"],
-                    ctx.cli_args["valence_only"],
+                    set(ctx.cli_args["require_leg_types"]),
                     pools,
                     auctions,
                 )
@@ -599,7 +601,7 @@ def get_routes_with_depth_limit_dfs(
     depth: int,
     limit: int,
     src: str,
-    valence_only: bool,
+    required_leg_types: set[str],
     pools: dict[str, dict[str, List[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
 ) -> List[List[Union[PoolProvider, AuctionProvider]]]:
@@ -613,19 +615,24 @@ def get_routes_with_depth_limit_dfs(
     # a valence auction, if `valance_only` is True.
 
     n_paths = 0
+    denom_cache: dict[str, list[DenomChainInfo]] = {}
 
     def get_routes_from(
-        start: str, path: List[Union[PoolProvider, AuctionProvider]], has_valence: bool
+        start: str,
+        start_chain: str,
+        path: List[Union[PoolProvider, AuctionProvider]],
+        has_required: set[str],
     ) -> List[List[Union[PoolProvider, AuctionProvider]]]:
         nonlocal limit
+        nonlocal denom_cache
 
         if limit <= 0 or len(path) > depth:
             return []
 
         # We have arrived at the starting vertex, so no
         # more paths to explore
-        if start == src and len(path) != 0:
-            if valence_only and not has_valence:
+        if start == src and len(path) == depth:
+            if len(required_leg_types - has_required) > 0:
                 return []
 
             limit -= 1
@@ -634,6 +641,11 @@ def get_routes_with_depth_limit_dfs(
 
         paths = []
 
+        if f"{start}-{start_chain}" not in denom_cache:
+            denom_cache[f"{start}-{start_chain}"] = denom_info(start_chain, start)
+
+        src_denoms = denom_cache[f"{start}-{start_chain}"]
+
         start_pools: List[Union[AuctionProvider, PoolProvider]] = [
             *(
                 pool
@@ -641,6 +653,12 @@ def get_routes_with_depth_limit_dfs(
                 for pool in pool_list
             ),
             *auctions.get(start, {}).values(),
+            *(
+                pool
+                for chain_info in src_denoms
+                for pool_list in pools.get(chain_info.denom, {}).values()
+                for pool in pool_list
+            ),
         ]
 
         for pool in start_pools:
@@ -649,11 +667,12 @@ def get_routes_with_depth_limit_dfs(
             paths.extend(
                 get_routes_from(
                     next_start,
+                    pool.chain_id,
                     path + [pool],
-                    isinstance(pool, AuctionProvider) or has_valence,
+                    has_required | {fmt_route_leg(pool)},
                 )
             )
 
         return paths
 
-    return get_routes_from(src, [], False)
+    return get_routes_from(src, "neutron-1", [], set())

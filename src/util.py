@@ -216,6 +216,45 @@ class DenomChainInfo:
     channel: Optional[str]
 
 
+def denom_info(src_chain: str, src_denom: str) -> list[DenomChainInfo]:
+    """
+    Gets a denom's denom and channel on/to other chains.
+    """
+
+    client = urllib3.PoolManager()
+
+    resp = client.request(
+        "POST",
+        "https://api.skip.money/v1/fungible/assets_from_source",
+        headers={"accept": "application/json", "content-type": "application/json"},
+        json={
+            "allow_multi_tx": False,
+            "include_cw20_assets": True,
+            "source_asset_denom": src_denom,
+            "source_asset_chain_id": src_chain,
+            "client_id": "timewave-arb-bot",
+        },
+    )
+
+    if resp.status != 200:
+        return []
+
+    dests = resp.json()["dest_assets"]
+
+    def chain_info(info: dict[str, Any]) -> DenomChainInfo:
+        info = info["assets"][0]
+
+        if info["trace"] != "":
+            parts = info["trace"].split("/")
+            port, channel = parts[0], parts[1]
+
+            return DenomChainInfo(denom=info["denom"], port=port, channel=channel)
+
+        return DenomChainInfo(denom=info["denom"], port=None, channel=None)
+
+    return [chain_info(info) for info in dests.values()]
+
+
 def denom_info_on_chain(
     src_chain: str, src_denom: str, dest_chain: str
 ) -> Optional[DenomChainInfo]:

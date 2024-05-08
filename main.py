@@ -34,10 +34,13 @@ def main() -> None:
     parser.add_argument("-f", "--pool_file", default=None)
     parser.add_argument("-p", "--poll_interval", default=120)
     parser.add_argument("-d", "--discovery_interval", default=600)
-    parser.add_argument("-m", "--max_hops", default=3)
+    parser.add_argument("-nh", "--hops", default=3)
     parser.add_argument("-n", "--num_routes_considered", default=30)
     parser.add_argument(
-        "-v", "--valence_only", default=False, action=argparse.BooleanOptionalAction
+        "-r",
+        "--require_leg_types",
+        nargs="*",
+        default=[],
     )
     parser.add_argument(
         "-b",
@@ -71,7 +74,10 @@ def main() -> None:
     # The user may want to use custom RPC providers
     endpoints: dict[str, dict[str, list[str]]] = {
         "neutron": {"http": [], "grpc": []},
-        "osmosis": {"http": [], "grpc": []},
+        "osmosis": {
+            "http": ["https://lcd.osmosis.zone"],
+            "grpc": ["https://osmosis-rpc.publicnode.com:443"],
+        },
     }
 
     if args.net_config is not None:
@@ -95,9 +101,9 @@ def main() -> None:
             "pool_file": args.pool_file,
             "poll_interval": int(args.poll_interval),
             "discovery_interval": int(args.discovery_interval),
-            "max_hops": int(args.max_hops),
+            "hops": int(args.hops),
             "num_routes_considered": int(args.num_routes_considered),
-            "valence_only": bool(args.valence_only),
+            "require_leg_types": args.require_leg_types,
             "base_denom": args.base_denom,
             "profit_margin": int(args.profit_margin),
             "wallet_mnemonic": args.wallet_mnemonic,
