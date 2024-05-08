@@ -159,11 +159,11 @@ class State:
 
         if self.routes is None:
             self.routes: List[List[Union[PoolProvider, AuctionProvider]]] = (
-                get_routes_with_depth_limit_bfs(
+                get_routes_with_depth_limit_dfs(
                     ctx.cli_args["max_hops"],
                     ctx.cli_args["num_routes_considered"],
-                    ctx.cli_args["valence_only"],
                     ctx.cli_args["base_denom"],
+                    ctx.cli_args["valence_only"],
                     pools,
                     auctions,
                 )
@@ -595,7 +595,7 @@ def route_base_denom_profit_prices(
     return (quantity_received - starting_amount, prices)
 
 
-def get_routes_with_depth_limit_bfs(
+def get_routes_with_depth_limit_dfs(
     depth: int,
     limit: int,
     src: str,
@@ -608,112 +608,52 @@ def get_routes_with_depth_limit_bfs(
     of `depth`.
     """
 
-    to_explore: deque[
-        tuple[
-            Union[PoolProvider, AuctionProvider],
-            tuple[
-                List[Union[PoolProvider, AuctionProvider]],
-                set[Union[PoolProvider, AuctionProvider]],
-            ],
-            str,
+    # Note: this traversal method works performing depth first search
+    # to find `limit` paths of length `depth` that include
+    # a valence auction, if `valance_only` is True.
+
+    n_paths = 0
+
+    def get_routes_from(
+        start: str, path: List[Union[PoolProvider, AuctionProvider]], has_valence: bool
+    ) -> List[List[Union[PoolProvider, AuctionProvider]]]:
+        nonlocal limit
+
+        if limit <= 0 or len(path) > depth:
+            return []
+
+        # We have arrived at the starting vertex, so no
+        # more paths to explore
+        if start == src and len(path) != 0:
+            if valence_only and not has_valence:
+                return []
+
+            limit -= 1
+
+            return [path]
+
+        paths = []
+
+        start_pools: List[Union[AuctionProvider, PoolProvider]] = [
+            *(
+                pool
+                for pool_list in pools.get(start, {}).values()
+                for pool in pool_list
+            ),
+            *auctions.get(start, {}).values(),
         ]
-    ] = deque(
-        [
-            (pool, ([], set()), src)
-            for pool_set in pools.get(src, {}).values()
-            for pool in pool_set
-        ]
-    )
-    paths: List[List[Union[PoolProvider, AuctionProvider]]] = []
-    denom_cache = {}
 
-    # Perform a breadth-first traversal, exploring all possible
-    # routes from `src` back to itself
-    while len(to_explore) > 0 and len(paths) < limit:
-        pool, path, base_denom = to_explore.pop()
-        pair_denom = pool.asset_a() if pool.asset_a() != base_denom else pool.asset_b()
+        for pool in start_pools:
+            next_start = pool.asset_a() if pool.asset_a() != start else pool.asset_b()
 
-        if pair_denom not in denom_cache:
-            denom_info = denom_info_on_chain("neutron-1", pair_denom, "osmosis-1")
-
-            if not denom_info:
-                continue
-
-            denom_cache[pair_denom] = denom_info.denom
-
-        if len(path[0]) + 1 > depth:
-            continue
-
-        if pair_denom == src and len(path[0]) > 0:
-            path[0].append(pool)
-            path[1].add(pool)
-
-            logger.info(
-                "Closed circuit from %s to %s; registering route",
-                src,
-                pair_denom,
-            )
-            logger.info(
-                "Discovered route with %d hop(s): %s",
-                len(path[0]),
-                " -> ".join(
-                    map(
-                        lambda route_leg: route_leg.asset_a()
-                        + " - "
-                        + route_leg.asset_b(),
-                        path[0],
-                    )
-                ),
+            paths.extend(
+                get_routes_from(
+                    next_start,
+                    path + [pool],
+                    isinstance(pool, AuctionProvider) or has_valence,
+                )
             )
 
-            # Check that the route includes an auction if the user wants
-            if valence_only and (
-                not any((isinstance(prov, AuctionProvider) for prov in path[0]))
-            ):
-                continue
+        return paths
 
-            paths.append(path[0])
-
-            continue
-
-        # Check auctions first for exploration
-        if pair_denom in auctions:
-            for candidate_auction in auctions[pair_denom].values():
-                if candidate_auction not in path[1] and pool != candidate_auction:
-                    to_explore.append(
-                        (
-                            candidate_auction,
-                            (path[0] + [pool], path[1] | {pool}),
-                            pair_denom,
-                        )
-                    )
-
-        for candidate_pool in (
-            pool for pool_set in pools[pair_denom].values() for pool in pool_set
-        ):
-            if candidate_pool not in path[1] and candidate_pool != pool:
-                to_explore.append(
-                    (candidate_pool, (path[0] + [pool], path[1] | {pool}), pair_denom)
-                )
-
-        # Osmosis may not have a matching pool
-        if denom_cache[pair_denom] in pools:
-            for candidate_pool in (
-                (
-                    pool
-                    for pool_set in pools[denom_cache[pair_denom]].values()
-                    for pool in pool_set
-                )
-                if denom_cache[pair_denom] is not None
-                else []
-            ):
-                if candidate_pool not in path[1] and pool != candidate_pool:
-                    to_explore.append(
-                        (
-                            candidate_pool,
-                            (path[0] + [pool], path[1] | {pool}),
-                            pair_denom,
-                        )
-                    )
-
-    return paths
+    return get_routes_from(src, [], False)
