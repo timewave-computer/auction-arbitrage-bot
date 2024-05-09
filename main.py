@@ -50,7 +50,7 @@ def main() -> None:
     parser.add_argument(
         "-pm",
         "--profit_margin",
-        default=2000000,
+        default=1000,
     )
     parser.add_argument(
         "-w",
@@ -96,6 +96,7 @@ def main() -> None:
                 for endpoint in endpoints["neutron"]["http"]
             ],
         ],
+        endpoints,
         LocalWallet.from_mnemonic(args.wallet_mnemonic, prefix="neutron"),
         {
             "pool_file": args.pool_file,

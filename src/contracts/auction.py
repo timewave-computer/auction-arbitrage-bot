@@ -36,6 +36,7 @@ class AuctionProvider(WithContract):
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b
         self.chain_id = contract_info.clients[0].query_chain_id()
+        self.chain_prefix = "neutron"
 
     def exchange_rate(self) -> int:
         """

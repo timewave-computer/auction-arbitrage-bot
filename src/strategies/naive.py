@@ -7,6 +7,7 @@ from decimal import Decimal
 import json
 from typing import List, Union, Optional, Self, Any
 from datetime import datetime, timedelta
+import time
 from collections import deque
 from dataclasses import dataclass
 import logging
@@ -74,8 +75,8 @@ class State:
                 if "osmosis" in ent:
                     return OsmosisPoolProvider(
                         endpoints,
-                        ent["osmosis"]["pool_id"],
                         ent["osmosis"]["address"],
+                        ent["osmosis"]["pool_id"],
                         (ent["osmosis"]["asset_a"], ent["osmosis"]["asset_b"]),
                     )
 
@@ -400,13 +401,9 @@ def exec_arbs(
                 assets[1](),
             )
 
-            # The funds are not already on osmosis, so they need to be moved
-            if (
-                isinstance(leg, OsmosisPoolProvider)
-                and prev_leg
-                and prev_leg.chain_id != "osmosis-1"
-            ):
-                transfer_osmosis(prev_leg, leg, ctx, swap_balance)
+            # The funds are not already on the current chain, so they need to be moved
+            if prev_leg and prev_leg.chain_id != leg.chain_id:
+                transfer(prev_asset, prev_leg, leg, ctx, swap_balance)
 
             # If the arb leg is on astroport, simply execute the swap
             # on asset A, producing asset B
@@ -457,7 +454,8 @@ def exec_arbs(
             prev_asset = assets[1]()
 
 
-def transfer_osmosis(
+def transfer(
+    denom: str,
     prev_leg: Union[PoolProvider, AuctionProvider],
     leg: Union[PoolProvider, AuctionProvider],
     ctx: Ctx,
@@ -470,33 +468,46 @@ def transfer_osmosis(
     succeeded.
     """
 
-    denom_info_osmo = denom_info_on_chain(
+    denom_info = denom_info_on_chain(
         src_chain=prev_leg.chain_id,
-        src_denom=prev_leg.asset_b(),
+        src_denom=denom,
         dest_chain=leg.chain_id,
     )
 
+    channel_info = try_multiple_rest_endpoints(
+        ctx.endpoints[leg.chain_id.split("-")[0]]["http"],
+        f"/ibc/core/channel/v1/channels/{denom_info.channel}/ports/{denom_info.port}",
+    )
+
+    if not channel_info:
+        return False
+
     # Not enough info to complete the transfer
-    if not denom_info_osmo or not denom_info_osmo.port or not denom_info_osmo.channel:
+    if not denom_info or not denom_info.port or not denom_info.channel:
         return False
 
     # Create a messate transfering the funds
     msg = tx_pb2.MsgTransfer(  # pylint: disable=no-member
-        source_port=denom_info_osmo.port,
-        source_channel=denom_info_osmo.channel,
-        sender=ctx.wallet.address(),
-        receiver=Address(ctx.wallet.public_key(), prefix=leg.chain_id.split("-")[0]),
-        token=coin_pb2.Coin(  # pylint: disable=maybe-no-member
-            denom=prev_leg.asset_b(), amount=str(swap_balance)
-        ),
+        source_port=channel_info["channel"]["counterparty"]["port_id"],
+        source_channel=channel_info["channel"]["counterparty"]["channel_id"],
+        sender=str(Address(ctx.wallet.public_key(), prefix=prev_leg.chain_prefix)),
+        receiver=str(Address(ctx.wallet.public_key(), prefix=leg.chain_prefix)),
+        timeout_timestamp=time.time_ns() + 600 * 10**9,
+    )
+    msg.token.CopyFrom(
+        coin_pb2.Coin(  # pylint: disable=maybe-no-member
+            denom=denom, amount=str(swap_balance)
+        )
     )
 
     tx = Transaction()
-    tx.add_msg(msg)  # pylint: disable=no-member
+    tx.add_message(msg)
 
     submitted = try_multiple_clients_fatal(
         ctx.clients,
-        lambda client: prepare_and_broadcast_basic_transaction(client, tx, ctx.wallet),
+        lambda client: prepare_and_broadcast_basic_transaction(
+            client, tx, ctx.wallet, gas_limit=3000000
+        ),
     )
 
     logger.info(
@@ -505,6 +516,8 @@ def transfer_osmosis(
         leg.chain_id,
         submitted.tx_hash,
     )
+
+    submitted.wait_to_complete()
 
     # The IBC transfer failed, so we cannot execute the arb
     if not submitted.response.ensure_successful():
@@ -522,8 +535,8 @@ def transfer_osmosis(
         ack_resp = try_multiple_rest_endpoints(
             leg.endpoints,
             (
-                f"/ibc/core/channel/v1/channels/{denom_info_osmo.channel}/"
-                f"ports/{denom_info_osmo.port}/packet_acknowledgement/"
+                f"/ibc/core/channel/v1/channels/{denom_info.channel}/"
+                f"ports/{denom_info.port}/packet_acknowledgement/"
                 f"{submitted.response.events['send_packet']['packet_sequence']}"
             ),
         )

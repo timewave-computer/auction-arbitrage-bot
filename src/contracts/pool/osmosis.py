@@ -39,6 +39,7 @@ class OsmosisPoolProvider(PoolProvider):
 
         self.client = urllib3.PoolManager()
         self.chain_id = "osmosis-1"
+        self.chain_prefix = "osmo"
 
         self.endpoints = endpoints["http"]
         self.grpc_endpoints = endpoints["grpc"]
@@ -72,7 +73,7 @@ class OsmosisPoolProvider(PoolProvider):
             ),
         )
 
-        if not res:
+        if not res or ("code" in res and res["code"] == 13):
             return 0
 
         return int(res["token_out_amount"])
@@ -93,7 +94,7 @@ class OsmosisPoolProvider(PoolProvider):
         tx = Transaction()
         tx.add_message(
             tx_pb2.MsgSwapExactAmountIn(  # pylint: disable=maybe-no-member
-                sender=wallet.address(),
+                sender=str(Address(ctx.wallet.public_key(), prefix="osmo")),
                 routes=[
                     swap_route_pb2.SwapAmountInRoute(  # pylint: disable=maybe-no-member
                         pool_id=self.pool_id, token_out_denom=asset_b
