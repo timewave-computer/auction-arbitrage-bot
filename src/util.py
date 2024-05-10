@@ -208,7 +208,7 @@ def int_to_decimal(i: int) -> Decimal:
     Converts an expanded decimal quantity to a decimal.
     """
 
-    return Decimal(i) / (Decimal("1.0") ** 18)
+    return Decimal(i) / (Decimal("10.0") ** 18)
 
 
 @dataclass

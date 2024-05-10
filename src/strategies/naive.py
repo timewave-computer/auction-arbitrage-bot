@@ -29,6 +29,7 @@ from src.util import (
     try_multiple_clients_fatal,
     try_multiple_rest_endpoints,
     decimal_to_int,
+    int_to_decimal,
     IBC_TRANSFER_TIMEOUT_SEC,
     IBC_TRANSFER_POLL_INTERVAL_SEC,
 )
@@ -429,12 +430,15 @@ def exec_arbs(
             if prev_leg and prev_leg.chain_id != leg.chain_id:
                 transfer(prev_asset, prev_leg, leg, ctx, to_swap)
 
-                to_swap = try_multiple_clients_fatal(
-                    ctx.clients[leg.chain_id.split("-")[0]],
-                    lambda client: client.query_bank_balance(
-                        Address(ctx.wallet.public_key(), prefix=leg.chain_prefix),
-                        assets[0](),
+                to_swap = min(
+                    try_multiple_clients_fatal(
+                        ctx.clients[leg.chain_id.split("-")[0]],
+                        lambda client: client.query_bank_balance(
+                            Address(ctx.wallet.public_key(), prefix=leg.chain_prefix),
+                            assets[0](),
+                        ),
                     ),
+                    to_swap,
                 )
 
             # If the arb leg is on astroport, simply execute the swap
@@ -444,6 +448,9 @@ def exec_arbs(
                     logger.info(
                         "Submitting arb to contract: %s", leg.contract_info.address
                     )
+
+                if isinstance(leg, OsmosisPoolProvider):
+                    logger.info("Submitting arb to pool: %d", leg.pool_id)
 
                 # Submit the arb trade
                 if assets[0] == leg.asset_a:
@@ -624,7 +631,8 @@ def route_base_denom_profit_prices(
                 )
                 prices.append(
                     decimal_to_int(
-                        Decimal(new_quantity_received) / Decimal(quantity_received)
+                        int_to_decimal(new_quantity_received)
+                        / int_to_decimal(quantity_received)
                     )
                 )
                 quantity_received = new_quantity_received
@@ -634,7 +642,8 @@ def route_base_denom_profit_prices(
                 )
                 prices.append(
                     decimal_to_int(
-                        Decimal(new_quantity_received) / Decimal(quantity_received)
+                        int_to_decimal(new_quantity_received)
+                        / int_to_decimal(quantity_received)
                     )
                 )
                 quantity_received = new_quantity_received
