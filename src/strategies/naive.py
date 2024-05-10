@@ -3,6 +3,8 @@ Implements an arbitrage strategy with an arbitrary number
 of hops using all available providers.
 """
 
+import threading
+from queue import Queue
 from decimal import Decimal
 import json
 from typing import List, Union, Optional, Self, Any
@@ -43,6 +45,7 @@ from cosmpy.aerial.client.utils import prepare_and_broadcast_basic_transaction  
 from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
 import grpc
 import schedule
+from readerwriterlock import rwlock
 from schedule import Scheduler
 
 logger = logging.getLogger(__name__)
@@ -230,102 +233,73 @@ def strategy(
 
     state = ctx.state.poll(ctx, pools, auctions)
 
-    routes: List[List[Union[PoolProvider, AuctionProvider]]] = []
-    route_profit: List[int] = []
-
-    # Prices at which each leg in an arb will be executed
-    route_price: List[List[int]] = []
-
-    balance_resp = try_multiple_clients(
-        ctx.clients["neutron"],
-        lambda client: client.query_bank_balance(
-            Address(ctx.wallet.public_key(), prefix="neutron"),
-            ctx.cli_args["base_denom"],
-        ),
-    )
-
-    if not balance_resp:
-        return ctx
+    workers = []
+    to_exec = Queue(maxsize=0)
+    is_exec = rwlock.RWLockFair()
 
     # Report route stats to user
     logger.info(
         "Finding profitable routes",
     )
 
-    # Calculate profitability of all routes, and report them
-    # to the user
+    def profit_arb(i: int, route: List[Union[PoolProvider, AuctionProvider]]):
+        with is_exec.gen_rlock():
+            balance_resp = try_multiple_clients(
+                ctx.clients["neutron"],
+                lambda client: client.query_bank_balance(
+                    Address(ctx.wallet.public_key(), prefix="neutron"),
+                    ctx.cli_args["base_denom"],
+                ),
+            )
+
+            if not balance_resp:
+                return ctx
+
+            profit, prices = route_base_denom_profit_prices(
+                ctx.cli_args["base_denom"],
+                balance_resp,
+                route,
+            )
+
+            logger.info(
+                (
+                    "Candidate arbitrage opportunity #%d with "
+                    "profit of %d and route with %d hop(s): %s"
+                ),
+                i + 1,
+                profit,
+                len(route),
+                " -> ".join(
+                    map(
+                        lambda route_leg: fmt_route_leg(route_leg)
+                        + ": "
+                        + route_leg.asset_a()
+                        + " - "
+                        + route_leg.asset_b(),
+                        route,
+                    )
+                ),
+            )
+
+            # The trade is profitable. Execute the arb
+            if profit >= ctx.cli_args["profit_margin"]:
+                logger.info("queueing candidate arbitrage opportunity #%d", i + 1)
+                to_exec.put((route, balance_resp))
+
+    # Calculate profitability of all routes, and execute
+    # profitable ones
     for i, route in enumerate(ctx.state.routes):
-        profit, prices = route_base_denom_profit_prices(
-            ctx.cli_args["base_denom"],
-            balance_resp,
-            route,
-        )
+        workers.append(threading.Thread(target=profit_arb, args=[i, route]))
+        workers[-1].start()
 
-        logger.info(
-            (
-                "Candidate arbitrage opportunity #%d with "
-                "profit of %d and route with %d hop(s): %s"
-            ),
-            i + 1,
-            profit,
-            len(route),
-            " -> ".join(
-                map(
-                    lambda route_leg: fmt_route_leg(route_leg)
-                    + ": "
-                    + route_leg.asset_a()
-                    + " - "
-                    + route_leg.asset_b(),
-                    route,
-                )
-            ),
-        )
+    while True:
+        route, balance_resp = to_exec.get()
 
-        if profit >= ctx.cli_args["profit_margin"]:
-            routes.append(route)
-            route_profit.append(profit)
-            route_price.append(prices)
+        with is_exec.gen_wlock():
+            exec_arb(balance_resp, route, ctx)
 
-    if len(routes) > 0:
-        # Report route stats to user
-        logger.info(
-            "Found %d profitable routes, with max profit of %d and min profit of %d",
-            len(routes),
-            max(route_profit),
-            min(route_profit),
-        )
-    else:
-        logger.info(
-            "Found no profitable routes",
-        )
-
-    for i, (route, profit) in enumerate(zip(routes, route_profit)):
-        logger.info(
-            (
-                "Candidate arbitrage opportunity #%d with "
-                "profit of %d and route with %d hop(s): %s"
-            ),
-            i + 1,
-            profit,
-            len(route),
-            " -> ".join(
-                map(
-                    lambda route_leg: fmt_route_leg(route_leg)
-                    + ": "
-                    + route_leg.asset_a()
-                    + " - "
-                    + route_leg.asset_b(),
-                    route,
-                )
-            ),
-        )
-
-    logger.info(
-        "Executing %d arbitrage opportunities",
-        len(routes),
-    )
-
-    exec_arbs(balance_resp, routes, route_price, ctx)
+    for worker in workers:
+        worker.join()
 
     return ctx.with_state(state)
 
@@ -347,10 +321,9 @@ def fmt_route_leg(leg: Union[PoolProvider, AuctionProvider]) -> str:
     return "unknown pool"
 
 
-def exec_arbs(
+def exec_arb(
     swap_balance: int,
-    routes: List[List[Union[AuctionProvider, PoolProvider]]],
-    route_price: List[List[int]],
+    route: List[Union[AuctionProvider, PoolProvider]],
     ctx: Ctx,
 ) -> None:
     """
@@ -364,124 +337,121 @@ def exec_arbs(
     prev_asset = ctx.cli_args["base_denom"]
 
     # Submit arb trades for all profitable routes
-    for route, leg_prices in zip(routes, route_price):
-        logger.info(
-            (
-                "Queueing candidate arbitrage opportunity with "
-                "route with %d hop(s): %s"
-            ),
-            len(route),
-            " -> ".join(
-                map(
-                    lambda route_leg: fmt_route_leg(route_leg)
-                    + ": "
-                    + route_leg.asset_a()
-                    + " - "
-                    + route_leg.asset_b(),
-                    route,
-                )
-            ),
+    logger.info(
+        ("Queueing candidate arbitrage opportunity with " "route with %d hop(s): %s"),
+        len(route),
+        " -> ".join(
+            map(
+                lambda route_leg: fmt_route_leg(route_leg)
+                + ": "
+                + route_leg.asset_a()
+                + " - "
+                + route_leg.asset_b(),
+                route,
+            )
+        ),
+    )
+
+    for leg in route:
+        tx: Optional[SubmittedTx] = None
+
+        prev_asset_info: Optional[DenomChainInfo] = None
+
+        if prev_leg:
+            prev_asset_info = denom_info_on_chain(
+                prev_leg.chain_id, prev_asset, leg.chain_id
+            )
+
+        # Match the previous leg's swapped-to asset with
+        # the current leg's swap from asset
+        assets = (
+            [leg.asset_a, leg.asset_b]
+            if prev_asset == leg.asset_a()
+            or (prev_leg and prev_asset_info and prev_asset_info.denom == leg.asset_a())
+            else [leg.asset_b, leg.asset_a]
         )
 
-        for leg, price in zip(route, leg_prices):
-            tx: Optional[SubmittedTx] = None
-
-            prev_asset_info: Optional[DenomChainInfo] = None
-
-            if prev_leg:
-                prev_asset_info = denom_info_on_chain(
-                    prev_leg.chain_id, prev_asset, leg.chain_id
-                )
-
-            # Match the previous leg's swapped-to asset with
-            # the current leg's swap from asset
-            assets = (
-                [leg.asset_a, leg.asset_b]
-                if prev_asset == leg.asset_a()
-                or (
-                    prev_leg
-                    and prev_asset_info
-                    and prev_asset_info.denom == leg.asset_a()
-                )
-                else [leg.asset_b, leg.asset_a]
+        to_swap = (
+            swap_balance
+            if not prev_leg
+            else try_multiple_clients_fatal(
+                ctx.clients[prev_leg.chain_id.split("-")[0]],
+                lambda client: client.query_bank_balance(
+                    Address(ctx.wallet.public_key(), prefix=prev_leg.chain_prefix),
+                    prev_asset,
+                ),
             )
+        )
 
-            to_swap = (
-                swap_balance
-                if not prev_leg
-                else try_multiple_clients_fatal(
-                    ctx.clients[prev_leg.chain_id.split("-")[0]],
+        logger.info(
+            "Executing arb leg on %s with %d %s -> %s",
+            fmt_route_leg(leg),
+            to_swap,
+            assets[0](),
+            assets[1](),
+        )
+
+        # The funds are not already on the current chain, so they need to be moved
+        if prev_leg and prev_leg.chain_id != leg.chain_id:
+            transfer(prev_asset, prev_leg, leg, ctx, to_swap)
+
+            to_swap = min(
+                try_multiple_clients_fatal(
+                    ctx.clients[leg.chain_id.split("-")[0]],
                     lambda client: client.query_bank_balance(
-                        Address(ctx.wallet.public_key(), prefix=prev_leg.chain_prefix),
-                        prev_asset,
+                        Address(ctx.wallet.public_key(), prefix=leg.chain_prefix),
+                        assets[0](),
                     ),
-                )
+                ),
+                to_swap,
             )
 
+        to_receive = (
+            leg.simulate_swap_asset_a(to_swap)
+            if assets[0] == leg.asset_a
+            else leg.simulate_swap_asset_b(to_swap)
+        )
+        price = decimal_to_int(Decimal(to_receive) / Decimal(to_swap))
+
+        # If the arb leg is on astroport, simply execute the swap
+        # on asset A, producing asset B
+        if isinstance(leg, PoolProvider):
+            if isinstance(leg, NeutronAstroportPoolProvider):
+                logger.info("Submitting arb to contract: %s", leg.contract_info.address)
+
+            if isinstance(leg, OsmosisPoolProvider):
+                logger.info("Submitting arb to pool: %d", leg.pool_id)
+
+            # Submit the arb trade
+            if assets[0] == leg.asset_a:
+                tx = leg.swap_asset_a(
+                    ctx.wallet,
+                    to_swap,
+                    price,
+                    Decimal("0.005"),
+                ).wait_to_complete()
+            else:
+                tx = leg.swap_asset_b(
+                    ctx.wallet,
+                    to_swap,
+                    price,
+                    Decimal("0.005"),
+                ).wait_to_complete()
+
+        if isinstance(leg, AuctionProvider) and assets[0] == leg.asset_a:
+            tx = leg.swap_asset_a(ctx.wallet, to_swap).wait_to_complete()
+
+        if tx:
+            # Notify the user of the arb trade
             logger.info(
-                "Executing arb leg on %s with %d %s -> %s",
-                fmt_route_leg(leg),
-                to_swap,
+                "Executed leg %s -> %s: %s",
                 assets[0](),
                 assets[1](),
+                tx.tx_hash,
             )
 
-            # The funds are not already on the current chain, so they need to be moved
-            if prev_leg and prev_leg.chain_id != leg.chain_id:
-                transfer(prev_asset, prev_leg, leg, ctx, to_swap)
-
-                to_swap = min(
-                    try_multiple_clients_fatal(
-                        ctx.clients[leg.chain_id.split("-")[0]],
-                        lambda client: client.query_bank_balance(
-                            Address(ctx.wallet.public_key(), prefix=leg.chain_prefix),
-                            assets[0](),
-                        ),
-                    ),
-                    to_swap,
-                )
-
-            # If the arb leg is on astroport, simply execute the swap
-            # on asset A, producing asset B
-            if isinstance(leg, PoolProvider):
-                if isinstance(leg, NeutronAstroportPoolProvider):
-                    logger.info(
-                        "Submitting arb to contract: %s", leg.contract_info.address
-                    )
-
-                if isinstance(leg, OsmosisPoolProvider):
-                    logger.info("Submitting arb to pool: %d", leg.pool_id)
-
-                # Submit the arb trade
-                if assets[0] == leg.asset_a:
-                    tx = leg.swap_asset_a(
-                        ctx.wallet,
-                        to_swap,
-                        price,
-                        Decimal("0.005"),
-                    ).wait_to_complete()
-                else:
-                    tx = leg.swap_asset_b(
-                        ctx.wallet,
-                        to_swap,
-                        price,
-                        Decimal("0.005"),
-                    ).wait_to_complete()
-
-            if isinstance(leg, AuctionProvider) and assets[0] == leg.asset_a:
-                tx = leg.swap_asset_a(ctx.wallet, to_swap).wait_to_complete()
-
-            if tx:
-                # Notify the user of the arb trade
-                logger.info(
-                    "Executed leg %s -> %s: %s",
-                    assets[0](),
-                    assets[1](),
-                    tx.tx_hash,
-                )
-
-            prev_leg = leg
-            prev_asset = assets[1]()
+        prev_leg = leg
+        prev_asset = assets[1]()
 
 
 def transfer(
