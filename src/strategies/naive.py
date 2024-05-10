@@ -566,9 +566,6 @@ def transfer(
     # Future note: This could be async so other arbs can make
     # progress while this is happening
     def transfer_or_continue() -> None:
-        if not isinstance(leg, OsmosisPoolProvider):
-            return
-
         # Check for a package acknowledgement by querying osmosis
         ack_resp = try_multiple_rest_endpoints(
             leg.endpoints,
@@ -583,13 +580,16 @@ def transfer(
         if not ack_resp:
             return
 
-        # Stop trying, since the transfer succeede
+        # Stop trying, since the transfer succeeded
         schedule.clear()
 
     schedule.every(IBC_TRANSFER_POLL_INTERVAL_SEC).seconds.until(
         timedelta(seconds=IBC_TRANSFER_TIMEOUT_SEC)
     ).do(transfer_or_continue)
-    schedule.run_all()
+
+    while schedule.jobs:
+        schedule.run_pending()
+        time.sleep(1)
 
     return True
 
