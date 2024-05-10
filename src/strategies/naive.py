@@ -37,7 +37,7 @@ from ibc.core.channel.v1 import query_pb2
 from ibc.core.channel.v1 import query_pb2_grpc
 from cosmos.base.v1beta1 import coin_pb2
 from cosmpy.crypto.address import Address  # type: ignore
-from cosmpy.aerial.tx import Transaction  # type: ignore
+from cosmpy.aerial.tx import Transaction, SigningCfg  # type: ignore
 from cosmpy.aerial.client.utils import prepare_and_broadcast_basic_transaction  # type: ignore
 from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
 import grpc
@@ -84,7 +84,7 @@ class State:
                     return NeutronAstroportPoolProvider(
                         ContractInfo(
                             deployments()["pools"]["astroport"]["neutron"],
-                            ctx.clients,
+                            ctx.clients["neutron"],
                             ent["neutron_astroport"]["address"],
                             "pair",
                         ),
@@ -96,7 +96,7 @@ class State:
                     return AuctionProvider(
                         ContractInfo(
                             deployments()["auctions"]["neutron"],
-                            ctx.clients,
+                            ctx.clients["neutron"],
                             ent["auction"]["address"],
                             "auction",
                         ),
@@ -133,7 +133,7 @@ class State:
 
         endpoints = {
             "http": ["https://lcd.osmosis.zone"],
-            "grpc": ["https://osmosis-rpc.publicnode.com:443"],
+            "grpc": ["grpc+https://osmosis-grpc.publicnode.com:443"],
         }
 
         if ctx.cli_args["net_config"] is not None:
@@ -236,7 +236,7 @@ def strategy(
     route_price: List[List[int]] = []
 
     balance_resp = try_multiple_clients(
-        ctx.clients,
+        ctx.clients["neutron"],
         lambda client: client.query_bank_balance(
             Address(ctx.wallet.public_key(), prefix="neutron"),
             ctx.cli_args["base_denom"],
@@ -385,25 +385,57 @@ def exec_arbs(
         for leg, price in zip(route, leg_prices):
             tx: Optional[SubmittedTx] = None
 
+            prev_asset_info: Optional[DenomChainInfo] = None
+
+            if prev_leg:
+                prev_asset_info = denom_info_on_chain(
+                    prev_leg.chain_id, prev_asset, leg.chain_id
+                )
+
             # Match the previous leg's swapped-to asset with
             # the current leg's swap from asset
             assets = (
                 [leg.asset_a, leg.asset_b]
                 if prev_asset == leg.asset_a()
+                or (
+                    prev_leg
+                    and prev_asset_info
+                    and prev_asset_info.denom == leg.asset_a()
+                )
                 else [leg.asset_b, leg.asset_a]
+            )
+
+            to_swap = (
+                swap_balance
+                if not prev_leg
+                else try_multiple_clients_fatal(
+                    ctx.clients[prev_leg.chain_id.split("-")[0]],
+                    lambda client: client.query_bank_balance(
+                        Address(ctx.wallet.public_key(), prefix=prev_leg.chain_prefix),
+                        prev_asset,
+                    ),
+                )
             )
 
             logger.info(
                 "Executing arb leg on %s with %d %s -> %s",
                 fmt_route_leg(leg),
-                swap_balance,
+                to_swap,
                 assets[0](),
                 assets[1](),
             )
 
             # The funds are not already on the current chain, so they need to be moved
             if prev_leg and prev_leg.chain_id != leg.chain_id:
-                transfer(prev_asset, prev_leg, leg, ctx, swap_balance)
+                transfer(prev_asset, prev_leg, leg, ctx, to_swap)
+
+                to_swap = try_multiple_clients_fatal(
+                    ctx.clients[leg.chain_id.split("-")[0]],
+                    lambda client: client.query_bank_balance(
+                        Address(ctx.wallet.public_key(), prefix=leg.chain_prefix),
+                        assets[0](),
+                    ),
+                )
 
             # If the arb leg is on astroport, simply execute the swap
             # on asset A, producing asset B
@@ -415,9 +447,6 @@ def exec_arbs(
 
                 # Submit the arb trade
                 if assets[0] == leg.asset_a:
-                    to_swap = swap_balance
-                    swap_balance = leg.simulate_swap_asset_a(to_swap)
-
                     tx = leg.swap_asset_a(
                         ctx.wallet,
                         to_swap,
@@ -425,9 +454,6 @@ def exec_arbs(
                         Decimal("0.005"),
                     ).wait_to_complete()
                 else:
-                    to_swap = swap_balance
-                    swap_balance = leg.simulate_swap_asset_b(to_swap)
-
                     tx = leg.swap_asset_b(
                         ctx.wallet,
                         to_swap,
@@ -436,9 +462,6 @@ def exec_arbs(
                     ).wait_to_complete()
 
             if isinstance(leg, AuctionProvider) and assets[0] == leg.asset_a:
-                to_swap = swap_balance
-                swap_balance = leg.exchange_rate() * to_swap
-
                 tx = leg.swap_asset_a(ctx.wallet, to_swap).wait_to_complete()
 
             if tx:
@@ -474,6 +497,9 @@ def transfer(
         dest_chain=leg.chain_id,
     )
 
+    if not denom_info:
+        return False
+
     channel_info = try_multiple_rest_endpoints(
         ctx.endpoints[leg.chain_id.split("-")[0]]["http"],
         f"/ibc/core/channel/v1/channels/{denom_info.channel}/ports/{denom_info.port}",
@@ -486,6 +512,13 @@ def transfer(
     if not denom_info or not denom_info.port or not denom_info.channel:
         return False
 
+    acc = try_multiple_clients_fatal(
+        ctx.clients[prev_leg.chain_id.split("-")[0]],
+        lambda client: client.query_account(
+            str(Address(ctx.wallet.public_key(), prefix=prev_leg.chain_prefix))
+        ),
+    )
+
     # Create a messate transfering the funds
     msg = tx_pb2.MsgTransfer(  # pylint: disable=no-member
         source_port=channel_info["channel"]["counterparty"]["port_id"],
@@ -496,18 +529,23 @@ def transfer(
     )
     msg.token.CopyFrom(
         coin_pb2.Coin(  # pylint: disable=maybe-no-member
-            denom=denom, amount=str(swap_balance)
+            denom=denom, amount=str(swap_balance - 50000)
         )
     )
 
     tx = Transaction()
     tx.add_message(msg)
+    tx.seal(
+        SigningCfg.direct(ctx.wallet.public_key(), acc.sequence),
+        f"50000{prev_leg.chain_fee_denom}",
+        500000,
+    )
+    tx.sign(ctx.wallet.signer(), prev_leg.chain_id, acc.number)
+    tx.complete()
 
     submitted = try_multiple_clients_fatal(
-        ctx.clients,
-        lambda client: prepare_and_broadcast_basic_transaction(
-            client, tx, ctx.wallet, gas_limit=3000000
-        ),
+        ctx.clients[prev_leg.chain_id.split("-")[0]],
+        lambda client: client.broadcast_tx(tx),
     )
 
     logger.info(

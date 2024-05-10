@@ -8,7 +8,7 @@ import logging
 import sys
 from os import path
 import schedule
-from cosmpy.aerial.client import LedgerClient  # type: ignore
+from cosmpy.aerial.client import LedgerClient, NetworkConfig  # type: ignore
 from cosmpy.aerial.wallet import LocalWallet  # type: ignore
 from src.scheduler import Scheduler, Ctx
 from src.util import deployments, NEUTRON_NETWORK_CONFIG, custom_neutron_network_config
@@ -76,7 +76,7 @@ def main() -> None:
         "neutron": {"http": [], "grpc": []},
         "osmosis": {
             "http": ["https://lcd.osmosis.zone"],
-            "grpc": ["https://osmosis-rpc.publicnode.com:443"],
+            "grpc": ["grpc+https://osmosis-grpc.publicnode.com:443"],
         },
     }
 
@@ -89,13 +89,29 @@ def main() -> None:
     logger.info("Building pool catalogue")
 
     ctx = Ctx(
-        [
-            LedgerClient(NEUTRON_NETWORK_CONFIG),
-            *[
-                LedgerClient(custom_neutron_network_config(endpoint))
-                for endpoint in endpoints["neutron"]["http"]
+        {
+            "neutron": [
+                LedgerClient(NEUTRON_NETWORK_CONFIG),
+                *[
+                    LedgerClient(custom_neutron_network_config(endpoint))
+                    for endpoint in endpoints["neutron"]["http"]
+                ],
             ],
-        ],
+            "osmosis": [
+                *[
+                    LedgerClient(
+                        NetworkConfig(
+                            chain_id="osmosis-1",
+                            url=endpoint,
+                            fee_minimum_gas_price=0.0053,
+                            fee_denomination="uosmo",
+                            staking_denomination="uosmo",
+                        )
+                    )
+                    for endpoint in endpoints["osmosis"]["grpc"]
+                ],
+            ],
+        },
         endpoints,
         LocalWallet.from_mnemonic(args.wallet_mnemonic, prefix="neutron"),
         {

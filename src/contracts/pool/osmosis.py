@@ -6,9 +6,10 @@ from functools import cached_property
 from typing import Any, Optional, List
 import urllib3
 from cosmpy.aerial.wallet import LocalWallet  # type: ignore
-from cosmpy.aerial.tx import Transaction  # type: ignore
+from cosmpy.aerial.tx import Transaction, SigningCfg  # type: ignore
 from cosmpy.aerial.client import NetworkConfig, LedgerClient  # type: ignore
 from cosmpy.aerial.client.utils import prepare_and_broadcast_basic_transaction  # type: ignore
+from cosmpy.crypto.address import Address  # type: ignore
 from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
 from osmosis.poolmanager.v1beta1 import tx_pb2, swap_route_pb2
 from cosmos.base.v1beta1 import coin_pb2
@@ -16,6 +17,8 @@ from src.contracts.pool.provider import PoolProvider, cached_pools
 from src.util import (
     try_multiple_rest_endpoints,
     try_multiple_clients_fatal,
+    int_to_decimal,
+    decimal_to_int,
 )
 
 
@@ -40,6 +43,7 @@ class OsmosisPoolProvider(PoolProvider):
         self.client = urllib3.PoolManager()
         self.chain_id = "osmosis-1"
         self.chain_prefix = "osmo"
+        self.chain_fee_denom = "uosmo"
 
         self.endpoints = endpoints["http"]
         self.grpc_endpoints = endpoints["grpc"]
@@ -54,7 +58,7 @@ class OsmosisPoolProvider(PoolProvider):
             LedgerClient(
                 NetworkConfig(
                     chain_id="osmosis-1",
-                    url=f"grpc+{url}",
+                    url=url,
                     fee_minimum_gas_price=0.0025,
                     fee_denomination="uosmo",
                     staking_denomination="uosmo",
@@ -88,13 +92,22 @@ class OsmosisPoolProvider(PoolProvider):
         amount, price, max_spread = amount_price_spread
 
         # The minimum amount of tokens we want to receive
-        min_token_out_amount = amount * price - max_spread
+        min_token_out_amount = decimal_to_int(
+            int_to_decimal(amount) * int_to_decimal(price)
+        )
+
+        acc = try_multiple_clients_fatal(
+            self.ledgers,
+            lambda client: client.query_account(
+                str(Address(wallet.public_key(), prefix="osmo"))
+            ),
+        )
 
         # Perform the swap using the Osmosis pool manager
         tx = Transaction()
         tx.add_message(
             tx_pb2.MsgSwapExactAmountIn(  # pylint: disable=maybe-no-member
-                sender=str(Address(ctx.wallet.public_key(), prefix="osmo")),
+                sender=str(Address(wallet.public_key(), prefix="osmo")),
                 routes=[
                     swap_route_pb2.SwapAmountInRoute(  # pylint: disable=maybe-no-member
                         pool_id=self.pool_id, token_out_denom=asset_b
@@ -106,9 +119,21 @@ class OsmosisPoolProvider(PoolProvider):
                 token_out_min_amount=str(min_token_out_amount),
             )
         )
+        tx.seal(SigningCfg.direct(wallet.public_key(), acc.sequence), "", 0)
+        tx.sign(wallet.signer(), self.chain_id, acc.number)
+        tx.complete()
+
+        gas_limit, fee = try_multiple_clients_fatal(
+            self.ledgers, lambda client: client.estimate_gas_and_fee_for_tx(tx)
+        )
+
+        tx.seal(SigningCfg.direct(wallet.public_key(), acc.sequence), fee, gas_limit)
+        tx.sign(wallet.signer(), self.chain_id, acc.number)
+        tx.complete()
+
         return try_multiple_clients_fatal(
             self.ledgers,
-            lambda client: prepare_and_broadcast_basic_transaction(client, tx, wallet),
+            lambda client: client.broadcast_tx(tx),
         )
 
     def simulate_swap_asset_a(self, amount: int) -> int:
@@ -176,7 +201,7 @@ class OsmosisPoolDirectory:
             if endpoints
             else {
                 "http": ["https://lcd.osmosis.zone"],
-                "grpc": ["https://osmosis-rpc.publicnode.com:443"],
+                "grpc": ["grpc+https://osmosis-grpc.publicnode.com:443"],
             }
         )
 

@@ -19,7 +19,7 @@ class Ctx:
     - User state
     """
 
-    clients: list[LedgerClient]
+    clients: dict[str, list[LedgerClient]]
     endpoints: dict[str, dict[str, list[str]]]
     wallet: LocalWallet
     cli_args: dict[str, Any]
