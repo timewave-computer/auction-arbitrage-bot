@@ -234,7 +234,7 @@ def strategy(
     state = ctx.state.poll(ctx, pools, auctions)
 
     workers = []
-    to_exec = Queue(maxsize=0)
+    to_exec: Queue[List[Union[PoolProvider, AuctionProvider]]] = Queue(maxsize=0)
     is_exec = rwlock.RWLockFair()
 
     # Report route stats to user
@@ -242,7 +242,7 @@ def strategy(
         "Finding profitable routes",
     )
 
-    def profit_arb(i: int, route: List[Union[PoolProvider, AuctionProvider]]):
+    def profit_arb(i: int, route: List[Union[PoolProvider, AuctionProvider]]) -> None:
         with is_exec.gen_rlock():
             balance_resp = try_multiple_clients(
                 ctx.clients["neutron"],
@@ -253,9 +253,9 @@ def strategy(
             )
 
             if not balance_resp:
-                return ctx
+                return
 
-            profit, prices = route_base_denom_profit_prices(
+            profit, _ = route_base_denom_profit_quantities(
                 ctx.cli_args["base_denom"],
                 balance_resp,
                 route,
@@ -283,8 +283,8 @@ def strategy(
 
             # The trade is profitable. Execute the arb
             if profit >= ctx.cli_args["profit_margin"]:
-                logger.info("queueing candidate arbitrage opportunity #%d", i + 1)
-                to_exec.put((route, balance_resp))
+                logger.info("Queueing candidate arbitrage opportunity #%d", i + 1)
+                to_exec.put(route)
 
     # Calculate profitability of all routes, and execute
     # profitable ones
@@ -293,10 +293,10 @@ def strategy(
         workers[-1].start()
 
     while True:
-        route, balance_resp = to_exec.get()
+        route = to_exec.get()
 
         with is_exec.gen_wlock():
-            exec_arb(balance_resp, route, ctx)
+            exec_arb(route, ctx)
 
     for worker in workers:
         worker.join()
@@ -322,7 +322,6 @@ def fmt_route_leg(leg: Union[PoolProvider, AuctionProvider]) -> str:
 
 
 def exec_arb(
-    swap_balance: int,
     route: List[Union[AuctionProvider, PoolProvider]],
     ctx: Ctx,
 ) -> None:
@@ -332,6 +331,23 @@ def exec_arb(
     Takes a list of arbitrage trades, and a list of prices for each hop
     in each trade.
     """
+
+    swap_balance: Optional[int] = try_multiple_clients(
+        ctx.clients["neutron"],
+        lambda client: client.query_bank_balance(
+            Address(ctx.wallet.public_key(), prefix="neutron"),
+            ctx.cli_args["base_denom"],
+        ),
+    )
+
+    if not swap_balance:
+        return
+
+    _, quantities = route_base_denom_profit_quantities(
+        ctx.cli_args["base_denom"],
+        swap_balance,
+        route,
+    )
 
     prev_leg: Optional[Union[PoolProvider, AuctionProvider]] = None
     prev_asset = ctx.cli_args["base_denom"]
@@ -406,16 +422,15 @@ def exec_arb(
                 to_swap,
             )
 
-        to_receive = (
-            leg.simulate_swap_asset_a(to_swap)
-            if assets[0] == leg.asset_a
-            else leg.simulate_swap_asset_b(to_swap)
-        )
-        price = decimal_to_int(Decimal(to_receive) / Decimal(to_swap))
-
         # If the arb leg is on astroport, simply execute the swap
         # on asset A, producing asset B
         if isinstance(leg, PoolProvider):
+            to_receive = (
+                leg.simulate_swap_asset_a(to_swap)
+                if assets[0] == leg.asset_a
+                else leg.simulate_swap_asset_b(to_swap)
+            )
+
             if isinstance(leg, NeutronAstroportPoolProvider):
                 logger.info("Submitting arb to contract: %s", leg.contract_info.address)
 
@@ -427,15 +442,13 @@ def exec_arb(
                 tx = leg.swap_asset_a(
                     ctx.wallet,
                     to_swap,
-                    price,
-                    Decimal("0.005"),
+                    to_receive,
                 ).wait_to_complete()
             else:
                 tx = leg.swap_asset_b(
                     ctx.wallet,
                     to_swap,
-                    price,
-                    Decimal("0.005"),
+                    to_receive,
                 ).wait_to_complete()
 
         if isinstance(leg, AuctionProvider) and assets[0] == leg.asset_a:
@@ -534,10 +547,6 @@ def transfer(
 
     submitted.wait_to_complete()
 
-    # The IBC transfer failed, so we cannot execute the arb
-    if not submitted.response.ensure_successful():
-        return False
-
     # Continuously check for a package acknowledgement
     # or cancel the arb if the timeout passes
     # Future note: This could be async so other arbs can make
@@ -548,7 +557,7 @@ def transfer(
             leg.endpoints,
             (
                 f"/ibc/core/channel/v1/channels/{denom_info.channel}/"
-                f"ports/{denom_info.port}/packet_acknowledgement/"
+                f"ports/{denom_info.port}/packet_acks/"
                 f"{submitted.response.events['send_packet']['packet_sequence']}"
             ),
         )
@@ -571,7 +580,7 @@ def transfer(
     return True
 
 
-def route_base_denom_profit_prices(
+def route_base_denom_profit_quantities(
     base_denom: str,
     starting_amount: int,
     route: List[Union[PoolProvider, AuctionProvider]],
@@ -582,7 +591,7 @@ def route_base_denom_profit_prices(
 
     prev_asset = base_denom
     quantity_received = starting_amount
-    prices: list[int] = []
+    quantities: list[int] = []
 
     for leg in route:
         assets = (
@@ -596,35 +605,18 @@ def route_base_denom_profit_prices(
 
         if isinstance(leg, PoolProvider):
             if prev_asset == leg.asset_a():
-                new_quantity_received = int(
-                    leg.simulate_swap_asset_a(quantity_received)
-                )
-                prices.append(
-                    decimal_to_int(
-                        int_to_decimal(new_quantity_received)
-                        / int_to_decimal(quantity_received)
-                    )
-                )
-                quantity_received = new_quantity_received
+                quantities.append(int(leg.simulate_swap_asset_a(quantity_received)))
+                quantity_received = quantities[-1]
             else:
-                new_quantity_received = int(
-                    leg.simulate_swap_asset_b(quantity_received)
-                )
-                prices.append(
-                    decimal_to_int(
-                        int_to_decimal(new_quantity_received)
-                        / int_to_decimal(quantity_received)
-                    )
-                )
-                quantity_received = new_quantity_received
-        else:
-            if prev_asset == leg.asset_a():
-                quantity_received = leg.exchange_rate() * quantity_received
-                prices.append(leg.exchange_rate())
+                quantities.append(int(leg.simulate_swap_asset_b(quantity_received)))
+                quantity_received = quantities[-1]
+        elif prev_asset == leg.asset_a():
+            quantities.append(leg.exchange_rate() * quantity_received)
+            quantity_received = quantities[-1]
 
         prev_asset = assets[1]()
 
-    return (quantity_received - starting_amount, prices)
+    return (quantity_received - starting_amount, quantities)
 
 
 def get_routes_with_depth_limit_dfs(

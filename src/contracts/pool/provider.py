@@ -61,7 +61,7 @@ class PoolProvider(ABC):
 
     @abstractmethod
     def swap_asset_a(
-        self, wallet: LocalWallet, amount: int, price: int, max_spread: Decimal
+        self, wallet: LocalWallet, amount: int, min_amount: int
     ) -> SubmittedTx:
         """
         Submits a transaction executing a swap with some quantity of asset a
@@ -74,7 +74,7 @@ class PoolProvider(ABC):
 
     @abstractmethod
     def swap_asset_b(
-        self, wallet: LocalWallet, amount: int, price: int, max_spread: Decimal
+        self, wallet: LocalWallet, amount: int, min_amount: int
     ) -> SubmittedTx:
         """
         Submits a transaction executing a swap with some quantity of asset b

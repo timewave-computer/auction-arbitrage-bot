@@ -20,7 +20,10 @@ from src.util import (
     ContractInfo,
     try_query_multiple,
     try_exec_multiple_fatal,
+    decimal_to_int,
 )
+
+MAX_SPREAD = "0.001"
 
 
 @dataclass
@@ -128,10 +131,12 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         self,
         wallet: LocalWallet,
         assets: tuple[Token | NativeToken, Token | NativeToken],
-        amount_price_spread: tuple[int, int, Decimal],
+        amount_min_amount: tuple[int, int],
     ) -> SubmittedTx:
         asset_a, asset_b = assets
-        amount, price, max_spread = amount_price_spread
+        amount, min_amount = amount_min_amount
+
+        price = decimal_to_int(Decimal(min_amount) / Decimal(amount))
 
         return try_exec_multiple_fatal(
             self.contracts,
@@ -144,7 +149,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
                     },
                     "ask_asset_info": token_to_asset_info(asset_b),
                     "belief_price": str(price),
-                    "max_spread": str(max_spread),
+                    "max_spread": MAX_SPREAD,
                 }
             },
             funds=f"{amount}{token_to_addr(asset_a)}",
@@ -152,21 +157,24 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         )
 
     def swap_asset_a(
-        self, wallet: LocalWallet, amount: int, price: int, max_spread: Decimal
+        self, wallet: LocalWallet, amount: int, min_amount: int
     ) -> SubmittedTx:
         return self.__swap(
             wallet,
             (self.asset_a_denom, self.asset_b_denom),
-            (amount, price, max_spread),
+            (amount, min_amount),
         )
 
     def swap_asset_b(
-        self, wallet: LocalWallet, amount: int, price: int, max_spread: Decimal
+        self,
+        wallet: LocalWallet,
+        amount: int,
+        min_amount: int,
     ) -> SubmittedTx:
         return self.__swap(
             wallet,
             (self.asset_b_denom, self.asset_a_denom),
-            (amount, price, max_spread),
+            (amount, min_amount),
         )
 
     def simulate_swap_asset_a(

@@ -86,15 +86,10 @@ class OsmosisPoolProvider(PoolProvider):
         self,
         wallet: LocalWallet,
         assets: tuple[str, str],
-        amount_price_spread: tuple[int, int, int],
+        amount_min_amount: tuple[int, int],
     ) -> SubmittedTx:
         asset_a, asset_b = assets
-        amount, price, max_spread = amount_price_spread
-
-        # The minimum amount of tokens we want to receive
-        min_token_out_amount = decimal_to_int(
-            int_to_decimal(amount) * int_to_decimal(price)
-        )
+        amount, min_token_out_amount = amount_min_amount
 
         acc = try_multiple_clients_fatal(
             self.ledgers,
@@ -119,15 +114,14 @@ class OsmosisPoolProvider(PoolProvider):
                 token_out_min_amount=str(min_token_out_amount),
             )
         )
-        tx.seal(SigningCfg.direct(wallet.public_key(), acc.sequence), "", 0)
-        tx.sign(wallet.signer(), self.chain_id, acc.number)
-        tx.complete()
 
-        gas_limit, fee = try_multiple_clients_fatal(
-            self.ledgers, lambda client: client.estimate_gas_and_fee_for_tx(tx)
+        gas_limit = 3000000
+        gas = try_multiple_clients_fatal(
+            self.ledgers,
+            lambda client: client.estimate_fee_from_gas(gas_limit),
         )
 
-        tx.seal(SigningCfg.direct(wallet.public_key(), acc.sequence), fee, gas_limit)
+        tx.seal(SigningCfg.direct(wallet.public_key(), acc.sequence), gas, gas_limit)
         tx.sign(wallet.signer(), self.chain_id, acc.number)
         tx.complete()
 
@@ -143,21 +137,27 @@ class OsmosisPoolProvider(PoolProvider):
         return self.__exchange_rate(self.asset_b_denom, self.asset_a_denom, amount)
 
     def swap_asset_a(
-        self, wallet: LocalWallet, amount: int, price: int, max_spread: int
+        self,
+        wallet: LocalWallet,
+        amount: int,
+        min_amount: int,
     ) -> SubmittedTx:  # pylint: disable=duplicate-code
         return self.__swap(
             wallet,
             (self.asset_a_denom, self.asset_b_denom),
-            (amount, price, max_spread),
+            (amount, min_amount),
         )
 
     def swap_asset_b(
-        self, wallet: LocalWallet, amount: int, price: int, max_spread: int
+        self,
+        wallet: LocalWallet,
+        amount: int,
+        min_amount: int,
     ) -> SubmittedTx:
         return self.__swap(
             wallet,
             (self.asset_b_denom, self.asset_a_denom),
-            (amount, price, max_spread),
+            (amount, min_amount),
         )
 
     def asset_a(self) -> str:

@@ -26,7 +26,7 @@ NEUTRON_NETWORK_CONFIG = NetworkConfig(
 
 IBC_TRANSFER_TIMEOUT_SEC = 5 * 60
 
-IBC_TRANSFER_POLL_INTERVAL_SEC = 30
+IBC_TRANSFER_POLL_INTERVAL_SEC = 5
 
 
 def custom_neutron_network_config(url: str) -> NetworkConfig:
