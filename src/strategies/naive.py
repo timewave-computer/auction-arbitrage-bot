@@ -637,7 +637,7 @@ def get_routes_with_depth_limit_dfs(
     # a valence auction, if `valance_only` is True.
 
     n_paths = 0
-    denom_cache: dict[str, list[DenomChainInfo]] = {}
+    denom_cache: dict[str, list[str]] = {}
 
     def get_routes_from(
         start: str,
@@ -664,26 +664,28 @@ def get_routes_with_depth_limit_dfs(
         paths = []
 
         if f"{start}-{start_chain}" not in denom_cache:
-            denom_cache[f"{start}-{start_chain}"] = denom_info(start_chain, start)
+            denom_cache[f"{start}-{start_chain}"] = [
+                info.denom for info in denom_info(start_chain, start)
+            ]
 
         src_denoms = denom_cache[f"{start}-{start_chain}"]
 
-        start_pools: List[Union[AuctionProvider, PoolProvider]] = [
+        start_pools: List[tuple[Union[AuctionProvider, PoolProvider], str]] = [
             *(
-                pool
+                (pool, start)
                 for pool_list in pools.get(start, {}).values()
                 for pool in pool_list
             ),
-            *auctions.get(start, {}).values(),
+            *((auction, start) for auction in auctions.get(start, {}).values()),
             *(
-                pool
-                for chain_info in src_denoms
-                for pool_list in pools.get(chain_info.denom, {}).values()
+                (pool, denom)
+                for denom in src_denoms
+                for pool_list in pools.get(denom, {}).values()
                 for pool in pool_list
             ),
         ]
 
-        for pool in start_pools:
+        for pool, start in start_pools:
             next_start = pool.asset_a() if pool.asset_a() != start else pool.asset_b()
 
             paths.extend(
