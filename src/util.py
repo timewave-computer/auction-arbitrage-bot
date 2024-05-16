@@ -24,7 +24,7 @@ NEUTRON_NETWORK_CONFIG = NetworkConfig(
 )
 
 
-IBC_TRANSFER_TIMEOUT_SEC = 5 * 60
+IBC_TRANSFER_TIMEOUT_SEC = 20
 
 IBC_TRANSFER_POLL_INTERVAL_SEC = 5
 
@@ -222,6 +222,7 @@ class DenomChainInfo:
     denom: str
     port: Optional[str]
     channel: Optional[str]
+    chain_id: Optional[str]
 
 
 def denom_info(src_chain: str, src_denom: str) -> list[DenomChainInfo]:
@@ -249,18 +250,22 @@ def denom_info(src_chain: str, src_denom: str) -> list[DenomChainInfo]:
 
     dests = resp.json()["dest_assets"]
 
-    def chain_info(info: dict[str, Any]) -> DenomChainInfo:
+    def chain_info(chain_id: str, info: dict[str, Any]) -> DenomChainInfo:
         info = info["assets"][0]
 
         if info["trace"] != "":
             parts = info["trace"].split("/")
             port, channel = parts[0], parts[1]
 
-            return DenomChainInfo(denom=info["denom"], port=port, channel=channel)
+            return DenomChainInfo(
+                denom=info["denom"], port=port, channel=channel, chain_id=chain_id
+            )
 
-        return DenomChainInfo(denom=info["denom"], port=None, channel=None)
+        return DenomChainInfo(
+            denom=info["denom"], port=None, channel=None, chain_id=chain_id
+        )
 
-    return [chain_info(info) for info in dests.values()]
+    return [chain_info(chain_id, info) for chain_id, info in dests.items()]
 
 
 def denom_info_on_chain(
@@ -296,9 +301,13 @@ def denom_info_on_chain(
         if info["trace"] != "":
             port, channel = info["trace"].split("/")
 
-            return DenomChainInfo(denom=info["denom"], port=port, channel=channel)
+            return DenomChainInfo(
+                denom=info["denom"], port=port, channel=channel, chain_id=dest_chain
+            )
 
-        return DenomChainInfo(denom=info["denom"], port=None, channel=None)
+        return DenomChainInfo(
+            denom=info["denom"], port=None, channel=None, chain_id=dest_chain
+        )
 
     return None
 

@@ -3,6 +3,7 @@ Implements an arbitrage strategy with an arbitrary number
 of hops using all available providers.
 """
 
+import multiprocessing
 import threading
 from queue import Queue
 from decimal import Decimal
@@ -233,6 +234,9 @@ def strategy(
 
     state = ctx.state.poll(ctx, pools, auctions)
 
+    if ctx.cli_args["cmd"] == "dump":
+        return ctx.cancel()
+
     workers = []
     to_exec: Queue[List[Union[PoolProvider, AuctionProvider]]] = Queue(maxsize=0)
     is_exec = rwlock.RWLockFair()
@@ -289,14 +293,15 @@ def strategy(
     # Calculate profitability of all routes, and execute
     # profitable ones
     for i, route in enumerate(ctx.state.routes):
-        workers.append(threading.Thread(target=profit_arb, args=[i, route]))
+        workers.append(multiprocessing.Process(target=profit_arb, args=[i, route]))
         workers[-1].start()
 
     while True:
         route = to_exec.get()
 
         with is_exec.gen_wlock():
-            exec_arb(route, ctx)
+            # exec_arb(route, ctx)
+            pass
 
     for worker in workers:
         worker.join()
@@ -409,7 +414,13 @@ def exec_arb(
 
         # The funds are not already on the current chain, so they need to be moved
         if prev_leg and prev_leg.chain_id != leg.chain_id:
-            transfer(prev_asset, prev_leg, leg, ctx, to_swap)
+            logger.info(
+                "Transfering funds from %s -> %s", prev_leg.chain_id, leg.chain_id
+            )
+
+            # Try to recover funds
+            if not transfer(prev_asset, prev_leg, leg, ctx, to_swap):
+                pass
 
             to_swap = min(
                 try_multiple_clients_fatal(
@@ -421,6 +432,8 @@ def exec_arb(
                 ),
                 to_swap,
             )
+        else:
+            logger.info("Arb leg can be executed atomically; no transfer necessary")
 
         # If the arb leg is on astroport, simply execute the swap
         # on asset A, producing asset B
@@ -627,76 +640,176 @@ def get_routes_with_depth_limit_dfs(
     pools: dict[str, dict[str, List[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
 ) -> List[List[Union[PoolProvider, AuctionProvider]]]:
-    """
-    Finds `limit` routes from `src` back to `src` with a maximum route length
-    of `depth`.
-    """
+    denom_cache: dict[str, dict[str, str]] = {}
 
-    # Note: this traversal method works performing depth first search
-    # to find `limit` paths of length `depth` that include
-    # a valence auction, if `valance_only` is True.
-
-    n_paths = 0
-    denom_cache: dict[str, list[str]] = {}
-
-    def get_routes_from(
-        start: str,
-        start_chain: str,
-        path: List[Union[PoolProvider, AuctionProvider]],
-        has_required: set[str],
-    ) -> List[List[Union[PoolProvider, AuctionProvider]]]:
-        nonlocal limit
+    def next_legs(
+        path: list[Union[PoolProvider, AuctionProvider]]
+    ) -> list[list[Union[PoolProvider, AuctionProvider]]]:
         nonlocal denom_cache
+        nonlocal limit
 
+        # Only find `limit` pools
+        # with a depth less than `depth
         if limit <= 0 or len(path) > depth:
             return []
 
-        # We have arrived at the starting vertex, so no
-        # more paths to explore
-        if start == src and len(path) == depth:
-            if len(required_leg_types - has_required) > 0:
+        # We must be finding the next leg
+        # in an already existing path
+        assert len(path) > 0
+
+        prev_pool = path[-1]
+
+        # This leg **must** be connected to the previous
+        # by construction, so therefore, if any
+        # of the denoms match the starting denom, we are
+        # finished, and the circuit is closed
+        if len(path) > 1 and src in {path[-1].asset_a(), path[-1].asset_b()}:
+            if len(required_leg_types - set((fmt_route_leg(leg) for leg in path))) > 0:
                 return []
 
             limit -= 1
 
             return [path]
 
-        paths = []
+        # Find all pools that start where this leg ends
+        # the "ending" point of this leg is defined
+        # as its denom which is not shared by the
+        # leg before it.
 
-        if f"{start}-{start_chain}" not in denom_cache:
-            denom_cache[f"{start}-{start_chain}"] = [
-                info.denom for info in denom_info(start_chain, start)
+        # note: the previous leg's denoms will
+        # be in the denom cache by construction
+        # if this is the first leg, then there is
+        # no more work to do
+        end: Optional[str] = None
+
+        if len(path) == 1:
+            end = (
+                prev_pool.asset_a()
+                if prev_pool.asset_a() != src
+                else prev_pool.asset_b()
+            )
+
+            denom_cache[end] = {
+                info.chain_id: info.denom
+                for info in denom_info(prev_pool.chain_id, end)
+                + [
+                    DenomChainInfo(
+                        denom=end,
+                        port=None,
+                        channel=None,
+                        chain_id=prev_pool.chain_id,
+                    )
+                ]
+            }
+        else:
+            prev_prev_pool = path[-2]
+
+            # There are two previous pools. The end
+            # of the most recent one is the denom
+            # not shared between the two on the same chain
+            # Use the prev's chain as a common denom
+            denoms_prev = [prev_pool.asset_a(), prev_pool.asset_b()]
+
+            assert (
+                prev_prev_pool.asset_a() in denom_cache
+                or prev_prev_pool.asset_b() in denom_cache
+            )
+            assert prev_pool.chain_id in denom_cache.get(
+                prev_prev_pool.asset_a(), {}
+            ) or prev_pool.chain_id in denom_cache.get(prev_prev_pool.asset_b(), {})
+
+            denoms_prev_prev = [
+                denom_cache.get(prev_prev_pool.asset_a(), {}).get(
+                    prev_pool.chain_id, None
+                ),
+                denom_cache.get(prev_prev_pool.asset_b(), {}).get(
+                    prev_pool.chain_id, None
+                ),
             ]
 
-        src_denoms = denom_cache[f"{start}-{start_chain}"]
+            assert not all((denom == None for denom in denoms_prev_prev))
 
-        start_pools: List[tuple[Union[AuctionProvider, PoolProvider], str]] = [
+            # Only ONE denom in prev can be shared by prev-prev
+            assert (
+                denoms_prev[0] in denoms_prev_prev or denoms_prev[1] in denoms_prev_prev
+            )
+            assert not (
+                denoms_prev[0] in denoms_prev_prev
+                and denoms_prev[1] in denoms_prev_prev
+            )
+
+            # And that denom is the end
+            end = (
+                prev_pool.asset_a()
+                if denoms_prev[0] not in denoms_prev_prev
+                else prev_pool.asset_b()
+            )
+
+            if not prev_pool.asset_a() in denom_cache:
+                denom_cache[prev_pool.asset_a()] = {
+                    info.chain_id: info.denom
+                    for info in denom_info(prev_pool.chain_id, prev_pool.asset_a())
+                    + [
+                        DenomChainInfo(
+                            denom=prev_pool.asset_a(),
+                            port=None,
+                            channel=None,
+                            chain_id=prev_pool.chain_id,
+                        )
+                    ]
+                }
+
+            if not prev_pool.asset_b() in denom_cache:
+                denom_cache[prev_pool.asset_b()] = {
+                    info.chain_id: info.denom
+                    for info in denom_info(prev_pool.chain_id, prev_pool.asset_b())
+                    + [
+                        DenomChainInfo(
+                            denom=prev_pool.asset_b(),
+                            port=None,
+                            channel=None,
+                            chain_id=prev_pool.chain_id,
+                        )
+                    ]
+                }
+
+            assert end == prev_pool.asset_a() or end == prev_pool.asset_b()
+
+        assert end is not None
+
+        # A pool is a candidate to be a next pool if it has a denom
+        # contained in denom_cache[end] or one of its denoms *is* end
+        next_pools = [
+            # Atomic pools
+            *auctions.get(end, {}).values(),
+            *(pool for pool_set in pools.get(end, {}).values() for pool in pool_set),
+            # IBC pools
             *(
-                (pool, start)
-                for pool_list in pools.get(start, {}).values()
-                for pool in pool_list
+                auction
+                for denom in denom_cache[end].values()
+                for auction in auctions.get(denom, {}).values()
             ),
-            *((auction, start) for auction in auctions.get(start, {}).values()),
             *(
-                (pool, denom)
-                for denom in src_denoms
-                for pool_list in pools.get(denom, {}).values()
-                for pool in pool_list
+                pool
+                for denom in denom_cache[end].values()
+                for pool_set in pools.get(denom, {}).values()
+                for pool in pool_set
             ),
         ]
 
-        for pool, start in start_pools:
-            next_start = pool.asset_a() if pool.asset_a() != start else pool.asset_b()
-
-            paths.extend(
-                get_routes_from(
-                    next_start,
-                    pool.chain_id,
-                    path + [pool],
-                    has_required | {fmt_route_leg(pool)},
-                )
+        return [
+            next_legs(path + [pool])
+            for pool in next_pools
+            if pool not in path
+            and len(
+                set([pool.asset_a(), pool.asset_b()])
+                ^ set([prev_pool.asset_a(), prev_pool.asset_b()])
             )
+            > 0
+        ]
 
-        return paths
-
-    return get_routes_from(src, "neutron-1", [], set())
+    start_pools = [
+        *auctions.get(src, {}).values(),
+        *(pool for pool_set in pools.get(src, {}).values() for pool in pool_set),
+    ]
+    return [next_legs([pool]) for pool in start_pools]
