@@ -650,7 +650,7 @@ def get_routes_with_depth_limit_dfs(
 
         # Only find `limit` pools
         # with a depth less than `depth
-        if limit <= 0 or len(path) > depth:
+        if limit < 0 or len(path) > depth:
             return []
 
         # We must be finding the next leg
@@ -729,14 +729,29 @@ def get_routes_with_depth_limit_dfs(
 
             assert not all((denom == None for denom in denoms_prev_prev))
 
-            # Only ONE denom in prev can be shared by prev-prev
-            assert (
-                denoms_prev[0] in denoms_prev_prev or denoms_prev[1] in denoms_prev_prev
+            print(
+                denoms_prev,
+                denoms_prev_prev,
+                (
+                    prev_prev_pool.chain_id,
+                    prev_prev_pool.asset_a(),
+                    prev_prev_pool.asset_b(),
+                ),
+                (prev_pool.chain_id, prev_pool.asset_a(), prev_pool.asset_b()),
             )
-            assert not (
+
+            # Only ONE denom in prev can be shared by prev-prev
+            # If more than one is shared, then we are running in circles, so we must stop here
+            if (
+                not (
+                    denoms_prev[0] in denoms_prev_prev
+                    or denoms_prev[1] in denoms_prev_prev
+                )
+            ) or (
                 denoms_prev[0] in denoms_prev_prev
                 and denoms_prev[1] in denoms_prev_prev
-            )
+            ):
+                return []
 
             # And that denom is the end
             end = (
@@ -802,8 +817,8 @@ def get_routes_with_depth_limit_dfs(
             for pool in next_pools
             if pool not in path
             and len(
-                set([pool.asset_a(), pool.asset_b()])
-                ^ set([prev_pool.asset_a(), prev_pool.asset_b()])
+                {pool.asset_a(), pool.asset_b()}
+                ^ {prev_pool.asset_a(), prev_pool.asset_b()}
             )
             > 0
         ]
