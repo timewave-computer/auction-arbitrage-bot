@@ -3,7 +3,6 @@ Implements an arbitrage strategy with an arbitrary number
 of hops using all available providers.
 """
 
-import multiprocessing
 import threading
 from queue import Queue
 from decimal import Decimal
@@ -293,7 +292,7 @@ def strategy(
     # Calculate profitability of all routes, and execute
     # profitable ones
     for i, route in enumerate(ctx.state.routes):
-        workers.append(multiprocessing.Process(target=profit_arb, args=[i, route]))
+        workers.append(threading.Thread(target=profit_arb, args=[i, route]))
         workers[-1].start()
 
     while True:
@@ -323,7 +322,7 @@ def fmt_route_leg(leg: Union[PoolProvider, AuctionProvider]) -> str:
     if isinstance(leg, AuctionProvider):
         return "valence"
 
-    return "unknown pool"
+    return leg.kind
 
 
 def exec_arb(
@@ -641,17 +640,17 @@ def get_routes_with_depth_limit_dfs(
     auctions: dict[str, dict[str, AuctionProvider]],
 ) -> List[List[Union[PoolProvider, AuctionProvider]]]:
     denom_cache: dict[str, dict[str, str]] = {}
+    routes = []
 
-    def next_legs(
-        path: list[Union[PoolProvider, AuctionProvider]]
-    ) -> list[list[Union[PoolProvider, AuctionProvider]]]:
+    def next_legs(path: list[Union[PoolProvider, AuctionProvider]]) -> None:
         nonlocal denom_cache
         nonlocal limit
+        nonlocal routes
 
         # Only find `limit` pools
         # with a depth less than `depth
-        if limit < 0 or len(path) > depth:
-            return []
+        if len(routes) == limit or len(path) > depth:
+            return
 
         # We must be finding the next leg
         # in an already existing path
@@ -664,12 +663,16 @@ def get_routes_with_depth_limit_dfs(
         # of the denoms match the starting denom, we are
         # finished, and the circuit is closed
         if len(path) > 1 and src in {path[-1].asset_a(), path[-1].asset_b()}:
-            if len(required_leg_types - set((fmt_route_leg(leg) for leg in path))) > 0:
-                return []
+            if (
+                len(required_leg_types - set((fmt_route_leg(leg) for leg in path))) > 0
+                or len(path) < depth
+            ):
+                return
 
-            limit -= 1
+            if len(routes) < limit and path not in routes:
+                routes.append(path)
 
-            return [path]
+            return
 
         # Find all pools that start where this leg ends
         # the "ending" point of this leg is defined
@@ -740,7 +743,7 @@ def get_routes_with_depth_limit_dfs(
                 denoms_prev[0] in denoms_prev_prev
                 and denoms_prev[1] in denoms_prev_prev
             ):
-                return []
+                return
 
             # And that denom is the end
             end = (
@@ -801,19 +804,25 @@ def get_routes_with_depth_limit_dfs(
             ),
         ]
 
-        return [
+        for pool in next_pools:
+            if (
+                pool in path
+                or len(
+                    {pool.asset_a(), pool.asset_b()}
+                    ^ {prev_pool.asset_a(), prev_pool.asset_b()}
+                )
+                <= 0
+            ):
+                continue
+
             next_legs(path + [pool])
-            for pool in next_pools
-            if pool not in path
-            and len(
-                {pool.asset_a(), pool.asset_b()}
-                ^ {prev_pool.asset_a(), prev_pool.asset_b()}
-            )
-            > 0
-        ]
 
     start_pools = [
         *auctions.get(src, {}).values(),
         *(pool for pool_set in pools.get(src, {}).values() for pool in pool_set),
     ]
-    return [next_legs([pool]) for pool in start_pools]
+
+    for pool in start_pools:
+        next_legs([pool])
+
+    return routes[:limit]

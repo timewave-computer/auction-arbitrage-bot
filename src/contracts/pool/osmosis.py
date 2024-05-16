@@ -44,6 +44,7 @@ class OsmosisPoolProvider(PoolProvider):
         self.chain_id = "osmosis-1"
         self.chain_prefix = "osmo"
         self.chain_fee_denom = "uosmo"
+        self.kind = "osmosis"
 
         self.endpoints = endpoints["http"]
         self.grpc_endpoints = endpoints["grpc"]

@@ -96,6 +96,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         self.chain_id = contract_info.clients[0].query_chain_id()
         self.chain_prefix = "neutron"
         self.chain_fee_denom = "untrn"
+        self.kind = "astroport"
 
     def __exchange_rate(
         self, asset_a: Token | NativeToken, asset_b: Token | NativeToken, amount: int
