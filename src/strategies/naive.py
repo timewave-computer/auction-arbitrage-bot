@@ -729,17 +729,6 @@ def get_routes_with_depth_limit_dfs(
 
             assert not all((denom == None for denom in denoms_prev_prev))
 
-            print(
-                denoms_prev,
-                denoms_prev_prev,
-                (
-                    prev_prev_pool.chain_id,
-                    prev_prev_pool.asset_a(),
-                    prev_prev_pool.asset_b(),
-                ),
-                (prev_pool.chain_id, prev_pool.asset_a(), prev_pool.asset_b()),
-            )
-
             # Only ONE denom in prev can be shared by prev-prev
             # If more than one is shared, then we are running in circles, so we must stop here
             if (
