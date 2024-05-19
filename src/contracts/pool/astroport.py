@@ -23,7 +23,7 @@ from src.util import (
     decimal_to_int,
 )
 
-MAX_SPREAD = "0.001"
+MAX_SPREAD = "0.5"
 
 
 @dataclass
@@ -137,8 +137,6 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         asset_a, asset_b = assets
         amount, min_amount = amount_min_amount
 
-        price = decimal_to_int(Decimal(min_amount) / Decimal(amount))
-
         return try_exec_multiple_fatal(
             self.contracts,
             wallet,
@@ -149,7 +147,6 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
                         "amount": str(amount),
                     },
                     "ask_asset_info": token_to_asset_info(asset_b),
-                    "belief_price": str(price),
                     "max_spread": MAX_SPREAD,
                 }
             },

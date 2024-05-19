@@ -3,6 +3,7 @@ Implements an arbitrage strategy with an arbitrary number
 of hops using all available providers.
 """
 
+import random
 import threading
 from queue import Queue
 from decimal import Decimal
@@ -45,7 +46,6 @@ from cosmpy.aerial.client.utils import prepare_and_broadcast_basic_transaction  
 from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
 import grpc
 import schedule
-from readerwriterlock import rwlock
 from schedule import Scheduler
 
 logger = logging.getLogger(__name__)
@@ -165,16 +165,7 @@ class State:
         )
 
         if self.routes is None:
-            self.routes: List[List[Union[PoolProvider, AuctionProvider]]] = (
-                get_routes_with_depth_limit_dfs(
-                    ctx.cli_args["hops"],
-                    ctx.cli_args["num_routes_considered"],
-                    ctx.cli_args["base_denom"],
-                    set(ctx.cli_args["require_leg_types"]),
-                    pools,
-                    auctions,
-                )
-            )
+            self.routes: List[List[Union[PoolProvider, AuctionProvider]]] = ()
 
         logger.info(
             "Finished building route tree; discovered %d routes",
@@ -228,82 +219,74 @@ def strategy(
     Finds new arbitrage opportunities using the context, pools, and auctions.
     """
 
-    if ctx.state is None:
-        ctx.state = State(None, None)
-
-    state = ctx.state.poll(ctx, pools, auctions)
-
     if ctx.cli_args["cmd"] == "dump":
         return ctx.cancel()
 
     workers = []
     to_exec: Queue[List[Union[PoolProvider, AuctionProvider]]] = Queue(maxsize=0)
-    is_exec = rwlock.RWLockFair()
 
     # Report route stats to user
     logger.info(
         "Finding profitable routes",
     )
 
-    def profit_arb(i: int, route: List[Union[PoolProvider, AuctionProvider]]) -> None:
-        with is_exec.gen_rlock():
-            balance_resp = try_multiple_clients(
-                ctx.clients["neutron"],
-                lambda client: client.query_bank_balance(
-                    Address(ctx.wallet.public_key(), prefix="neutron"),
-                    ctx.cli_args["base_denom"],
-                ),
-            )
-
-            if not balance_resp:
-                return
-
-            profit, _ = route_base_denom_profit_quantities(
+    workers.append(
+        threading.Thread(
+            target=listen_routes_with_depth_dfs,
+            args=[
+                to_exec,
+                ctx.cli_args["hops"],
                 ctx.cli_args["base_denom"],
-                balance_resp,
-                route,
-            )
-
-            logger.info(
-                (
-                    "Candidate arbitrage opportunity #%d with "
-                    "profit of %d and route with %d hop(s): %s"
-                ),
-                i + 1,
-                profit,
-                len(route),
-                " -> ".join(
-                    map(
-                        lambda route_leg: fmt_route_leg(route_leg)
-                        + ": "
-                        + route_leg.asset_a()
-                        + " - "
-                        + route_leg.asset_b(),
-                        route,
-                    )
-                ),
-            )
-
-            # The trade is profitable. Execute the arb
-            if profit >= ctx.cli_args["profit_margin"]:
-                logger.info("Queueing candidate arbitrage opportunity #%d", i + 1)
-                to_exec.put(route)
-
-    # Calculate profitability of all routes, and execute
-    # profitable ones
-    for i, route in enumerate(ctx.state.routes):
-        workers.append(threading.Thread(target=profit_arb, args=[i, route]))
-        workers[-1].start()
+                set(ctx.cli_args["require_leg_types"]),
+                pools,
+                auctions,
+            ],
+        )
+    )
+    workers[-1].start()
 
     while True:
         route = to_exec.get()
 
-        with is_exec.gen_wlock():
-            # exec_arb(route, ctx)
-            pass
+        logger.info("Route queued: %s", fmt_route(route))
+
+        balance_resp = try_multiple_clients(
+            ctx.clients["neutron"],
+            lambda client: client.query_bank_balance(
+                Address(ctx.wallet.public_key(), prefix="neutron"),
+                ctx.cli_args["base_denom"],
+            ),
+        )
+
+        if not balance_resp:
+            continue
+
+        profit, _ = route_base_denom_profit_quantities(
+            ctx.cli_args["base_denom"],
+            balance_resp,
+            route,
+        )
+
+        if profit < ctx.cli_args["profit_margin"]:
+            logger.info(
+                "Route is not profitable with profit of %d: %s",
+                profit,
+                fmt_route(route),
+            )
+
+            continue
+
+        logger.info("Executing route with profit of %d: %s", profit, fmt_route(route))
+
+        try:
+            exec_arb(route, ctx)
+        except Exception as e:
+            logger.error("Arb failed %s: %s", fmt_route(route), e)
 
     for worker in workers:
         worker.join()
+
+    logger.info("Completed arbitrage round")
 
     return ctx.with_state(state)
 
@@ -323,6 +306,19 @@ def fmt_route_leg(leg: Union[PoolProvider, AuctionProvider]) -> str:
         return "valence"
 
     return leg.kind
+
+
+def fmt_route(route: list[Union[PoolProvider, AuctionProvider]]) -> str:
+    return " -> ".join(
+        map(
+            lambda route_leg: fmt_route_leg(route_leg)
+            + ": "
+            + route_leg.asset_a()
+            + " - "
+            + route_leg.asset_b(),
+            route,
+        )
+    )
 
 
 def exec_arb(
@@ -360,16 +356,7 @@ def exec_arb(
     logger.info(
         ("Queueing candidate arbitrage opportunity with " "route with %d hop(s): %s"),
         len(route),
-        " -> ".join(
-            map(
-                lambda route_leg: fmt_route_leg(route_leg)
-                + ": "
-                + route_leg.asset_a()
-                + " - "
-                + route_leg.asset_b(),
-                route,
-            )
-        ),
+        fmt_route(route),
     )
 
     for leg in route:
@@ -414,12 +401,32 @@ def exec_arb(
         # The funds are not already on the current chain, so they need to be moved
         if prev_leg and prev_leg.chain_id != leg.chain_id:
             logger.info(
-                "Transfering funds from %s -> %s", prev_leg.chain_id, leg.chain_id
+                "Transfering %s %s from %s -> %s",
+                to_swap,
+                prev_asset,
+                prev_leg.chain_id,
+                leg.chain_id,
             )
 
-            # Try to recover funds
-            if not transfer(prev_asset, prev_leg, leg, ctx, to_swap):
-                pass
+            # Ensure that there is at least 5k of the base chain denom
+            # at all times
+            if prev_asset == prev_leg.chain_fee_denom:
+                to_swap -= 5000
+
+            # Cancel arb if the transfer fails
+            try:
+                transfer(prev_asset, prev_leg, leg, ctx, to_swap)
+            except Exception as e:
+                logger.error(
+                    "Failed to transfer funds from %s -> %s: %s",
+                    prev_leg.chain_id,
+                    leg.chain_id,
+                    e,
+                )
+
+                return
+
+            logger.info("Transfer succeeded: %s -> %s", prev_leg.chain_id, leg.chain_id)
 
             to_swap = min(
                 try_multiple_clients_fatal(
@@ -433,6 +440,11 @@ def exec_arb(
             )
         else:
             logger.info("Arb leg can be executed atomically; no transfer necessary")
+
+        # Ensure that there is at least 5k of the base chain denom
+        # at all times
+        if assets[0]() == leg.chain_fee_denom:
+            to_swap -= 5000
 
         # If the arb leg is on astroport, simply execute the swap
         # on asset A, producing asset B
@@ -485,7 +497,7 @@ def transfer(
     leg: Union[PoolProvider, AuctionProvider],
     ctx: Ctx,
     swap_balance: int,
-) -> bool:
+):
     """
     Synchronously executes an IBC transfer from one leg in an arbitrage
     trade to the next, moving `swap_balance` of the asset_b in the source
@@ -500,7 +512,7 @@ def transfer(
     )
 
     if not denom_info:
-        return False
+        raise ValueError("Missing denom info for target chain in IBC transfer")
 
     channel_info = try_multiple_rest_endpoints(
         ctx.endpoints[leg.chain_id.split("-")[0]]["http"],
@@ -508,11 +520,11 @@ def transfer(
     )
 
     if not channel_info:
-        return False
+        raise ValueError("Missing channel info for target chain in IBC transfer")
 
     # Not enough info to complete the transfer
     if not denom_info or not denom_info.port or not denom_info.channel:
-        return False
+        raise ValueError("Missing channel info for target chain in IBC transfer")
 
     acc = try_multiple_clients_fatal(
         ctx.clients[prev_leg.chain_id.split("-")[0]],
@@ -531,7 +543,7 @@ def transfer(
     )
     msg.token.CopyFrom(
         coin_pb2.Coin(  # pylint: disable=maybe-no-member
-            denom=denom, amount=str(swap_balance - 50000)
+            denom=denom, amount=str(swap_balance)
         )
     )
 
@@ -576,6 +588,10 @@ def transfer(
 
         # Try again
         if not ack_resp:
+            logger.info(
+                "IBC transfer %s has not yet completed; waiting...", submitted.tx_hash
+            )
+
             return
 
         # Stop trying, since the transfer succeeded
@@ -589,8 +605,6 @@ def transfer(
         schedule.run_pending()
         time.sleep(1)
 
-    return True
-
 
 def route_base_denom_profit_quantities(
     base_denom: str,
@@ -602,13 +616,20 @@ def route_base_denom_profit_quantities(
     """
 
     prev_asset = base_denom
+    prev_leg: Optional[Union[PoolProvider, AuctionProvider]] = None
     quantity_received = starting_amount
     quantities: list[int] = []
 
     for leg in route:
+        norm_prev_asset = (
+            prev_asset
+            if not prev_leg or prev_leg.chain_id == leg.chain_id
+            else denom_info_on_chain(prev_leg.chain_id, prev_asset, leg.chain_id)
+        )
+
         assets = (
             [leg.asset_a, leg.asset_b]
-            if prev_asset == leg.asset_a()
+            if norm_prev_asset == leg.asset_a()
             else [leg.asset_b, leg.asset_a]
         )
 
@@ -616,40 +637,39 @@ def route_base_denom_profit_quantities(
             break
 
         if isinstance(leg, PoolProvider):
-            if prev_asset == leg.asset_a():
+            if norm_prev_asset == leg.asset_a():
                 quantities.append(int(leg.simulate_swap_asset_a(quantity_received)))
                 quantity_received = quantities[-1]
             else:
                 quantities.append(int(leg.simulate_swap_asset_b(quantity_received)))
                 quantity_received = quantities[-1]
-        elif prev_asset == leg.asset_a():
+        elif norm_prev_asset == leg.asset_a():
             quantities.append(leg.exchange_rate() * quantity_received)
             quantity_received = quantities[-1]
 
         prev_asset = assets[1]()
+        prev_leg = leg
 
     return (quantity_received - starting_amount, quantities)
 
 
-def get_routes_with_depth_limit_dfs(
+def listen_routes_with_depth_dfs(
+    routes: Queue[List[Union[PoolProvider, AuctionProvider]]],
     depth: int,
-    limit: int,
     src: str,
     required_leg_types: set[str],
     pools: dict[str, dict[str, List[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
 ) -> List[List[Union[PoolProvider, AuctionProvider]]]:
     denom_cache: dict[str, dict[str, str]] = {}
-    routes = []
 
     def next_legs(path: list[Union[PoolProvider, AuctionProvider]]) -> None:
         nonlocal denom_cache
-        nonlocal limit
         nonlocal routes
 
         # Only find `limit` pools
         # with a depth less than `depth
-        if len(routes) == limit or len(path) > depth:
+        if len(path) > depth:
             return
 
         # We must be finding the next leg
@@ -669,8 +689,13 @@ def get_routes_with_depth_limit_dfs(
             ):
                 return
 
-            if len(routes) < limit and path not in routes:
-                routes.append(path)
+            logger.info(
+                "Discovered route with length %d: %s",
+                len(path),
+                fmt_route(path),
+            )
+
+            routes.put(path)
 
             return
 
@@ -803,6 +828,7 @@ def get_routes_with_depth_limit_dfs(
                 for pool in pool_set
             ),
         ]
+        random.shuffle(next_pools)
 
         for pool in next_pools:
             if (
@@ -821,8 +847,7 @@ def get_routes_with_depth_limit_dfs(
         *auctions.get(src, {}).values(),
         *(pool for pool_set in pools.get(src, {}).values() for pool in pool_set),
     ]
+    random.shuffle(start_pools)
 
     for pool in start_pools:
         next_legs([pool])
-
-    return routes[:limit]

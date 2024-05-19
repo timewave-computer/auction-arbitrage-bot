@@ -35,7 +35,6 @@ def main() -> None:
     parser.add_argument("-p", "--poll_interval", default=120)
     parser.add_argument("-d", "--discovery_interval", default=600)
     parser.add_argument("-nh", "--hops", default=3)
-    parser.add_argument("-n", "--num_routes_considered", default=30)
     parser.add_argument(
         "-r",
         "--require_leg_types",
@@ -119,7 +118,6 @@ def main() -> None:
             "poll_interval": int(args.poll_interval),
             "discovery_interval": int(args.discovery_interval),
             "hops": int(args.hops),
-            "num_routes_considered": int(args.num_routes_considered),
             "require_leg_types": args.require_leg_types,
             "base_denom": args.base_denom,
             "profit_margin": int(args.profit_margin),
