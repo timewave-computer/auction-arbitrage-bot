@@ -185,8 +185,8 @@ Custom pools and routes may be provided by utilizing a "pool file" via the `--po
 	    "auction": {
 	      "asset_a": "<DENOM>",
 	      "asset_b": "<DENOM>",
-	      "address": "<ADDR>" 
-		}
+	      "address": "<ADDR>"
+        }
 	  }
 	]
   ]
