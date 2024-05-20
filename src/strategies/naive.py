@@ -248,7 +248,7 @@ def strategy(
     while True:
         route = to_exec.get()
 
-        logger.info("Route queued: %s", fmt_route(route))
+        logger.debug("Route queued: %s", fmt_route(route))
 
         balance_resp = try_multiple_clients(
             ctx.clients["neutron"],
@@ -268,7 +268,7 @@ def strategy(
         )
 
         if profit < ctx.cli_args["profit_margin"]:
-            logger.info(
+            logger.debug(
                 "Route is not profitable with profit of %d: %s",
                 profit,
                 fmt_route(route),
@@ -702,7 +702,7 @@ def listen_routes_with_depth_dfs(
             ):
                 return
 
-            logger.info(
+            logger.debug(
                 "Discovered route with length %d: %s",
                 len(path),
                 fmt_route(path),

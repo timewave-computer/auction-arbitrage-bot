@@ -7,6 +7,7 @@ import argparse
 import logging
 import sys
 from os import path
+import os
 import schedule
 from cosmpy.aerial.client import LedgerClient, NetworkConfig  # type: ignore
 from cosmpy.aerial.wallet import LocalWallet  # type: ignore
@@ -23,8 +24,6 @@ def main() -> None:
     """
     Entrypoint for the arbitrage bot.
     """
-
-    logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
     parser = argparse.ArgumentParser(
         prog="arbbot",
@@ -52,13 +51,18 @@ def main() -> None:
         default=1000,
     )
     parser.add_argument(
-        "-w",
-        "--wallet_mnemonic",
+        "-l",
+        "--log_file",
     )
     parser.add_argument("-c", "--net_config")
     parser.add_argument("cmd", nargs="?", default=None)
 
     args = parser.parse_args()
+
+    if args.log_file:
+        logging.basicConfig(filename=args.log_file, level=os.environ.get("LOGLEVEL", "INFO").upper())
+    else:
+        logging.basicConfig(stream=sys.stdout, level=os.environ.get("LOGLEVEL", "INFO").upper())
 
     # If the user specified a poolfile, create the poolfile if it is empty
     if args.pool_file is not None and not path.isfile(args.pool_file):
@@ -115,7 +119,7 @@ def main() -> None:
             ],
         },
         endpoints,
-        LocalWallet.from_mnemonic(args.wallet_mnemonic, prefix="neutron"),
+        LocalWallet.from_mnemonic(os.environ.get("WALLET_MNEMONIC"), prefix="neutron"),
         {
             "pool_file": args.pool_file,
             "poll_interval": int(args.poll_interval),
@@ -124,9 +128,10 @@ def main() -> None:
             "require_leg_types": args.require_leg_types,
             "base_denom": args.base_denom,
             "profit_margin": int(args.profit_margin),
-            "wallet_mnemonic": args.wallet_mnemonic,
+            "wallet_mnemonic": os.environ.get("WALLET_MNEMONIC"),
             "cmd": args.cmd,
             "net_config": args.net_config,
+            "log_file": args.log_file,
         },
         None,
         False,
