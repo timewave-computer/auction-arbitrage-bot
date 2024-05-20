@@ -6,7 +6,7 @@ An extensible arbitrage bot for trading against valence auctions and Astroport a
 
 ### Nix
 
-Use [[Nix][https://github.com/NixOS/nix]] to automatically install all required dependencies.
+Use [Nix](https://github.com/NixOS/nix) to automatically install all required dependencies.
 
 Nix can be installed through the following steps on MacOS and Linux:
 
