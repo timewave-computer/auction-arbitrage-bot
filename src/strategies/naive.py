@@ -360,6 +360,13 @@ def exec_arb(
     )
 
     for leg in route:
+        logger.info(
+            "Queueing arb leg on %s with %s -> %s",
+            fmt_route_leg(leg),
+            leg.asset_a(),
+            leg.asset_b(),
+        )
+
         tx: Optional[SubmittedTx] = None
 
         prev_asset_info: Optional[DenomChainInfo] = None
@@ -428,14 +435,20 @@ def exec_arb(
 
             logger.info("Transfer succeeded: %s -> %s", prev_leg.chain_id, leg.chain_id)
 
-            to_swap = min(
-                try_multiple_clients_fatal(
-                    ctx.clients[leg.chain_id.split("-")[0]],
-                    lambda client: client.query_bank_balance(
-                        Address(ctx.wallet.public_key(), prefix=leg.chain_prefix),
-                        assets[0](),
-                    ),
+            time.sleep(IBC_TRANSFER_POLL_INTERVAL_SEC)
+
+            to_swap = try_multiple_clients_fatal(
+                ctx.clients[leg.chain_id.split("-")[0]],
+                lambda client: client.query_bank_balance(
+                    Address(ctx.wallet.public_key(), prefix=leg.chain_prefix),
+                    assets[0](),
                 ),
+            )
+
+            logger.info(
+                "Balance to swap for %s on %s: %d",
+                str(Address(ctx.wallet.public_key(), prefix=leg.chain_prefix)),
+                leg.chain_id,
                 to_swap,
             )
         else:
