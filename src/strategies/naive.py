@@ -445,7 +445,7 @@ def exec_arb(
                 ),
             )
 
-            logger.info(
+            logger.debug(
                 "Balance to swap for %s on %s: %d",
                 str(Address(ctx.wallet.public_key(), prefix=leg.chain_prefix)),
                 leg.chain_id,
@@ -544,6 +544,17 @@ def transfer(
         lambda client: client.query_account(
             str(Address(ctx.wallet.public_key(), prefix=prev_leg.chain_prefix))
         ),
+    )
+
+    logger.debug(
+        "Executing IBC transfer %s from %s -> %s with source port %s, source channel %s, sender %s, and receiver %s",
+        denom,
+        prev_leg.chain_id,
+        leg.chain_id,
+        channel_info["channel"]["counterparty"]["port_id"],
+        channel_info["channel"]["counterparty"]["channel_id"],
+        str(Address(ctx.wallet.public_key(), prefix=prev_leg.chain_prefix)),
+        str(Address(ctx.wallet.public_key(), prefix=leg.chain_prefix)),
     )
 
     # Create a messate transfering the funds
