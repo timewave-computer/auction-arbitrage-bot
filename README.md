@@ -213,8 +213,13 @@ INFO:src.strategies.naive:Candidate arbitrage opportunity #2 with profit of 6223
 
 # To Do
 
-- [ ] Add an example strategy for docs that uses threading
-- [ ] Track which pools have been touched to inform route samping, or get a price feed from coingecko, and just filter for the coins that are relevant to the DEX you're looking at and query for large price movements, and you can pick the top 10 to inform route collection
-- [ ] Look at Yan's contract and do backtesting (95% of blocks): trailing 7 days simulated number of auctions
-- [ ] Add a flag to filter by valence auctions
-- [ ] Add a flag for filter by a specific pool
+- [ ] Scale back trade sizes based on liquidity
+- [ ] Hide verbose logs behind a debug flag
+- [ ] Add command for status
+- [ ] Get fee denoms from chain registry
+- [ ] Update readme: accurate flags, fix net config example
+- [ ] Update readme: hold osmosis for fees
+- [ ] Make an issue for
+- [ ] Un-hardcode gas denom for chains, use chain registery
+- [ ] Automatic recovery: convert back to base denom
+- [ ] Use cached zlib for nix
