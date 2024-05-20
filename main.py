@@ -16,6 +16,7 @@ from src.util import deployments, NEUTRON_NETWORK_CONFIG, custom_neutron_network
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
 from src.strategies.naive import strategy
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,8 @@ def main() -> None:
     """
     Entrypoint for the arbitrage bot.
     """
+
+    load_dotenv()
 
     parser = argparse.ArgumentParser(
         prog="arbbot",

@@ -6,6 +6,7 @@ let
   pythonWithPackages = python.withPackages (ps: with ps; [
     cosmpy
     schedule
+    python-dotenv
   ]);
 in
 pkgs.mkShell {
