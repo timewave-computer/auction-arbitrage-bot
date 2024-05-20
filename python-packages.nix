@@ -1207,4 +1207,18 @@ self: super: {
     nativeBuildInputs = [];
     propagatedBuildInputs = [];
   };
+  "python-dotenv" = super.buildPythonPackage rec {
+    pname = "python-dotenv";
+    version = "1.0.1";
+    src = fetchurl {
+      url = "https://files.pythonhosted.org/packages/6a/3e/b68c118422ec867fa7ab88444e1274aa40681c606d59ac27de5a5588f082/python_dotenv-1.0.1-py3-none-any.whl";
+      sha256 = "f7b63ef50f1b690dddf550d03497b66d609393b40b564ed0d674909a68ebf16a";
+    };
+    format = "wheel";
+    doCheck = false;
+    buildInputs = [];
+    checkInputs = [];
+    nativeBuildInputs = [];
+    propagatedBuildInputs = [];
+  };
 }
