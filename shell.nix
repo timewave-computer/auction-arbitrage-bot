@@ -15,6 +15,8 @@ pkgs.mkShell {
     protoc-gen-go
     protoc-gen-go-grpc
     mypy-protobuf
+    mypy
+    black
   ];
 
   packages = [
