@@ -223,3 +223,5 @@ INFO:src.strategies.naive:Candidate arbitrage opportunity #2 with profit of 6223
 - [ ] Un-hardcode gas denom for chains, use chain registery
 - [ ] Automatic recovery: convert back to base denom
 - [ ] Use cached zlib for nix
+- [ ] Add flag for writing logs to a log file
+- [ ] Add numerical ID's for attempted arbs
