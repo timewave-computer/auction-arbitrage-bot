@@ -219,8 +219,6 @@ INFO:src.strategies.naive:Candidate arbitrage opportunity #2 with profit of 6223
 - [ ] Get fee denoms from chain registry
 - [ ] Update readme: accurate flags, fix net config example
 - [ ] Update readme: hold osmosis for fees
-- [ ] Make an issue for
-- [ ] Un-hardcode gas denom for chains, use chain registery
 - [ ] Automatic recovery: convert back to base denom
 - [ ] Use cached zlib for nix
 - [ ] Add flag for writing logs to a log file
