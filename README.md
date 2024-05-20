@@ -2,7 +2,37 @@
 
 An extensible arbitrage bot for trading against valence auctions and Astroport and Osmosis.
 
-## Dependencies
+## Installation
+
+### Nix
+
+Use [[Nix][https://github.com/NixOS/nix]] to automatically install all required dependencies.
+
+Nix can be installed through the following steps on MacOS and Linux:
+
+#### MacOS
+
+```sh
+curl -L https://nixos.org/nix/install | sh
+```
+
+#### Linux
+
+```sh
+curl -L https://nixos.org/nix/install | sh -s -- --daemon
+```
+
+After installing Nix, enter the abritrage bot dev environment by executing
+
+```sh
+nix-shell
+```
+
+in the repository root. Proceed to [Usage](#usage) to use the arbitrage bot.
+
+### Manual
+
+#### Dependencies
 
 This tool requires the following to be installed:
 
@@ -11,7 +41,7 @@ This tool requires the following to be installed:
 * `protoc-gen-grpc`
 * `make`
 
-## Installation
+#### Procedure
 
 Installation requires Python 3.11.
 
@@ -81,8 +111,6 @@ Custom RPC providers may be specified with the `--net_config` flag. This flag sp
   }
 }
 ```
-
-Currently, only HTTP/REST endpoints are supported for Osmosis.
 
 ### Custom Pools
 
