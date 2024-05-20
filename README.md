@@ -210,16 +210,3 @@ INFO:src.strategies.naive:Candidate arbitrage opportunity #1 with profit of 6223
 INFO:src.strategies.naive:Candidate arbitrage opportunity #2 with profit of 6223766 and route with 3 hop(s): astroport: factory/neutron154gg0wtm2v4h9ur8xg32ep64e8ef0g5twlsgvfeajqwghdryvyqsqhgk8e/APOLLO - ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81 -> astroport: factory/neutron154gg0wtm2v4h9ur8xg32ep64e8ef0g5twlsgvfeajqwghdryvyqsqhgk8e/APOLLO - ibc/F082B65C88E4B6D5EF1DB243CDA1D331D002759E938A0F5CD3FFDC5D53B3E349 -> astroport: ibc/F082B65C88E4B6D5EF1DB243CDA1D331D002759E938A0F5CD3FFDC5D53B3E349 - ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81
 ...
 ```
-
-# To Do
-
-- [ ] Scale back trade sizes based on liquidity
-- [ ] Hide verbose logs behind a debug flag
-- [ ] Add command for status
-- [ ] Get fee denoms from chain registry
-- [ ] Update readme: accurate flags, fix net config example
-- [ ] Update readme: hold osmosis for fees
-- [ ] Automatic recovery: convert back to base denom
-- [ ] Use cached zlib for nix
-- [ ] Add flag for writing logs to a log file
-- [ ] Add numerical ID's for attempted arbs
