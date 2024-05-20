@@ -72,7 +72,10 @@ def main() -> None:
 
     # The user may want to use custom RPC providers
     endpoints: dict[str, dict[str, list[str]]] = {
-        "neutron": {"http": [], "grpc": []},
+        "neutron": {
+            "http": ["https://neutron-rest.publicnode.com"],
+            "grpc": ["grpc+https://neutron-grpc.publicnode.com:443"]
+        },
         "osmosis": {
             "http": ["https://lcd.osmosis.zone"],
             "grpc": ["grpc+https://osmosis-grpc.publicnode.com:443"],
@@ -93,7 +96,7 @@ def main() -> None:
                 LedgerClient(NEUTRON_NETWORK_CONFIG),
                 *[
                     LedgerClient(custom_neutron_network_config(endpoint))
-                    for endpoint in endpoints["neutron"]["http"]
+                    for endpoint in endpoints["neutron"]["grpc"]
                 ],
             ],
             "osmosis": [
@@ -138,16 +141,7 @@ def main() -> None:
     astro = NeutronAstroportPoolDirectory(
         deployments(),
         poolfile_path=args.pool_file,
-        network_configs=[
-            *[
-                custom_neutron_network_config(endpoint)
-                for endpoint in endpoints["neutron"]["http"]
-            ],
-            *[
-                custom_neutron_network_config(endpoint)
-                for endpoint in endpoints["neutron"]["grpc"]
-            ],
-        ],
+        endpoints=endpoints["neutron"]
     )
 
     osmo_pools = osmosis.pools()

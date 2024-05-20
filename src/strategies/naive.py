@@ -560,7 +560,7 @@ def transfer(
     submitted = try_multiple_clients_fatal(
         ctx.clients[prev_leg.chain_id.split("-")[0]],
         lambda client: client.broadcast_tx(tx),
-    )
+    ).wait_to_complete()
 
     logger.info(
         "Submitted IBC transfer from src %s to %s: %s",
@@ -569,13 +569,13 @@ def transfer(
         submitted.tx_hash,
     )
 
-    submitted.wait_to_complete()
-
     # Continuously check for a package acknowledgement
     # or cancel the arb if the timeout passes
     # Future note: This could be async so other arbs can make
     # progress while this is happening
-    def transfer_or_continue() -> None:
+    def transfer_or_continue() -> bool:
+        logger.info("Checking IBC transfer status %s", submitted.tx_hash)
+
         # Check for a package acknowledgement by querying osmosis
         ack_resp = try_multiple_rest_endpoints(
             leg.endpoints,
@@ -592,18 +592,18 @@ def transfer(
                 "IBC transfer %s has not yet completed; waiting...", submitted.tx_hash
             )
 
-            return
+            return False
 
         # Stop trying, since the transfer succeeded
-        schedule.clear()
+        return True
 
-    schedule.every(IBC_TRANSFER_POLL_INTERVAL_SEC).seconds.until(
-        timedelta(seconds=IBC_TRANSFER_TIMEOUT_SEC)
-    ).do(transfer_or_continue)
+    timeout = time.time() + IBC_TRANSFER_TIMEOUT_SEC
 
-    while schedule.jobs:
-        schedule.run_pending()
-        time.sleep(1)
+    while time.time() < timeout:
+        time.sleep(IBC_TRANSFER_POLL_INTERVAL_SEC)
+
+        if transfer_or_continue():
+            break
 
 
 def route_base_denom_profit_quantities(

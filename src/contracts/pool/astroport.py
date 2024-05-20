@@ -21,6 +21,7 @@ from src.util import (
     try_query_multiple,
     try_exec_multiple_fatal,
     decimal_to_int,
+    custom_neutron_network_config,
 )
 
 MAX_SPREAD = "0.5"
@@ -218,11 +219,18 @@ class NeutronAstroportPoolDirectory:
         self,
         deployments: dict[str, Any],
         poolfile_path: Optional[str] = None,
-        network_configs: Optional[list[NetworkConfig]] = None,
+        endpoints: Optional[dict[str, list[str]]] = None,
     ):
         self.deployment_info = deployments["pools"]["astroport"]["neutron"]
-        self.network_configs = network_configs
         self.cached_pools = cached_pools(poolfile_path, "neutron_astroport")
+        self.endpoints = (
+            endpoints
+            if endpoints
+            else {
+                "http": ["https://neutron-rest.publicnode.com"],
+                "grpc": ["grpc+https://neutron-grpc.publicnode.com:443"],
+            }
+        )
 
         deployment_info = self.deployment_info["directory"]
         self.directory_contract = [
@@ -235,8 +243,8 @@ class NeutronAstroportPoolDirectory:
     @cached_property
     def clients(self) -> List[LedgerClient]:
         return [
-            LedgerClient(NEUTRON_NETWORK_CONFIG),
-            *(LedgerClient(conf) for conf in (self.network_configs or [])),
+            LedgerClient(custom_neutron_network_config(endpoint))
+            for endpoint in self.endpoints["grpc"]
         ]
 
     def __pools_cached(self) -> dict[str, dict[str, NeutronAstroportPoolProvider]]:
