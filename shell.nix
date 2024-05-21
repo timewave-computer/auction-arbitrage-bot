@@ -2,11 +2,14 @@
 
 let
   packageOverrides = pkgs.callPackage ./python-packages.nix {};
+  skipCheckTests = drv: drv.overridePythonAttrs (old: { doCheck = false; });
   python = pkgs.python3.override { inherit packageOverrides; };
   pythonWithPackages = python.withPackages (ps: with ps; [
     cosmpy
     schedule
     python-dotenv
+    (skipCheckTests aiohttp)
+    (skipCheckTests aiodns)
   ]);
 in
 pkgs.mkShell {
