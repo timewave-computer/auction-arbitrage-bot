@@ -43,6 +43,10 @@ class PoolProvider(ABC):
 
     chain_fee_denom: str
 
+    endpoints: list[str]
+
+    kind: str
+
     @abstractmethod
     def simulate_swap_asset_a(self, amount: int) -> int:
         """

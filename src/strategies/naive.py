@@ -14,6 +14,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 import logging
+from src.contracts.leg import Leg
 from src.contracts.pool.provider import PoolProvider
 from src.contracts.pool.osmosis import OsmosisPoolProvider
 from src.contracts.pool.astroport import (
@@ -31,8 +32,6 @@ from src.util import (
     try_multiple_clients,
     try_multiple_clients_fatal,
     try_multiple_rest_endpoints,
-    decimal_to_int,
-    int_to_decimal,
     IBC_TRANSFER_TIMEOUT_SEC,
     IBC_TRANSFER_POLL_INTERVAL_SEC,
 )
@@ -59,12 +58,12 @@ class State:
     """
 
     last_discovered: Optional[datetime]
-    routes: Optional[List[List[Union[PoolProvider, AuctionProvider]]]]
+    routes: Optional[List[List[Leg]]]
 
     def __load_poolfile(
         self,
         ctx: Ctx,
-        endpoints: dict[str, list[str]],
+        endpoints: dict[str, dict[str, list[str]]],
     ) -> None:
         """
         Loads routes from the poolfile provided in the --pool_file flag.
@@ -75,17 +74,20 @@ class State:
 
             def poolfile_ent_to_leg(
                 ent: dict[str, Any]
-            ) -> Union[PoolProvider, AuctionProvider]:
+            ) -> Leg:
+                backend: Optional[Union[PoolProvider, AuctionProvider]] = None
+
                 if "osmosis" in ent:
-                    return OsmosisPoolProvider(
-                        endpoints,
-                        ent["osmosis"]["address"],
-                        ent["osmosis"]["pool_id"],
-                        (ent["osmosis"]["asset_a"], ent["osmosis"]["asset_b"]),
-                    )
+                    backend = OsmosisPoolProvider(
+                            endpoints["osmosis"],
+                            ent["osmosis"]["address"],
+                            ent["osmosis"]["pool_id"],
+                            (ent["osmosis"]["asset_a"], ent["osmosis"]["asset_b"]),
+                        )
 
                 if "neutron_astroport" in ent:
-                    return NeutronAstroportPoolProvider(
+                    backend = NeutronAstroportPoolProvider(
+                        endpoints["neutron"],
                         ContractInfo(
                             deployments()["pools"]["astroport"]["neutron"],
                             ctx.clients["neutron"],
@@ -97,7 +99,8 @@ class State:
                     )
 
                 if "auction" in ent:
-                    return AuctionProvider(
+                    backend = AuctionProvider(
+                        endpoints["neutron"],
                         ContractInfo(
                             deployments()["auctions"]["neutron"],
                             ctx.clients["neutron"],
@@ -106,6 +109,13 @@ class State:
                         ),
                         ent["auction"]["asset_a"],
                         ent["auction"]["asset_b"],
+                    )
+
+                if backend:
+                    return Leg(
+                        backend.asset_a if ent["in_asset"] == backend.asset_a() else backend.asset_b,
+                        backend.asset_a if ent["out_asset"] == backend.asset_a() else backend.asset_b,
+                        backend
                     )
 
                 raise ValueError("Invalid route leg type.")
@@ -135,17 +145,20 @@ class State:
         ):
             return self
 
-        endpoints = {
-            "http": ["https://lcd.osmosis.zone"],
-            "grpc": ["grpc+https://osmosis-grpc.publicnode.com:443"],
+        endpoints: dict[str, dict[str, list[str]]] = {
+            "neutron": {
+                "http": ["https://neutron-rest.publicnode.com"],
+                "grpc": ["grpc+https://neutron-grpc.publicnode.com:443"]
+            },
+            "osmosis": {
+                "http": ["https://lcd.osmosis.zone"],
+                "grpc": ["grpc+https://osmosis-grpc.publicnode.com:443"],
+            },
         }
 
         if ctx.cli_args["net_config"] is not None:
             with open(ctx.cli_args["net_config"], "r", encoding="utf-8") as f:
-                osmo_netconfig = json.load(f)["osmosis"]
-
-                endpoints["http"] = [*endpoints["http"], *osmo_netconfig["http"]]
-                endpoints["grpc"] = [*endpoints["grpc"], *osmo_netconfig["grpc"]]
+                endpoints = json.load(f)
 
         # Check for a poolfile to specify routes
         if ctx.cli_args["pool_file"] is not None:
@@ -165,7 +178,7 @@ class State:
         )
 
         if self.routes is None:
-            self.routes: List[List[Union[PoolProvider, AuctionProvider]]] = ()
+            self.routes: List[List[Leg]] = []
 
         logger.info(
             "Finished building route tree; discovered %d routes",
@@ -173,23 +186,33 @@ class State:
         )
         self.last_discovered = datetime.now()
 
-        def dump_pool_like(
-            pool_like: Union[PoolProvider, AuctionProvider]
+        def dump_leg(
+            leg: Leg
         ) -> dict[str, Any]:
-            if isinstance(pool_like, AuctionProvider):
+            if isinstance(leg.backend, AuctionProvider):
                 return {
                     "auction": {
-                        "asset_a": pool_like.asset_a(),
-                        "asset_b": pool_like.asset_b(),
-                        "address": pool_like.contract_info.address,
-                    }
+                        "asset_a": leg.backend.asset_a(),
+                        "asset_b": leg.backend.asset_b(),
+                        "address": leg.backend.contract_info.address,
+                    },
+                    "in_asset": leg.in_asset(),
+                    "out_asset": leg.out_asset(),
                 }
 
-            if isinstance(pool_like, NeutronAstroportPoolProvider):
-                return {"neutron_astroport": pool_like.dump()}
+            if isinstance(leg.backend, NeutronAstroportPoolProvider):
+                return {
+                    "neutron_astroport": leg.backend.dump(),
+                    "in_asset": leg.in_asset(),
+                    "out_asset": leg.out_asset(),
+                }
 
-            if isinstance(pool_like, OsmosisPoolProvider):
-                return {"osmosis": pool_like.dump()}
+            if isinstance(leg.backend, OsmosisPoolProvider):
+                return {
+                    "osmosis": leg.backend.dump(),
+                    "in_asset": leg.in_asset(),
+                    "out_asset": leg.out_asset(),
+                }
 
             raise ValueError("Invalid route leg type.")
 
@@ -198,7 +221,7 @@ class State:
             with open(ctx.cli_args["pool_file"], "r+", encoding="utf-8") as f:
                 poolfile_cts = json.load(f)
                 poolfile_cts["routes"] = [
-                    [dump_pool_like(pool) for pool in route] for route in self.routes
+                    [dump_leg(pool) for pool in route] for route in self.routes
                 ]
 
                 f.seek(0)
@@ -223,7 +246,7 @@ def strategy(
         return ctx.cancel()
 
     workers = []
-    to_exec: Queue[List[Union[PoolProvider, AuctionProvider]]] = Queue(maxsize=0)
+    to_exec: Queue[List[Leg]] = Queue(maxsize=0)
 
     # Report route stats to user
     logger.info(
@@ -262,7 +285,6 @@ def strategy(
             continue
 
         profit, _ = route_base_denom_profit_quantities(
-            ctx.cli_args["base_denom"],
             balance_resp,
             route,
         )
@@ -288,41 +310,41 @@ def strategy(
 
     logger.info("Completed arbitrage round")
 
-    return ctx.with_state(state)
+    return ctx
 
 
-def fmt_route_leg(leg: Union[PoolProvider, AuctionProvider]) -> str:
+def fmt_route_leg(leg: Leg) -> str:
     """
     Returns the nature of the route leg (i.e., "osmosis," "astroport," or, "valence.")
     """
 
-    if isinstance(leg, OsmosisPoolProvider):
+    if isinstance(leg.backend, OsmosisPoolProvider):
         return "osmosis"
 
-    if isinstance(leg, NeutronAstroportPoolProvider):
+    if isinstance(leg.backend, NeutronAstroportPoolProvider):
         return "astroport"
 
-    if isinstance(leg, AuctionProvider):
+    if isinstance(leg.backend, AuctionProvider):
         return "valence"
 
-    return leg.kind
+    return leg.backend.kind
 
 
-def fmt_route(route: list[Union[PoolProvider, AuctionProvider]]) -> str:
+def fmt_route(route: list[Leg]) -> str:
     return " -> ".join(
         map(
             lambda route_leg: fmt_route_leg(route_leg)
             + ": "
-            + route_leg.asset_a()
+            + route_leg.in_asset()
             + " - "
-            + route_leg.asset_b(),
+            + route_leg.out_asset(),
             route,
         )
     )
 
 
 def exec_arb(
-    route: List[Union[AuctionProvider, PoolProvider]],
+    route: List[Leg],
     ctx: Ctx,
 ) -> None:
     """
@@ -344,13 +366,11 @@ def exec_arb(
         return
 
     _, quantities = route_base_denom_profit_quantities(
-        ctx.cli_args["base_denom"],
         swap_balance,
         route,
     )
 
-    prev_leg: Optional[Union[PoolProvider, AuctionProvider]] = None
-    prev_asset = ctx.cli_args["base_denom"]
+    prev_leg: Optional[Leg] = None
 
     # Submit arb trades for all profitable routes
     logger.info(
@@ -363,8 +383,8 @@ def exec_arb(
         logger.info(
             "Queueing arb leg on %s with %s -> %s",
             fmt_route_leg(leg),
-            leg.asset_a(),
-            leg.asset_b(),
+            leg.in_asset(),
+            leg.out_asset(),
         )
 
         tx: Optional[SubmittedTx] = None
@@ -373,26 +393,17 @@ def exec_arb(
 
         if prev_leg:
             prev_asset_info = denom_info_on_chain(
-                prev_leg.chain_id, prev_asset, leg.chain_id
+                prev_leg.backend.chain_id, prev_leg.out_asset(), leg.backend.chain_id
             )
-
-        # Match the previous leg's swapped-to asset with
-        # the current leg's swap from asset
-        assets = (
-            [leg.asset_a, leg.asset_b]
-            if prev_asset == leg.asset_a()
-            or (prev_leg and prev_asset_info and prev_asset_info.denom == leg.asset_a())
-            else [leg.asset_b, leg.asset_a]
-        )
 
         to_swap = (
             swap_balance
             if not prev_leg
             else try_multiple_clients_fatal(
-                ctx.clients[prev_leg.chain_id.split("-")[0]],
+                ctx.clients[prev_leg.backend.chain_id.split("-")[0]],
                 lambda client: client.query_bank_balance(
-                    Address(ctx.wallet.public_key(), prefix=prev_leg.chain_prefix),
-                    prev_asset,
+                    Address(ctx.wallet.public_key(), prefix=prev_leg.backend.chain_prefix),
+                    prev_leg.out_asset(),
                 ),
             )
         )
@@ -401,54 +412,58 @@ def exec_arb(
             "Executing arb leg on %s with %d %s -> %s",
             fmt_route_leg(leg),
             to_swap,
-            assets[0](),
-            assets[1](),
+            leg.in_asset(),
+            leg.out_asset(),
         )
 
         # The funds are not already on the current chain, so they need to be moved
-        if prev_leg and prev_leg.chain_id != leg.chain_id:
+        if prev_leg and prev_leg.backend.chain_id != leg.backend.chain_id:
             logger.info(
                 "Transfering %s %s from %s -> %s",
                 to_swap,
-                prev_asset,
-                prev_leg.chain_id,
-                leg.chain_id,
+                prev_leg.out_asset(),
+                prev_leg.backend.chain_id,
+                leg.backend.chain_id,
             )
 
             # Ensure that there is at least 5k of the base chain denom
             # at all times
-            if prev_asset == prev_leg.chain_fee_denom:
+            if prev_leg.out_asset() == prev_leg.backend.chain_fee_denom:
                 to_swap -= 5000
 
             # Cancel arb if the transfer fails
             try:
-                transfer(prev_asset, prev_leg, leg, ctx, to_swap)
+                transfer(prev_leg.out_asset(), prev_leg, leg, ctx, to_swap)
             except Exception as e:
                 logger.error(
                     "Failed to transfer funds from %s -> %s: %s",
-                    prev_leg.chain_id,
-                    leg.chain_id,
+                    prev_leg.backend.chain_id,
+                    leg.backend.chain_id,
                     e,
                 )
 
                 return
 
-            logger.info("Transfer succeeded: %s -> %s", prev_leg.chain_id, leg.chain_id)
+            logger.info(
+                "Transfer succeeded: %s -> %s",
+                prev_leg.backend.chain_id,
+                leg.backend.chain_id,
+            )
 
             time.sleep(IBC_TRANSFER_POLL_INTERVAL_SEC)
 
             to_swap = try_multiple_clients_fatal(
-                ctx.clients[leg.chain_id.split("-")[0]],
+                ctx.clients[leg.backend.chain_id.split("-")[0]],
                 lambda client: client.query_bank_balance(
-                    Address(ctx.wallet.public_key(), prefix=leg.chain_prefix),
-                    assets[0](),
+                    Address(ctx.wallet.public_key(), prefix=leg.backend.chain_prefix),
+                    leg.in_asset(),
                 ),
             )
 
             logger.debug(
                 "Balance to swap for %s on %s: %d",
-                str(Address(ctx.wallet.public_key(), prefix=leg.chain_prefix)),
-                leg.chain_id,
+                str(Address(ctx.wallet.public_key(), prefix=leg.backend.chain_prefix)),
+                leg.backend.chain_id,
                 to_swap,
             )
         else:
@@ -456,61 +471,60 @@ def exec_arb(
 
         # Ensure that there is at least 5k of the base chain denom
         # at all times
-        if assets[0]() == leg.chain_fee_denom:
+        if leg.in_asset() == leg.backend.chain_fee_denom:
             to_swap -= 5000
 
         # If the arb leg is on astroport, simply execute the swap
         # on asset A, producing asset B
-        if isinstance(leg, PoolProvider):
+        if isinstance(leg.backend, PoolProvider):
             to_receive = (
-                leg.simulate_swap_asset_a(to_swap)
-                if assets[0] == leg.asset_a
-                else leg.simulate_swap_asset_b(to_swap)
+                leg.backend.simulate_swap_asset_a(to_swap)
+                if leg.in_asset == leg.backend.asset_a
+                else leg.backend.simulate_swap_asset_b(to_swap)
             )
 
-            if isinstance(leg, NeutronAstroportPoolProvider):
-                logger.info("Submitting arb to contract: %s", leg.contract_info.address)
+            if isinstance(leg.backend, NeutronAstroportPoolProvider):
+                logger.info("Submitting arb to contract: %s", leg.backend.contract_info.address)
 
-            if isinstance(leg, OsmosisPoolProvider):
-                logger.info("Submitting arb to pool: %d", leg.pool_id)
+            if isinstance(leg.backend, OsmosisPoolProvider):
+                logger.info("Submitting arb to pool: %d", leg.backend.pool_id)
 
             # Submit the arb trade
-            if assets[0] == leg.asset_a:
-                tx = leg.swap_asset_a(
+            if leg.in_asset == leg.backend.asset_a:
+                tx = leg.backend.swap_asset_a(
                     ctx.wallet,
                     to_swap,
                     to_receive,
                 ).wait_to_complete()
             else:
-                tx = leg.swap_asset_b(
+                tx = leg.backend.swap_asset_b(
                     ctx.wallet,
                     to_swap,
                     to_receive,
                 ).wait_to_complete()
 
-        if isinstance(leg, AuctionProvider) and assets[0] == leg.asset_a:
-            tx = leg.swap_asset_a(ctx.wallet, to_swap).wait_to_complete()
+        if isinstance(leg.backend, AuctionProvider) and leg.in_asset == leg.backend.asset_a:
+            tx = leg.backend.swap_asset_a(ctx.wallet, to_swap).wait_to_complete()
 
         if tx:
             # Notify the user of the arb trade
             logger.info(
                 "Executed leg %s -> %s: %s",
-                assets[0](),
-                assets[1](),
+                leg.in_asset(),
+                leg.out_asset(),
                 tx.tx_hash,
             )
 
         prev_leg = leg
-        prev_asset = assets[1]()
 
 
 def transfer(
     denom: str,
-    prev_leg: Union[PoolProvider, AuctionProvider],
-    leg: Union[PoolProvider, AuctionProvider],
+    prev_leg: Leg,
+    leg: Leg,
     ctx: Ctx,
     swap_balance: int,
-):
+) -> None:
     """
     Synchronously executes an IBC transfer from one leg in an arbitrage
     trade to the next, moving `swap_balance` of the asset_b in the source
@@ -519,16 +533,16 @@ def transfer(
     """
 
     denom_info = denom_info_on_chain(
-        src_chain=prev_leg.chain_id,
+        src_chain=prev_leg.backend.chain_id,
         src_denom=denom,
-        dest_chain=leg.chain_id,
+        dest_chain=leg.backend.chain_id,
     )
 
     if not denom_info:
         raise ValueError("Missing denom info for target chain in IBC transfer")
 
     channel_info = try_multiple_rest_endpoints(
-        ctx.endpoints[leg.chain_id.split("-")[0]]["http"],
+        ctx.endpoints[leg.backend.chain_id.split("-")[0]]["http"],
         f"/ibc/core/channel/v1/channels/{denom_info.channel}/ports/{denom_info.port}",
     )
 
@@ -540,29 +554,31 @@ def transfer(
         raise ValueError("Missing channel info for target chain in IBC transfer")
 
     acc = try_multiple_clients_fatal(
-        ctx.clients[prev_leg.chain_id.split("-")[0]],
+        ctx.clients[prev_leg.backend.chain_id.split("-")[0]],
         lambda client: client.query_account(
-            str(Address(ctx.wallet.public_key(), prefix=prev_leg.chain_prefix))
+            str(Address(ctx.wallet.public_key(), prefix=prev_leg.backend.chain_prefix))
         ),
     )
 
-    logger.debug(
+    logger.info(
         "Executing IBC transfer %s from %s -> %s with source port %s, source channel %s, sender %s, and receiver %s",
         denom,
-        prev_leg.chain_id,
-        leg.chain_id,
+        prev_leg.backend.chain_id,
+        leg.backend.chain_id,
         channel_info["channel"]["counterparty"]["port_id"],
         channel_info["channel"]["counterparty"]["channel_id"],
-        str(Address(ctx.wallet.public_key(), prefix=prev_leg.chain_prefix)),
-        str(Address(ctx.wallet.public_key(), prefix=leg.chain_prefix)),
+        str(Address(ctx.wallet.public_key(), prefix=prev_leg.backend.chain_prefix)),
+        str(Address(ctx.wallet.public_key(), prefix=leg.backend.chain_prefix)),
     )
 
     # Create a messate transfering the funds
     msg = tx_pb2.MsgTransfer(  # pylint: disable=no-member
         source_port=channel_info["channel"]["counterparty"]["port_id"],
         source_channel=channel_info["channel"]["counterparty"]["channel_id"],
-        sender=str(Address(ctx.wallet.public_key(), prefix=prev_leg.chain_prefix)),
-        receiver=str(Address(ctx.wallet.public_key(), prefix=leg.chain_prefix)),
+        sender=str(
+            Address(ctx.wallet.public_key(), prefix=prev_leg.backend.chain_prefix)
+        ),
+        receiver=str(Address(ctx.wallet.public_key(), prefix=leg.backend.chain_prefix)),
         timeout_timestamp=time.time_ns() + 600 * 10**9,
     )
     msg.token.CopyFrom(
@@ -575,21 +591,21 @@ def transfer(
     tx.add_message(msg)
     tx.seal(
         SigningCfg.direct(ctx.wallet.public_key(), acc.sequence),
-        f"50000{prev_leg.chain_fee_denom}",
-        500000,
+        f"3000{prev_leg.backend.chain_fee_denom}",
+        50000,
     )
-    tx.sign(ctx.wallet.signer(), prev_leg.chain_id, acc.number)
+    tx.sign(ctx.wallet.signer(), prev_leg.backend.chain_id, acc.number)
     tx.complete()
 
     submitted = try_multiple_clients_fatal(
-        ctx.clients[prev_leg.chain_id.split("-")[0]],
+        ctx.clients[prev_leg.backend.chain_id.split("-")[0]],
         lambda client: client.broadcast_tx(tx),
     ).wait_to_complete()
 
     logger.info(
         "Submitted IBC transfer from src %s to %s: %s",
-        prev_leg.chain_id,
-        leg.chain_id,
+        prev_leg.backend.chain_id,
+        leg.backend.chain_id,
         submitted.tx_hash,
     )
 
@@ -602,7 +618,7 @@ def transfer(
 
         # Check for a package acknowledgement by querying osmosis
         ack_resp = try_multiple_rest_endpoints(
-            leg.endpoints,
+            leg.backend.endpoints,
             (
                 f"/ibc/core/channel/v1/channels/{denom_info.channel}/"
                 f"ports/{denom_info.port}/packet_acks/"
@@ -631,63 +647,49 @@ def transfer(
 
 
 def route_base_denom_profit_quantities(
-    base_denom: str,
     starting_amount: int,
-    route: List[Union[PoolProvider, AuctionProvider]],
+    route: List[Leg],
 ) -> tuple[int, list[int]]:
     """
     Calculates the profit that can be obtained by following the route.
     """
 
-    prev_asset = base_denom
-    prev_leg: Optional[Union[PoolProvider, AuctionProvider]] = None
     quantity_received = starting_amount
     quantities: list[int] = []
 
     for leg in route:
-        norm_prev_asset = (
-            prev_asset
-            if not prev_leg or prev_leg.chain_id == leg.chain_id
-            else denom_info_on_chain(prev_leg.chain_id, prev_asset, leg.chain_id)
-        )
-
-        assets = (
-            [leg.asset_a, leg.asset_b]
-            if norm_prev_asset == leg.asset_a()
-            else [leg.asset_b, leg.asset_a]
-        )
-
         if quantity_received == 0:
             break
 
-        if isinstance(leg, PoolProvider):
-            if norm_prev_asset == leg.asset_a():
-                quantities.append(int(leg.simulate_swap_asset_a(quantity_received)))
+        if isinstance(leg.backend, PoolProvider):
+            if leg.in_asset == leg.backend.asset_a:
+                quantities.append(
+                    int(leg.backend.simulate_swap_asset_a(quantity_received))
+                )
                 quantity_received = quantities[-1]
             else:
-                quantities.append(int(leg.simulate_swap_asset_b(quantity_received)))
+                quantities.append(
+                    int(leg.backend.simulate_swap_asset_b(quantity_received))
+                )
                 quantity_received = quantities[-1]
-        elif norm_prev_asset == leg.asset_a():
-            quantities.append(leg.exchange_rate() * quantity_received)
+        elif leg.in_asset == leg.backend.asset_a:
+            quantities.append(leg.backend.exchange_rate() * quantity_received)
             quantity_received = quantities[-1]
-
-        prev_asset = assets[1]()
-        prev_leg = leg
 
     return (quantity_received - starting_amount, quantities)
 
 
 def listen_routes_with_depth_dfs(
-    routes: Queue[List[Union[PoolProvider, AuctionProvider]]],
+    routes: Queue[List[Leg]],
     depth: int,
     src: str,
     required_leg_types: set[str],
     pools: dict[str, dict[str, List[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
-) -> List[List[Union[PoolProvider, AuctionProvider]]]:
+) -> None:
     denom_cache: dict[str, dict[str, str]] = {}
 
-    def next_legs(path: list[Union[PoolProvider, AuctionProvider]]) -> None:
+    def next_legs(path: list[Leg]) -> None:
         nonlocal denom_cache
         nonlocal routes
 
@@ -706,7 +708,7 @@ def listen_routes_with_depth_dfs(
         # by construction, so therefore, if any
         # of the denoms match the starting denom, we are
         # finished, and the circuit is closed
-        if len(path) > 1 and src in {path[-1].asset_a(), path[-1].asset_b()}:
+        if len(path) > 1 and src == prev_pool.out_asset():
             if (
                 len(required_leg_types - set((fmt_route_leg(leg) for leg in path))) > 0
                 or len(path) < depth
@@ -732,110 +734,25 @@ def listen_routes_with_depth_dfs(
         # be in the denom cache by construction
         # if this is the first leg, then there is
         # no more work to do
-        end: Optional[str] = None
+        end = prev_pool.out_asset()
 
-        if len(path) == 1:
-            end = (
-                prev_pool.asset_a()
-                if prev_pool.asset_a() != src
-                else prev_pool.asset_b()
-            )
-
-            denom_cache[end] = {
-                info.chain_id: info.denom
-                for info in denom_info(prev_pool.chain_id, end)
-                + [
-                    DenomChainInfo(
-                        denom=end,
-                        port=None,
-                        channel=None,
-                        chain_id=prev_pool.chain_id,
-                    )
-                ]
-            }
-        else:
-            prev_prev_pool = path[-2]
-
-            # There are two previous pools. The end
-            # of the most recent one is the denom
-            # not shared between the two on the same chain
-            # Use the prev's chain as a common denom
-            denoms_prev = [prev_pool.asset_a(), prev_pool.asset_b()]
-
-            assert (
-                prev_prev_pool.asset_a() in denom_cache
-                or prev_prev_pool.asset_b() in denom_cache
-            )
-            assert prev_pool.chain_id in denom_cache.get(
-                prev_prev_pool.asset_a(), {}
-            ) or prev_pool.chain_id in denom_cache.get(prev_prev_pool.asset_b(), {})
-
-            denoms_prev_prev = [
-                denom_cache.get(prev_prev_pool.asset_a(), {}).get(
-                    prev_pool.chain_id, None
-                ),
-                denom_cache.get(prev_prev_pool.asset_b(), {}).get(
-                    prev_pool.chain_id, None
-                ),
-            ]
-
-            assert not all((denom == None for denom in denoms_prev_prev))
-
-            # Only ONE denom in prev can be shared by prev-prev
-            # If more than one is shared, then we are running in circles, so we must stop here
-            if (
-                not (
-                    denoms_prev[0] in denoms_prev_prev
-                    or denoms_prev[1] in denoms_prev_prev
+        denom_cache[end] = {
+            info.chain_id: info.denom
+            for info in denom_info(prev_pool.backend.chain_id, end)
+            + [
+                DenomChainInfo(
+                    denom=end,
+                    port=None,
+                    channel=None,
+                    chain_id=prev_pool.backend.chain_id,
                 )
-            ) or (
-                denoms_prev[0] in denoms_prev_prev
-                and denoms_prev[1] in denoms_prev_prev
-            ):
-                return
-
-            # And that denom is the end
-            end = (
-                prev_pool.asset_a()
-                if denoms_prev[0] not in denoms_prev_prev
-                else prev_pool.asset_b()
-            )
-
-            if not prev_pool.asset_a() in denom_cache:
-                denom_cache[prev_pool.asset_a()] = {
-                    info.chain_id: info.denom
-                    for info in denom_info(prev_pool.chain_id, prev_pool.asset_a())
-                    + [
-                        DenomChainInfo(
-                            denom=prev_pool.asset_a(),
-                            port=None,
-                            channel=None,
-                            chain_id=prev_pool.chain_id,
-                        )
-                    ]
-                }
-
-            if not prev_pool.asset_b() in denom_cache:
-                denom_cache[prev_pool.asset_b()] = {
-                    info.chain_id: info.denom
-                    for info in denom_info(prev_pool.chain_id, prev_pool.asset_b())
-                    + [
-                        DenomChainInfo(
-                            denom=prev_pool.asset_b(),
-                            port=None,
-                            channel=None,
-                            chain_id=prev_pool.chain_id,
-                        )
-                    ]
-                }
-
-            assert end == prev_pool.asset_a() or end == prev_pool.asset_b()
-
-        assert end is not None
+            ]
+            if info.chain_id
+        }
 
         # A pool is a candidate to be a next pool if it has a denom
         # contained in denom_cache[end] or one of its denoms *is* end
-        next_pools = [
+        next_pools: list[Union[AuctionProvider, PoolProvider]] = [
             # Atomic pools
             *auctions.get(end, {}).values(),
             *(pool for pool_set in pools.get(end, {}).values() for pool in pool_set),
@@ -855,23 +772,38 @@ def listen_routes_with_depth_dfs(
         random.shuffle(next_pools)
 
         for pool in next_pools:
-            if (
-                pool in path
-                or len(
-                    {pool.asset_a(), pool.asset_b()}
-                    ^ {prev_pool.asset_a(), prev_pool.asset_b()}
-                )
-                <= 0
-            ):
-                continue
+            next_legs(
+                path
+                + [
+                    Leg(
+                        (
+                            pool.asset_a
+                            if pool.asset_a() in denom_cache[end].values()
+                            else pool.asset_b
+                        ),
+                        (
+                            pool.asset_b
+                            if pool.asset_a() in denom_cache[end].values()
+                            else pool.asset_a
+                        ),
+                        pool,
+                    )
+                ]
+            )
 
-            next_legs(path + [pool])
-
-    start_pools = [
+    start_pools: list[Union[AuctionProvider, PoolProvider]] = [
         *auctions.get(src, {}).values(),
         *(pool for pool_set in pools.get(src, {}).values() for pool in pool_set),
     ]
     random.shuffle(start_pools)
 
     for pool in start_pools:
-        next_legs([pool])
+        next_legs(
+            [
+                Leg(
+                    pool.asset_a if pool.asset_a() == src else pool.asset_b,
+                    pool.asset_b if pool.asset_a() == src else pool.asset_a,
+                    pool,
+                )
+            ]
+        )

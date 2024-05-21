@@ -88,7 +88,9 @@ class Scheduler:
         self.providers: dict[str, dict[str, List[PoolProvider]]] = {}
 
         self.auction_manager = AuctionDirectory(
-            deployments(), poolfile_path=ctx.cli_args["pool_file"]
+            deployments(),
+            endpoints=ctx.endpoints["neutron"],
+            poolfile_path=ctx.cli_args["pool_file"],
         )
         self.auctions = self.auction_manager.auctions()
 

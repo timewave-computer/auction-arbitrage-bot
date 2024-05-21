@@ -17,8 +17,6 @@ from src.contracts.pool.provider import PoolProvider, cached_pools
 from src.util import (
     try_multiple_rest_endpoints,
     try_multiple_clients_fatal,
-    int_to_decimal,
-    decimal_to_int,
 )
 
 

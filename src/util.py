@@ -203,14 +203,6 @@ def decimal_to_int(dec: Decimal) -> int:
     return int(dec * 10**18)
 
 
-def int_to_decimal(i: int) -> Decimal:
-    """
-    Converts an expanded decimal quantity to a decimal.
-    """
-
-    return Decimal(i) / (Decimal("10.0") ** 18)
-
-
 @dataclass
 class DenomChainInfo:
     """

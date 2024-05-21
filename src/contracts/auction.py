@@ -6,12 +6,13 @@ for the auction.
 import json
 from decimal import Decimal
 from typing import Any, List, Optional
+from functools import cached_property
 from cosmpy.aerial.contract import LedgerContract  # type: ignore
 from cosmpy.aerial.wallet import LocalWallet  # type: ignore
 from cosmpy.aerial.client import LedgerClient, NetworkConfig  # type: ignore
 from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
 from src.util import (
-    NEUTRON_NETWORK_CONFIG,
+    custom_neutron_network_config,
     WithContract,
     ContractInfo,
     decimal_to_int,
@@ -28,6 +29,7 @@ class AuctionProvider(WithContract):
 
     def __init__(
         self,
+        endpoints: dict[str, list[str]],
         contract_info: ContractInfo,
         asset_a: str,
         asset_b: str,
@@ -39,6 +41,7 @@ class AuctionProvider(WithContract):
         self.chain_prefix = "neutron"
         self.chain_fee_denom = "untrn"
         self.kind = "auction"
+        self.endpoints = endpoints["http"]
 
     def exchange_rate(self) -> int:
         """
@@ -128,12 +131,16 @@ class AuctionDirectory:
         self,
         deployments: dict[str, Any],
         poolfile_path: Optional[str] = None,
-        network_configs: Optional[list[NetworkConfig]] = None,
+        endpoints: Optional[dict[str, list[str]]] = None,
     ) -> None:
-        self.clients = [
-            LedgerClient(NEUTRON_NETWORK_CONFIG),
-            *(network_configs if network_configs else []),
-        ]
+        self.endpoints = (
+            endpoints
+            if endpoints
+            else {
+                "http": ["https://neutron-rest.publicnode.com"],
+                "grpc": ["grpc+https://neutron-grpc.publicnode.com:443"],
+            }
+        )
         self.deployment_info = deployments["auctions"]["neutron"]
         self.cached_auctions = None
 
@@ -171,6 +178,7 @@ class AuctionDirectory:
                 poolfile_entry["asset_b"],
             )
             provider = AuctionProvider(
+                self.endpoints,
                 ContractInfo(
                     self.deployment_info,
                     self.clients,
@@ -211,6 +219,7 @@ class AuctionDirectory:
             asset_b, asset_a = pair
 
             provider = AuctionProvider(
+                self.endpoints,
                 ContractInfo(self.deployment_info, self.clients, addr, "auction"),
                 asset_a,
                 asset_b,
@@ -252,3 +261,10 @@ class AuctionDirectory:
                 for auction in base.values()
             }.values()
         )
+
+    @cached_property
+    def clients(self) -> List[LedgerClient]:
+        return [
+            LedgerClient(custom_neutron_network_config(endpoint))
+            for endpoint in self.endpoints["grpc"]
+        ]

@@ -20,7 +20,6 @@ from src.util import (
     ContractInfo,
     try_query_multiple,
     try_exec_multiple_fatal,
-    decimal_to_int,
     custom_neutron_network_config,
 )
 
@@ -87,6 +86,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
 
     def __init__(
         self,
+        endpoints: dict[str, list[str]],
         contract_info: ContractInfo,
         asset_a: Token | NativeToken,
         asset_b: Token | NativeToken,
@@ -98,6 +98,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         self.chain_prefix = "neutron"
         self.chain_fee_denom = "untrn"
         self.kind = "astroport"
+        self.endpoints = endpoints["http"]
 
     def __exchange_rate(
         self, asset_a: Token | NativeToken, asset_b: Token | NativeToken, amount: int
@@ -267,6 +268,7 @@ class NeutronAstroportPoolDirectory:
                 token_to_addr(asset_b),
             )
             provider = NeutronAstroportPoolProvider(
+                self.endpoints,
                 ContractInfo(
                     self.deployment_info,
                     self.clients,
@@ -338,6 +340,7 @@ class NeutronAstroportPoolDirectory:
                 continue
 
             provider = NeutronAstroportPoolProvider(
+                self.endpoints,
                 ContractInfo(
                     self.deployment_info, self.clients, pool["contract_addr"], "pair"
                 ),
