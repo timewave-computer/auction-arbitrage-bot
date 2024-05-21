@@ -705,6 +705,8 @@ def listen_routes_with_depth_dfs(
     pools: dict[str, dict[str, List[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
 ) -> None:
+    asyncio.set_event_loop(asyncio.new_event_loop())
+
     denom_cache: dict[str, dict[str, str]] = {}
 
     async def next_legs(path: list[Leg]) -> None:
@@ -820,8 +822,8 @@ def listen_routes_with_depth_dfs(
     ]
     random.shuffle(start_pools)
 
-    asyncio.run(
-        asyncio.gather(
+    async def init_searcher() -> None:
+        await asyncio.gather(
             *[
                 next_legs(
                     [
@@ -835,4 +837,5 @@ def listen_routes_with_depth_dfs(
                 for pool in start_pools
             ]
         )
-    )
+
+    asyncio.run(init_searcher())

@@ -238,7 +238,7 @@ async def denom_info(src_chain: str, src_denom: str) -> list[DenomChainInfo]:
             if resp.status != 200:
                 return []
 
-            dests = await resp.json()["dest_assets"]
+            dests = (await resp.json())["dest_assets"]
 
             def chain_info(chain_id: str, info: dict[str, Any]) -> DenomChainInfo:
                 info = info["assets"][0]
@@ -283,7 +283,7 @@ async def denom_info_on_chain(
             if resp.status != 200:
                 return None
 
-            dests = await resp.json()["dest_assets"]
+            dests = (await resp.json())["dest_assets"]
 
             if dest_chain in dests:
                 info = dests[dest_chain]["assets"][0]
