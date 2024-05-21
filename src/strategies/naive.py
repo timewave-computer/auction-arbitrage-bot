@@ -560,7 +560,7 @@ def transfer(
         ),
     )
 
-    logger.info(
+    logger.debug(
         "Executing IBC transfer %s from %s -> %s with source port %s, source channel %s, sender %s, and receiver %s",
         denom,
         prev_leg.backend.chain_id,
@@ -736,19 +736,20 @@ def listen_routes_with_depth_dfs(
         # no more work to do
         end = prev_pool.out_asset()
 
-        denom_cache[end] = {
-            info.chain_id: info.denom
-            for info in denom_info(prev_pool.backend.chain_id, end)
-            + [
-                DenomChainInfo(
-                    denom=end,
-                    port=None,
-                    channel=None,
-                    chain_id=prev_pool.backend.chain_id,
-                )
-            ]
-            if info.chain_id
-        }
+        if not end in denom_cache:
+            denom_cache[end] = {
+                info.chain_id: info.denom
+                for info in denom_info(prev_pool.backend.chain_id, end)
+                + [
+                    DenomChainInfo(
+                        denom=end,
+                        port=None,
+                        channel=None,
+                        chain_id=prev_pool.backend.chain_id,
+                    )
+                ]
+                if info.chain_id
+            }
 
         # A pool is a candidate to be a next pool if it has a denom
         # contained in denom_cache[end] or one of its denoms *is* end

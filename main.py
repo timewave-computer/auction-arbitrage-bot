@@ -2,6 +2,7 @@
 Implements a command-line interface for running arbitrage strategies.
 """
 
+from multiprocessing import Process
 import json
 import argparse
 import logging
@@ -156,28 +157,27 @@ def main() -> None:
     astro_pools = astro.pools()
 
     # Save pools to the specified file if the user wants to dump pools
-    if args.cmd is not None:
-        if args.cmd == "dump":
-            # The user wants to dump to a nonexistent file
-            if args.pool_file is None:
-                logger.error("Dump command provided but no poolfile specified.")
+    if args.cmd is not None and args.cmd == "dump":
+        # The user wants to dump to a nonexistent file
+        if args.pool_file is None:
+            logger.error("Dump command provided but no poolfile specified.")
 
-                sys.exit(1)
+            sys.exit(1)
 
-            with open(args.pool_file, "r+", encoding="utf-8") as f:
-                f.seek(0)
-                json.dump(
-                    {
-                        "pools": {
-                            "osmosis": OsmosisPoolDirectory.dump_pools(osmo_pools),
-                            "neutron_astroport": NeutronAstroportPoolDirectory.dump_pools(
-                                astro_pools
-                            ),
-                        },
-                        "auctions": sched.auction_manager.dump_auctions(sched.auctions),
+        with open(args.pool_file, "r+", encoding="utf-8") as f:
+            f.seek(0)
+            json.dump(
+                {
+                    "pools": {
+                        "osmosis": OsmosisPoolDirectory.dump_pools(osmo_pools),
+                        "neutron_astroport": NeutronAstroportPoolDirectory.dump_pools(
+                            astro_pools
+                        ),
                     },
-                    f,
-                )
+                    "auctions": sched.auction_manager.dump_auctions(sched.auctions),
+                },
+                f,
+            )
 
     for osmo_base in osmo_pools.values():
         for osmo_pool in osmo_base.values():
@@ -195,13 +195,23 @@ def main() -> None:
 
     logger.info("Built pool catalogue with %d pools", n_pools)
 
-    # Continuously poll the strategy on the specified interval
-    schedule.every(args.poll_interval).seconds.do(sched.poll)
-    sched.poll()
+    def event_loop():
+        # Continuously poll the strategy on the specified interval
+        schedule.every(args.poll_interval).seconds.do(sched.poll)
 
-    while not sched.ctx.terminated:
-        schedule.run_pending()
+        sched.poll()
 
+        while not sched.ctx.terminated:
+            schedule.run_pending()
+
+    # Save pools to the specified file if the user wants to dump pools
+    if args.cmd is not None and args.cmd == "daemon":
+        Process(target=event_loop, args=[]).run()
+        logger.info("Spawned searcher daemon")
+
+        return
+
+    event_loop()
 
 if __name__ == "__main__":
     main()

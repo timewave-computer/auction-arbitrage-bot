@@ -101,6 +101,7 @@ The bot may also be supplied a command (an argument with no hyphens). The availa
 
 * `dump`: Loads all known pools, and writes discovered pools to a file, exiting immediately after. Results will be written in JSON format, following conventions outlined below.
   * Sample execution: `WALLET_MNEMONIC=<wallet_mnemonic> python main.py dump`
+* `daemon`: Spawns the searcher event-loop as a long-running background "daemon" process, after initial setup. Exits the init script after spawning the daemon, leaving the daemon running in the background.
 
 ### Custom RPC's
 
