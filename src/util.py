@@ -19,7 +19,7 @@ from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
 DENOM_RESOLVER_TIMEOUT_SEC = 5
 
 
-CONCURRENCY_FACTOR = 1000
+CONCURRENCY_FACTOR = 1
 
 
 NEUTRON_NETWORK_CONFIG = NetworkConfig(
@@ -242,9 +242,6 @@ async def denom_info(
             "client_id": "timewave-arb-bot",
         },
     ) as resp:
-        if src_chain == "osmosis-1":
-            breakpoint()
-
         if resp.status != 200:
             return []
 

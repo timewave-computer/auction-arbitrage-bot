@@ -716,8 +716,6 @@ def listen_routes_with_depth_dfs(
 ) -> None:
     asyncio.set_event_loop(asyncio.new_event_loop())
 
-    sem = asyncio.Semaphore(CONCURRENCY_FACTOR)
-
     denom_cache: dict[str, dict[str, str]] = {}
 
     start_pools: list[Union[AuctionProvider, PoolProvider]] = [
@@ -727,6 +725,8 @@ def listen_routes_with_depth_dfs(
     random.shuffle(start_pools)
 
     async def init_searcher() -> None:
+        sem = asyncio.Semaphore(CONCURRENCY_FACTOR)
+
         async with aiohttp.ClientSession() as session:
 
             async def next_legs(path: list[Leg]) -> None:
@@ -810,31 +810,30 @@ def listen_routes_with_depth_dfs(
 
                 # A pool is a candidate to be a next pool if it has a denom
                 # contained in denom_cache[end] or one of its denoms *is* end
-                next_pools: list[Union[AuctionProvider, PoolProvider]] = [
-                    # Atomic pools
-                    *auctions.get(end, {}).values(),
-                    *(
-                        pool
-                        for pool_set in pools.get(end, {}).values()
-                        for pool in pool_set
-                    ),
-                    # IBC pools
-                    *(
-                        auction
-                        for denom in denom_cache[end].values()
-                        for auction in auctions.get(denom, {}).values()
-                    ),
-                    *(
-                        pool
-                        for denom in denom_cache[end].values()
-                        for pool_set in pools.get(denom, {}).values()
-                        for pool in pool_set
-                    ),
-                ]
+                next_pools: list[Union[AuctionProvider, PoolProvider]] = list(
+                    {
+                        # Atomic pools
+                        *auctions.get(end, {}).values(),
+                        *(
+                            pool
+                            for pool_set in pools.get(end, {}).values()
+                            for pool in pool_set
+                        ),
+                        # IBC pools
+                        *(
+                            auction
+                            for denom in denom_cache[end].values()
+                            for auction in auctions.get(denom, {}).values()
+                        ),
+                        *(
+                            pool
+                            for denom in denom_cache[end].values()
+                            for pool_set in pools.get(denom, {}).values()
+                            for pool in pool_set
+                        ),
+                    }
+                )
                 random.shuffle(next_pools)
-
-                if len(path) == 2 and isinstance(path[1].backend, OsmosisPoolProvider):
-                    breakpoint()
 
                 await asyncio.gather(
                     *(
