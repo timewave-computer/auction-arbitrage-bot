@@ -35,7 +35,8 @@ from src.util import (
     try_multiple_rest_endpoints,
     IBC_TRANSFER_TIMEOUT_SEC,
     IBC_TRANSFER_POLL_INTERVAL_SEC,
-    CONCURRENCY_FACTOR,
+    DISCOVERY_CONCURRENCY_FACTOR,
+    EVALUATION_CONCURRENCY_FACTOR,
 )
 from ibc.applications.transfer.v1 import tx_pb2
 from ibc.core.channel.v1 import query_pb2
@@ -253,6 +254,9 @@ def strategy(
         return ctx.cancel()
 
     workers = []
+
+    # Routes to evaluate for profitability, and routes to execute
+    to_eval: Queue[List[Leg]] = Queue(maxsize=0)
     to_exec: Queue[List[Leg]] = Queue(maxsize=0)
 
     # Report route stats to user
@@ -264,7 +268,7 @@ def strategy(
         threading.Thread(
             target=listen_routes_with_depth_dfs,
             args=[
-                to_exec,
+                to_eval,
                 ctx.cli_args["hops"],
                 ctx.cli_args["base_denom"],
                 set(ctx.cli_args["require_leg_types"]),
@@ -274,6 +278,22 @@ def strategy(
         )
     )
     workers[-1].start()
+
+    # Evaluate up to util/EVALUATION_CONCURRENCY_FACTOR
+    # arbs at the same time for profitability (based
+    # and optimizatoinmaxxing pilled)
+    for _ in range(EVALUATION_CONCURRENCY_FACTOR):
+        workers.append(
+            threading.Thread(
+                target=eval_routes,
+                args=[
+                    to_eval,
+                    to_exec,
+                    ctx,
+                ],
+            )
+        )
+        workers[-1].start()
 
     while True:
         route = to_exec.get()
@@ -706,6 +726,48 @@ def route_base_denom_profit_quantities(
     return (quantity_received - starting_amount, quantities)
 
 
+def eval_routes(
+    in_routes: Queue[List[Leg]], out_routes: Queue[List[Leg]], ctx: Ctx
+) -> None:
+    while True:
+        route = in_routes.get()
+
+        logger.debug("Evaluating route for profitability: %s", fmt_route(route))
+
+        balance_resp = try_multiple_clients(
+            ctx.clients["neutron"],
+            lambda client: client.query_bank_balance(
+                Address(ctx.wallet.public_key(), prefix="neutron"),
+                ctx.cli_args["base_denom"],
+            ),
+        )
+
+        if not balance_resp:
+            logger.error(
+                "Failed to fetch bot wallet balance for account %s",
+                str(Address(ctx.wallet.public_key(), prefix="neutron")),
+            )
+
+            continue
+
+        profit, _ = route_base_denom_profit_quantities(
+            balance_resp,
+            route,
+        )
+
+        if profit < ctx.cli_args["profit_margin"]:
+            logger.debug(
+                "Route is not profitable with profit of %d: %s",
+                profit,
+                fmt_route(route),
+            )
+
+            continue
+
+        # Queue the route for execution, since it is profitable
+        out_routes.put(route)
+
+
 def listen_routes_with_depth_dfs(
     routes: Queue[List[Leg]],
     depth: int,
@@ -725,7 +787,7 @@ def listen_routes_with_depth_dfs(
     random.shuffle(start_pools)
 
     async def init_searcher() -> None:
-        sem = asyncio.Semaphore(CONCURRENCY_FACTOR)
+        sem = asyncio.Semaphore(DISCOVERY_CONCURRENCY_FACTOR)
 
         async with aiohttp.ClientSession() as session:
 
