@@ -16,6 +16,12 @@ from cosmpy.aerial.wallet import LocalWallet  # type: ignore
 from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
 
 
+DENOM_RESOLVER_TIMEOUT_SEC = 5
+
+
+CONCURRENCY_FACTOR = 1000
+
+
 NEUTRON_NETWORK_CONFIG = NetworkConfig(
     chain_id="neutron-1",
     url="grpc+http://grpc-kralum.neutron-1.neutron.org:80",
@@ -218,91 +224,94 @@ class DenomChainInfo:
     chain_id: Optional[str]
 
 
-async def denom_info(src_chain: str, src_denom: str) -> list[DenomChainInfo]:
+async def denom_info(
+    src_chain: str, src_denom: str, session: aiohttp.ClientSession
+) -> list[DenomChainInfo]:
     """
     Gets a denom's denom and channel on/to other chains.
     """
 
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            "https://api.skip.money/v1/fungible/assets_from_source",
-            headers={"accept": "application/json", "content-type": "application/json"},
-            json={
-                "allow_multi_tx": False,
-                "include_cw20_assets": True,
-                "source_asset_denom": src_denom,
-                "source_asset_chain_id": src_chain,
-                "client_id": "timewave-arb-bot",
-            },
-        ) as resp:
-            if resp.status != 200:
-                return []
+    async with session.post(
+        "https://api.skip.money/v1/fungible/assets_from_source",
+        headers={"accept": "application/json", "content-type": "application/json"},
+        json={
+            "allow_multi_tx": False,
+            "include_cw20_assets": True,
+            "source_asset_denom": src_denom,
+            "source_asset_chain_id": src_chain,
+            "client_id": "timewave-arb-bot",
+        },
+    ) as resp:
+        if src_chain == "osmosis-1":
+            breakpoint()
 
-            dests = (await resp.json())["dest_assets"]
+        if resp.status != 200:
+            return []
 
-            def chain_info(chain_id: str, info: dict[str, Any]) -> DenomChainInfo:
-                info = info["assets"][0]
+        dests = (await resp.json())["dest_assets"]
 
-                if info["trace"] != "":
-                    parts = info["trace"].split("/")
-                    port, channel = parts[0], parts[1]
+        def chain_info(chain_id: str, info: dict[str, Any]) -> DenomChainInfo:
+            info = info["assets"][0]
 
-                    return DenomChainInfo(
-                        denom=info["denom"],
-                        port=port,
-                        channel=channel,
-                        chain_id=chain_id,
-                    )
+            if info["trace"] != "":
+                parts = info["trace"].split("/")
+                port, channel = parts[0], parts[1]
 
                 return DenomChainInfo(
-                    denom=info["denom"], port=None, channel=None, chain_id=chain_id
+                    denom=info["denom"],
+                    port=port,
+                    channel=channel,
+                    chain_id=chain_id,
                 )
 
-            return [chain_info(chain_id, info) for chain_id, info in dests.items()]
+            return DenomChainInfo(
+                denom=info["denom"], port=None, channel=None, chain_id=chain_id
+            )
+
+        return [chain_info(chain_id, info) for chain_id, info in dests.items()]
 
 
 async def denom_info_on_chain(
-    src_chain: str, src_denom: str, dest_chain: str
+    src_chain: str, src_denom: str, dest_chain: str, session: aiohttp.ClientSession
 ) -> Optional[DenomChainInfo]:
     """
     Gets a neutron denom's denom and channel on/to another chain.
     """
 
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            "https://api.skip.money/v1/fungible/assets_from_source",
-            headers={"accept": "application/json", "content-type": "application/json"},
-            json={
-                "allow_multi_tx": False,
-                "include_cw20_assets": True,
-                "source_asset_denom": src_denom,
-                "source_asset_chain_id": src_chain,
-                "client_id": "timewave-arb-bot",
-            },
-        ) as resp:
-            if resp.status != 200:
-                return None
+    async with session.post(
+        "https://api.skip.money/v1/fungible/assets_from_source",
+        headers={"accept": "application/json", "content-type": "application/json"},
+        json={
+            "allow_multi_tx": False,
+            "include_cw20_assets": True,
+            "source_asset_denom": src_denom,
+            "source_asset_chain_id": src_chain,
+            "client_id": "timewave-arb-bot",
+        },
+    ) as resp:
+        if resp.status != 200:
+            return None
 
-            dests = (await resp.json())["dest_assets"]
+        dests = (await resp.json())["dest_assets"]
 
-            if dest_chain in dests:
-                info = dests[dest_chain]["assets"][0]
+        if dest_chain in dests:
+            info = dests[dest_chain]["assets"][0]
 
-                if info["trace"] != "":
-                    port, channel = info["trace"].split("/")
-
-                    return DenomChainInfo(
-                        denom=info["denom"],
-                        port=port,
-                        channel=channel,
-                        chain_id=dest_chain,
-                    )
+            if info["trace"] != "":
+                port, channel = info["trace"].split("/")
 
                 return DenomChainInfo(
-                    denom=info["denom"], port=None, channel=None, chain_id=dest_chain
+                    denom=info["denom"],
+                    port=port,
+                    channel=channel,
+                    chain_id=dest_chain,
                 )
 
-            return None
+            return DenomChainInfo(
+                denom=info["denom"], port=None, channel=None, chain_id=dest_chain
+            )
+
+        return None
 
 
 @dataclass
