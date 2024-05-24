@@ -85,14 +85,14 @@ class AuctionProvider(WithContract):
 
     def asset_a(self) -> str:
         """
-        Gets the asset being sold in the pool.
+        Gets the asset being used to purchase in the pool.
         """
 
         return self.asset_a_denom
 
     def asset_b(self) -> str:
         """
-        Gets the asset being used to purchase in the pool.
+        Gets the asset being bought in the pool.
         """
 
         return self.asset_b_denom
@@ -102,7 +102,7 @@ class AuctionProvider(WithContract):
             self.contracts, wallet, {"bid": {}}, funds=f"{amount}{self.asset_a_denom}"
         )
 
-    def remaining_asset_a(self) -> int:
+    def remaining_asset_b(self) -> int:
         """
         Gets the amount of the asking asset left in the auction.
         """

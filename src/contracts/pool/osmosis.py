@@ -81,6 +81,21 @@ class OsmosisPoolProvider(PoolProvider):
 
         return int(res["token_out_amount"])
 
+    def __rev_exchange_rate(self, asset_a: str, asset_b: str, amount: int) -> int:
+        res = try_multiple_rest_endpoints(
+            self.endpoints,
+            (
+                f"/osmosis/poolmanager/v1beta1/{self.pool_id}"
+                f"/estimate/single_pool_swap_exact_amount_out?pool_id={self.pool_id}"
+                f"&token_in_denom={asset_b}&token_out={amount}{asset_a}"
+            ),
+        )
+
+        if not res or ("code" in res and res["code"] == 13):
+            return 0
+
+        return int(res["token_in_amount"])
+
     def __swap(
         self,
         wallet: LocalWallet,
@@ -129,11 +144,35 @@ class OsmosisPoolProvider(PoolProvider):
             lambda client: client.broadcast_tx(tx),
         )
 
+    def __balance(self, asset: str) -> int:
+        res = try_multiple_rest_endpoints(
+            self.endpoints,
+            (
+                f"/osmosis/poolmanager/v1beta1/pools/{self.pool_id}"
+                f"/total_pool_liquidity"
+            ),
+        )
+
+        if (
+            not res
+            or ("code" in res and res["code"] == 13)
+            or len(res["liquidity"]) == 0
+        ):
+            return 0
+
+        return int(next(b for b in res["liquidity"] if b["denom"] == asset)["amount"])
+
     def simulate_swap_asset_a(self, amount: int) -> int:
         return self.__exchange_rate(self.asset_a_denom, self.asset_b_denom, amount)
 
     def simulate_swap_asset_b(self, amount: int) -> int:
         return self.__exchange_rate(self.asset_b_denom, self.asset_a_denom, amount)
+
+    def reverse_simulate_swap_asset_a(self, amount: int) -> int:
+        return self.__rev_exchange_rate(self.asset_a_denom, self.asset_b_denom, amount)
+
+    def reverse_simulate_swap_asset_b(self, amount: int) -> int:
+        return self.__rev_exchange_rate(self.asset_b_denom, self.asset_a_denom, amount)
 
     def swap_asset_a(
         self,
@@ -164,6 +203,12 @@ class OsmosisPoolProvider(PoolProvider):
 
     def asset_b(self) -> str:
         return self.asset_b_denom
+
+    def balance_asset_a(self) -> int:
+        return self.__balance(self.asset_a_denom)
+
+    def balance_asset_b(self) -> int:
+        return self.__balance(self.asset_b_denom)
 
     def dump(self) -> dict[str, Any]:
         """

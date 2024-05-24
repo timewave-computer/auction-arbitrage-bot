@@ -64,6 +64,22 @@ class PoolProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def reverse_simulate_swap_asset_a(self, amount: int) -> int:
+        """
+        Gets the amount of asset b required to return a specified amount of asset a.
+        """
+
+        raise NotImplementedError
+
+    @abstractmethod
+    def reverse_simulate_swap_asset_b(self, amount: int) -> int:
+        """
+        Gets the amount of asset a required to return a specified amount of asset b.
+        """
+
+        raise NotImplementedError
+
+    @abstractmethod
     def swap_asset_a(
         self, wallet: LocalWallet, amount: int, min_amount: int
     ) -> SubmittedTx:
@@ -103,6 +119,22 @@ class PoolProvider(ABC):
         """
         Gets the contract address or ticker (if a native asset) of the second denomination
         in the pair.
+        """
+
+        raise NotImplementedError
+
+    @abstractmethod
+    def balance_asset_a(self) -> int:
+        """
+        Gets the quantity of asset A left in the pool.
+        """
+
+        raise NotImplementedError
+
+    @abstractmethod
+    def balance_asset_b(self) -> int:
+        """
+        Gets the quantity of asset B left in the pool.
         """
 
         raise NotImplementedError

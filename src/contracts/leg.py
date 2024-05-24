@@ -13,3 +13,6 @@ class Leg:
     in_asset: Callable[[], str]
     out_asset: Callable[[], str]
     backend: Union[AuctionProvider, PoolProvider]
+
+    def __hash__(self) -> int:
+        return hash((self.backend, hash(self.in_asset()), hash(self.out_asset())))

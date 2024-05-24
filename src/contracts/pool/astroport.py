@@ -19,6 +19,7 @@ from src.util import (
     WithContract,
     ContractInfo,
     try_query_multiple,
+    try_multiple_clients,
     try_exec_multiple_fatal,
     custom_neutron_network_config,
 )
@@ -130,6 +131,36 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
 
             raise e
 
+    def __rev_exchange_rate(
+        self, asset_a: Token | NativeToken, asset_b: Token | NativeToken, amount: int
+    ) -> int:
+        try:
+            simulated_pricing_info = try_query_multiple(
+                self.contracts,
+                {
+                    "reverse_simulation": {
+                        "offer_asset_info": token_to_asset_info(asset_b),
+                        "ask_asset": {
+                            "info": token_to_asset_info(asset_a),
+                            "amount": str(amount),
+                        },
+                    }
+                },
+            )
+
+            if not simulated_pricing_info:
+                return 0
+
+            return int(simulated_pricing_info["offer_amount"])
+        except _InactiveRpcError as e:
+            details = e.details()
+
+            # The pool has no assets in it
+            if details is not None and "One of the pools is empty" in details:
+                return 0
+
+            raise e
+
     def __swap(
         self,
         wallet: LocalWallet,
@@ -155,6 +186,19 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
             funds=f"{amount}{token_to_addr(asset_a)}",
             gas_limit=3000000,
         )
+
+    def __balance(self, asset: Token | NativeToken) -> int:
+        balances = try_query_multiple(
+            self.contracts,
+            {"pool": {}},
+        )["assets"]
+
+        balance = next(b for b in balances if b["info"] == token_to_asset_info(asset))
+
+        if not balance:
+            return 0
+
+        return int(balance["amount"])
 
     def swap_asset_a(
         self, wallet: LocalWallet, amount: int, min_amount: int
@@ -186,11 +230,23 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
     def simulate_swap_asset_b(self, amount: int) -> int:
         return self.__exchange_rate(self.asset_b_denom, self.asset_a_denom, amount)
 
+    def reverse_simulate_swap_asset_a(self, amount: int) -> int:
+        return self.__rev_exchange_rate(self.asset_a_denom, self.asset_b_denom, amount)
+
+    def reverse_simulate_swap_asset_b(self, amount: int) -> int:
+        return self.__rev_exchange_rate(self.asset_b_denom, self.asset_a_denom, amount)
+
     def asset_a(self) -> str:
         return token_to_addr(self.asset_a_denom)
 
     def asset_b(self) -> str:
         return token_to_addr(self.asset_b_denom)
+
+    def balance_asset_a(self) -> int:
+        return self.__balance(self.asset_a_denom)
+
+    def balance_asset_b(self) -> int:
+        return self.__balance(self.asset_b_denom)
 
     def dump(self) -> dict[str, Any]:
         """

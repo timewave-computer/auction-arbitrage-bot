@@ -3,13 +3,14 @@ Implements an arbitrage strategy with an arbitrary number
 of hops using all available providers.
 """
 
+import multiprocessing
 import asyncio
 import random
 import threading
 from queue import Queue
 from decimal import Decimal
 import json
-from typing import List, Union, Optional, Self, Any
+from typing import List, Union, Optional, Self, Any, Callable
 from datetime import datetime, timedelta
 import time
 from collections import deque
@@ -370,6 +371,15 @@ def fmt_route(route: list[Leg]) -> str:
     )
 
 
+def fmt_route_debug(route: list[Leg]) -> str:
+    return " -> ".join(
+        map(
+            lambda route_leg: f"{fmt_route_leg(route_leg)}: {route_leg.in_asset()} - {route_leg.out_asset()} @ {route_leg.backend.pool_id if isinstance(route_leg.backend, OsmosisPoolProvider) else (route_leg.backend.contract_info.address if isinstance(route_leg.backend, NeutronAstroportPoolProvider) or isinstance(route_leg.backend, AuctionProvider) else '')}",
+            route,
+        )
+    )
+
+
 def exec_arb(
     route: List[Leg],
     ctx: Ctx,
@@ -422,7 +432,7 @@ def exec_arb(
 
             async def get_denom_info() -> Optional[DenomChainInfo]:
                 async with aiohttp.ClientSession() as session:
-                    return denom_info_on_chain(
+                    return await denom_info_on_chain(
                         prev_leg.backend.chain_id,
                         prev_leg.out_asset(),
                         leg.backend.chain_id,
@@ -574,9 +584,9 @@ def transfer(
     succeeded.
     """
 
-    async def get_denom_info() -> Optinoal[DenomChainInfo]:
+    async def get_denom_info() -> Optional[DenomChainInfo]:
         async with aiohttp.ClientSession() as session:
-            return denom_info_on_chain(
+            return await denom_info_on_chain(
                 src_chain=prev_leg.backend.chain_id,
                 src_denom=denom,
                 dest_chain=leg.backend.chain_id,
@@ -701,29 +711,43 @@ def route_base_denom_profit_quantities(
     Calculates the profit that can be obtained by following the route.
     """
 
-    quantity_received = starting_amount
-    quantities: list[int] = []
+    if len(route) == 0:
+        return (0, [])
+
+    quantities: list[int] = [starting_amount]
 
     for leg in route:
-        if quantity_received == 0:
+        if quantities[-1] == 0:
             break
 
-        if isinstance(leg.backend, PoolProvider):
-            if leg.in_asset == leg.backend.asset_a:
-                quantities.append(
-                    int(leg.backend.simulate_swap_asset_a(quantity_received))
+        prev_amt = min(
+            quantities[-1],
+            (
+                leg.backend.remaining_asset_b()
+                if isinstance(leg.backend, AuctionProvider)
+                else (
+                    leg.backend.balance_asset_a()
+                    if leg.in_asset == leg.backend.asset_a
+                    else leg.backend.balance_asset_b()
                 )
-                quantity_received = quantities[-1]
-            else:
-                quantities.append(
-                    int(leg.backend.simulate_swap_asset_b(quantity_received))
-                )
-                quantity_received = quantities[-1]
-        elif leg.in_asset == leg.backend.asset_a:
-            quantities.append(leg.backend.exchange_rate() * quantity_received)
-            quantity_received = quantities[-1]
+            ),
+        )
 
-    return (quantity_received - starting_amount, quantities)
+        if isinstance(leg.backend, AuctionProvider):
+            quantities.append(leg.backend.exchange_rate() * prev_amt)
+
+            continue
+
+        if leg.in_asset == leg.backend.asset_a:
+            quantities.append(int(leg.backend.simulate_swap_asset_a(prev_amt)))
+
+            continue
+
+        quantities.append(int(leg.backend.simulate_swap_asset_b(prev_amt)))
+
+    print(quantities, route[-1].out_asset(), route[0].in_asset())
+
+    return (quantities[-1] - quantities[0], quantities)
 
 
 def eval_routes(
@@ -759,13 +783,23 @@ def eval_routes(
             logger.debug(
                 "Route is not profitable with profit of %d: %s",
                 profit,
-                fmt_route(route),
+                fmt_route_debug(route),
             )
 
             continue
 
         # Queue the route for execution, since it is profitable
         out_routes.put(route)
+
+
+def leg_liquidity(leg: Leg) -> tuple[int, int]:
+    if isinstance(leg.backend, AuctionProvider):
+        return (leg.backend.remaining_asset_b(), leg.backend.remaining_asset_b())
+
+    return (
+        leg.backend.balance_asset_a(),
+        leg.backend.balance_asset_b(),
+    )
 
 
 def listen_routes_with_depth_dfs(
@@ -784,7 +818,18 @@ def listen_routes_with_depth_dfs(
         *auctions.get(src, {}).values(),
         *(pool for pool_set in pools.get(src, {}).values() for pool in pool_set),
     ]
-    random.shuffle(start_pools)
+
+    start_legs: list[Leg] = [
+        Leg(
+            pool.asset_a if pool.asset_a() == src else pool.asset_b,
+            pool.asset_b if pool.asset_a() == src else pool.asset_a,
+            pool,
+        )
+        for pool in start_pools
+    ]
+
+    random.shuffle(start_legs)
+    start_legs = sorted(start_legs, key=leg_liquidity, reverse=True)
 
     async def init_searcher() -> None:
         sem = asyncio.Semaphore(DISCOVERY_CONCURRENCY_FACTOR)
@@ -794,6 +839,13 @@ def listen_routes_with_depth_dfs(
             async def next_legs(path: list[Leg]) -> None:
                 nonlocal denom_cache
                 nonlocal routes
+
+                if len(path) >= 2:
+                    assert (
+                        path[-1].in_asset() == path[-2].out_asset()
+                        or path[-1].in_asset()
+                        in denom_cache[path[-2].out_asset()].values()
+                    )
 
                 # Only find `limit` pools
                 # with a depth less than `depth
@@ -872,23 +924,70 @@ def listen_routes_with_depth_dfs(
 
                 # A pool is a candidate to be a next pool if it has a denom
                 # contained in denom_cache[end] or one of its denoms *is* end
-                next_pools: list[Union[AuctionProvider, PoolProvider]] = list(
+                next_pools: list[Leg] = list(
                     {
                         # Atomic pools
-                        *auctions.get(end, {}).values(),
                         *(
-                            pool
+                            Leg(
+                                (
+                                    auction.asset_a
+                                    if auction.asset_a() == end
+                                    else auction.asset_b
+                                ),
+                                (
+                                    auction.asset_a
+                                    if auction.asset_a() != end
+                                    else auction.asset_b
+                                ),
+                                auction,
+                            )
+                            for auction in auctions.get(end, {}).values()
+                        ),
+                        *(
+                            Leg(
+                                (
+                                    pool.asset_a
+                                    if pool.asset_a() == end
+                                    else pool.asset_b
+                                ),
+                                pool.asset_a if pool.asset_a() != end else pool.asset_b,
+                                pool,
+                            )
                             for pool_set in pools.get(end, {}).values()
                             for pool in pool_set
                         ),
                         # IBC pools
                         *(
-                            auction
+                            Leg(
+                                (
+                                    auction.asset_a
+                                    if auction.asset_a() == denom
+                                    else auction.asset_b
+                                ),
+                                (
+                                    auction.asset_a
+                                    if auction.asset_a() != denom
+                                    else auction.asset_b
+                                ),
+                                auction,
+                            )
                             for denom in denom_cache[end].values()
                             for auction in auctions.get(denom, {}).values()
                         ),
                         *(
-                            pool
+                            Leg(
+                                (
+                                    pool.asset_a
+                                    if pool.asset_a() == denom
+                                    else pool.asset_b
+                                ),
+                                (
+                                    pool.asset_a
+                                    if pool.asset_a() != denom
+                                    else pool.asset_b
+                                ),
+                                pool,
+                            )
                             for denom in denom_cache[end].values()
                             for pool_set in pools.get(denom, {}).values()
                             for pool in pool_set
@@ -897,43 +996,25 @@ def listen_routes_with_depth_dfs(
                 )
                 random.shuffle(next_pools)
 
-                await asyncio.gather(
-                    *(
-                        next_legs(
-                            path
-                            + [
-                                Leg(
-                                    (
-                                        pool.asset_a
-                                        if pool.asset_a() in denom_cache[end].values()
-                                        else pool.asset_b
-                                    ),
-                                    (
-                                        pool.asset_b
-                                        if pool.asset_a() in denom_cache[end].values()
-                                        else pool.asset_a
-                                    ),
-                                    pool,
-                                )
-                            ]
-                        )
-                        for pool in next_pools
+                by_liquidity = map(leg_liquidity, next_pools)
+                key: Callable[[tuple[Leg, tuple[int, int]]], tuple[int, int]] = (
+                    lambda pool_liquidity: pool_liquidity[1]
+                )
+
+                # Order next pools by liquidity
+                sorted_pools = (
+                    pool_liquidity[0]
+                    for pool_liquidity in sorted(
+                        zip(next_pools, by_liquidity),
+                        key=key,
+                        reverse=True,
                     )
                 )
 
-            await asyncio.gather(
-                *[
-                    next_legs(
-                        [
-                            Leg(
-                                pool.asset_a if pool.asset_a() == src else pool.asset_b,
-                                pool.asset_b if pool.asset_a() == src else pool.asset_a,
-                                pool,
-                            )
-                        ]
-                    )
-                    for pool in start_pools
-                ]
-            )
+                await asyncio.gather(
+                    *(next_legs(path + [pool]) for pool in sorted_pools)
+                )
+
+            await asyncio.gather(*[next_legs([leg]) for leg in start_legs])
 
     asyncio.run(init_searcher())
