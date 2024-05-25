@@ -16,7 +16,7 @@ from src.scheduler import Scheduler, Ctx
 from src.util import deployments, NEUTRON_NETWORK_CONFIG, custom_neutron_network_config
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
-from src.strategies.naive import strategy
+from src.strategies.bellman_ford import strategy
 from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
@@ -64,9 +64,13 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.log_file:
-        logging.basicConfig(filename=args.log_file, level=os.environ.get("LOGLEVEL", "INFO").upper())
+        logging.basicConfig(
+            filename=args.log_file, level=os.environ.get("LOGLEVEL", "INFO").upper()
+        )
     else:
-        logging.basicConfig(stream=sys.stdout, level=os.environ.get("LOGLEVEL", "INFO").upper())
+        logging.basicConfig(
+            stream=sys.stdout, level=os.environ.get("LOGLEVEL", "INFO").upper()
+        )
 
     # If the user specified a poolfile, create the poolfile if it is empty
     if args.pool_file is not None and not path.isfile(args.pool_file):
@@ -82,7 +86,7 @@ def main() -> None:
     endpoints: dict[str, dict[str, list[str]]] = {
         "neutron": {
             "http": ["https://neutron-rest.publicnode.com"],
-            "grpc": ["grpc+https://neutron-grpc.publicnode.com:443"]
+            "grpc": ["grpc+https://neutron-grpc.publicnode.com:443"],
         },
         "osmosis": {
             "http": ["https://lcd.osmosis.zone"],
@@ -148,9 +152,7 @@ def main() -> None:
         endpoints=endpoints["osmosis"],
     )
     astro = NeutronAstroportPoolDirectory(
-        deployments(),
-        poolfile_path=args.pool_file,
-        endpoints=endpoints["neutron"]
+        deployments(), poolfile_path=args.pool_file, endpoints=endpoints["neutron"]
     )
 
     osmo_pools = osmosis.pools()
@@ -212,6 +214,7 @@ def main() -> None:
         return
 
     event_loop()
+
 
 if __name__ == "__main__":
     main()
