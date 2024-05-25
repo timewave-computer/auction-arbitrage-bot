@@ -214,7 +214,17 @@ def decimal_to_int(dec: Decimal) -> int:
     Converts a cosmwasm decimal with 18 decimal places to
     a raw quantity with no decimals.
     """
+
     return int(dec * 10**18)
+
+
+def int_to_decimal(n: int) -> Decimal:
+    """
+    Converts an expanded decimal to a decimal with 18 points
+    of precision.
+    """
+
+    return Decimal(n) / (Decimal(10) ** Decimal(18))
 
 
 @dataclass
