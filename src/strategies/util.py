@@ -1,4 +1,8 @@
-import logger
+"""
+Defines common utilities shared across arbitrage strategies.
+"""
+
+import logging
 import time
 from typing import Optional
 from src.contracts.leg import Leg
@@ -29,9 +33,7 @@ from cosmpy.aerial.tx import Transaction, SigningCfg  # type: ignore
 from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
 from ibc.applications.transfer.v1 import tx_pb2
 
-"""
-Defines common utilities shared across arbitrage strategies.
-"""
+logger = logging.getLogger(__name__)
 
 
 def fmt_route_leg(leg: Leg) -> str:

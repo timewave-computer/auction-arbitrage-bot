@@ -38,6 +38,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Edge:
+    """
+    Represents a connection from one asset to another with a
+    particular multiplying effect.
+    """
+
     backend: Leg
     weight: Decimal
 
@@ -146,8 +151,11 @@ class State:
 
             def pair_provider_edge(
                 pair: str, provider: Union[PoolProvider, AuctionProvider]
-            ) -> Edge:
+            ) -> Optional[Edge]:
                 if isinstance(provider, AuctionProvider):
+                    if provider.remaining_asset_b() == 0:
+                        return None
+
                     return Edge(
                         Leg(
                             (
@@ -165,6 +173,14 @@ class State:
                         -Decimal.ln(int_to_decimal(provider.exchange_rate())),
                     )
 
+                balance_asset_a, balance_asset_b = (
+                    provider.balance_asset_a(),
+                    provider.balance_asset_b(),
+                )
+
+                if balance_asset_a == 0 or balance_asset_b == 0:
+                    return None
+
                 if provider.asset_a() == src:
                     return Edge(
                         Leg(
@@ -181,12 +197,7 @@ class State:
                             provider,
                         ),
                         -Decimal.ln(
-                            Decimal(provider.balance_asset_a())
-                            / Decimal(
-                                provider.simulate_swap_asset_a(
-                                    provider.balance_asset_a()
-                                )
-                            )
+                            Decimal(balance_asset_b) / Decimal(balance_asset_a)
                         ),
                     )
 
@@ -204,32 +215,30 @@ class State:
                         ),
                         provider,
                     ),
-                    -Decimal.ln(
-                        Decimal(provider.balance_asset_b())
-                        / Decimal(
-                            provider.simulate_swap_asset_b(provider.balance_asset_b())
-                        )
-                    ),
+                    -Decimal.ln(Decimal(balance_asset_a) / Decimal(balance_asset_b)),
                 )
 
-            pool = dummy.Pool()
-            with_weights: list[tuple[str, Edge]] = pool.map(
-                pair_provider_edge, providers_for_pair
+            pool = dummy.Pool(10)
+
+            with_weights: list[tuple[str, Optional[Edge]]] = pool.map(
+                lambda pair_provider: (
+                    pair_provider[0],
+                    pair_provider_edge(*pair_provider),
+                ),
+                providers_for_pair,
             )
 
-            def pair_edges_with_pair_edge(
-                pair_edges: dict[str, list[Edge]], pair_edge: tuple[str, Edge]
-            ) -> dict[str, list[Edge]]:
-                pair, edge = pair_edge
+            pair_edges: dict[str, list[Edge]] = {}
+
+            for pair, edge in with_weights:
+                if edge is None:
+                    continue
+
                 pair_edges[pair] = pair_edges.get(pair, []) + [edge]
 
-                return pair_edges
+            return pair_edges
 
-            init: dict[str, list[Edge]] = {}
-
-            return dict(reduce(pair_edges_with_pair_edge, with_weights, init))
-
-        pool = dummy.Pool()
+        pool = dummy.Pool(10)
         weights_for_bases: list[tuple[str, dict[str, list[Edge]]]] = pool.map(
             lambda base: (base, weights_for(base)), pools.keys()
         )
@@ -280,6 +289,11 @@ def strategy(
     """
     Finds new arbitrage opportunities using the context, pools, and auctions.
     """
+
+    if not ctx.state:
+        ctx.state = State({}, {}, None)
+
+    ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions))
 
     if ctx.cli_args["cmd"] == "dump":
         return ctx.cancel()
