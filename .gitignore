@@ -166,3 +166,6 @@ cython_debug/
 
 # Protobuf osmosis stubs
 build/gen/osmosis
+
+# Arb bot configs
+net_config.json
