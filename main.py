@@ -16,7 +16,7 @@ from src.scheduler import Scheduler, Ctx
 from src.util import deployments, NEUTRON_NETWORK_CONFIG, custom_neutron_network_config
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
-from src.strategies.bellman_ford import strategy
+from src.strategies.naive import strategy
 from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)

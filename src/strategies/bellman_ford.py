@@ -9,7 +9,7 @@ import itertools
 import math
 from decimal import Decimal
 import asyncio
-import multiprocessing.dummy as dummy
+import multiprocessing
 from datetime import datetime
 import threading
 from dataclasses import dataclass
@@ -59,7 +59,6 @@ class State:
     # with their weight
     weights: dict[str, dict[str, list[Edge]]]
 
-    denom_cache: dict[str, dict[str, str]]
     last_updated: Optional[datetime]
 
     def poll(
@@ -92,155 +91,9 @@ class State:
             vertices,
         )
 
-        def weights_for(src: str) -> dict[str, list[Edge]]:
-            """
-            Gets all denoms which have a direct conncetion to the src denom,
-            including cross-chain connections.
-            """
-
-            # Also include providers for all denoms that this src is associated with
-            if src not in self.denom_cache:
-
-                async def get_denom_info() -> list[DenomChainInfo]:
-                    async with aiohttp.ClientSession() as session:
-                        return await denom_info(
-                            "neutron-1",
-                            src,
-                            session,
-                        )
-
-                denom_infos = asyncio.run(get_denom_info())
-
-                self.denom_cache[src] = {
-                    info.chain_id: info.denom
-                    for info in (
-                        denom_infos
-                        + [
-                            DenomChainInfo(
-                                denom=src,
-                                port=None,
-                                channel=None,
-                                chain_id="neutron-1",
-                            )
-                        ]
-                    )
-                    if info.chain_id
-                }
-
-            providers_for_pair: Iterator[
-                tuple[str, Union[PoolProvider, AuctionProvider]]
-            ] = itertools.chain(
-                (
-                    (pair, pool)
-                    for (pair, pool_set) in pools.get(src, {}).items()
-                    for pool in pool_set
-                ),
-                ((pair, auction) for (pair, auction) in auctions.get(src, {}).items()),
-                (
-                    (pair, pool)
-                    for denom in self.denom_cache.get(src, {}).values()
-                    for (pair, pool_set) in pools.get(denom, {}).items()
-                    for pool in pool_set
-                ),
-                (
-                    (pair, auction)
-                    for denom in self.denom_cache.get(src, {}).values()
-                    for (pair, auction) in auctions.get(denom, {}).items()
-                ),
-            )
-
-            def pair_provider_edge(
-                pair: str, provider: Union[PoolProvider, AuctionProvider]
-            ) -> Optional[Edge]:
-                if isinstance(provider, AuctionProvider):
-                    if provider.remaining_asset_b() == 0:
-                        return None
-
-                    return Edge(
-                        Leg(
-                            (
-                                provider.asset_a
-                                if provider.asset_a() == pair
-                                else provider.asset_b
-                            ),
-                            (
-                                provider.asset_b
-                                if provider.asset_a() == pair
-                                else provider.asset_a
-                            ),
-                            provider,
-                        ),
-                        -Decimal.ln(int_to_decimal(provider.exchange_rate())),
-                    )
-
-                balance_asset_a, balance_asset_b = (
-                    provider.balance_asset_a(),
-                    provider.balance_asset_b(),
-                )
-
-                if balance_asset_a == 0 or balance_asset_b == 0:
-                    return None
-
-                if provider.asset_a() == src:
-                    return Edge(
-                        Leg(
-                            (
-                                provider.asset_a
-                                if provider.asset_a() == pair
-                                else provider.asset_b
-                            ),
-                            (
-                                provider.asset_b
-                                if provider.asset_a() == pair
-                                else provider.asset_a
-                            ),
-                            provider,
-                        ),
-                        -Decimal.ln(
-                            Decimal(balance_asset_b) / Decimal(balance_asset_a)
-                        ),
-                    )
-
-                return Edge(
-                    Leg(
-                        (
-                            provider.asset_a
-                            if provider.asset_a() == pair
-                            else provider.asset_b
-                        ),
-                        (
-                            provider.asset_b
-                            if provider.asset_a() == pair
-                            else provider.asset_a
-                        ),
-                        provider,
-                    ),
-                    -Decimal.ln(Decimal(balance_asset_a) / Decimal(balance_asset_b)),
-                )
-
-            pool = dummy.Pool(10)
-
-            with_weights: list[tuple[str, Optional[Edge]]] = pool.map(
-                lambda pair_provider: (
-                    pair_provider[0],
-                    pair_provider_edge(*pair_provider),
-                ),
-                providers_for_pair,
-            )
-
-            pair_edges: dict[str, list[Edge]] = {}
-
-            for pair, edge in with_weights:
-                if edge is None:
-                    continue
-
-                pair_edges[pair] = pair_edges.get(pair, []) + [edge]
-
-            return pair_edges
-
-        pool = dummy.Pool(10)
+        pool = multiprocessing.Pool(10)
         weights_for_bases: list[tuple[str, dict[str, list[Edge]]]] = pool.map(
-            lambda base: (base, weights_for(base)), pools.keys()
+            weights_for, ((base, pools, auctions) for base in pools.keys())
         )
 
         self.weights = {base: edges for (base, edges) in weights_for_bases}
@@ -281,6 +134,162 @@ class State:
         return self
 
 
+def pair_provider_edge(
+    src_pair_provider: tuple[str, str, Union[PoolProvider, AuctionProvider]]
+) -> tuple[str, Optional[Edge]]:
+    """
+    Calculates edge weights for all pairs connected to a base pair.
+    """
+
+    (src, pair, provider) = src_pair_provider
+
+    if isinstance(provider, AuctionProvider):
+        if provider.remaining_asset_b() == 0:
+            return (pair, None)
+
+        return (
+            pair,
+            Edge(
+                Leg(
+                    (
+                        provider.asset_a
+                        if provider.asset_a() == pair
+                        else provider.asset_b
+                    ),
+                    (
+                        provider.asset_b
+                        if provider.asset_a() == pair
+                        else provider.asset_a
+                    ),
+                    provider,
+                ),
+                -Decimal.ln(int_to_decimal(provider.exchange_rate())),
+            ),
+        )
+
+    balance_asset_a, balance_asset_b = (
+        provider.balance_asset_a(),
+        provider.balance_asset_b(),
+    )
+
+    if balance_asset_a == 0 or balance_asset_b == 0:
+        return (pair, None)
+
+    if provider.asset_a() == src:
+        return (
+            pair,
+            Edge(
+                Leg(
+                    (
+                        provider.asset_a
+                        if provider.asset_a() == pair
+                        else provider.asset_b
+                    ),
+                    (
+                        provider.asset_b
+                        if provider.asset_a() == pair
+                        else provider.asset_a
+                    ),
+                    provider,
+                ),
+                -Decimal.ln(Decimal(balance_asset_b) / Decimal(balance_asset_a)),
+            ),
+        )
+
+    return (
+        pair,
+        Edge(
+            Leg(
+                (provider.asset_a if provider.asset_a() == pair else provider.asset_b),
+                (provider.asset_b if provider.asset_a() == pair else provider.asset_a),
+                provider,
+            ),
+            -Decimal.ln(Decimal(balance_asset_a) / Decimal(balance_asset_b)),
+        ),
+    )
+
+
+def weights_for(
+    src_pools_auctions: tuple[
+        str,
+        dict[str, dict[str, list[PoolProvider]]],
+        dict[str, dict[str, AuctionProvider]],
+    ]
+) -> tuple[str, dict[str, list[Edge]]]:
+    """
+    Gets all denoms which have a direct conncetion to the src denom,
+    including cross-chain connections.
+    """
+
+    (src, pools, auctions) = src_pools_auctions
+
+    # Also include providers for all denoms that this src is associated with
+    async def get_denom_info() -> list[DenomChainInfo]:
+        async with aiohttp.ClientSession() as session:
+            return await denom_info(
+                "neutron-1",
+                src,
+                session,
+            )
+
+    denom_infos = asyncio.run(get_denom_info())
+
+    matching_denoms = {
+        info.chain_id: info.denom
+        for info in (
+            denom_infos
+            + [
+                DenomChainInfo(
+                    denom=src,
+                    port=None,
+                    channel=None,
+                    chain_id="neutron-1",
+                )
+            ]
+        )
+        if info.chain_id
+    }
+
+    providers_for_pair: Iterator[
+        tuple[str, str, Union[PoolProvider, AuctionProvider]]
+    ] = itertools.chain(
+        (
+            (src, pair, pool)
+            for (pair, pool_set) in pools.get(src, {}).items()
+            for pool in pool_set
+        ),
+        ((src, pair, auction) for (pair, auction) in auctions.get(src, {}).items()),
+        (
+            (src, pair, pool)
+            for denom in matching_denoms.values()
+            for (pair, pool_set) in pools.get(denom, {}).items()
+            for pool in pool_set
+        ),
+        (
+            (src, pair, auction)
+            for denom in matching_denoms.values()
+            for (pair, auction) in auctions.get(denom, {}).items()
+        ),
+    )
+
+    pool = multiprocessing.Pool(10)
+
+    with_weights: list[tuple[str, Optional[Edge]]] = pool.map(
+        pair_provider_edge,
+        providers_for_pair,
+    )
+
+    pair_edges: dict[str, list[Edge]] = {}
+
+    for pair, edge in with_weights:
+        if edge is None:
+            continue
+
+        pair_edges[pair] = pair_edges.get(pair, []) + [edge]
+
+    return (src, pair_edges)
+
+
 def strategy(
     ctx: Ctx,
     pools: dict[str, dict[str, list[PoolProvider]]],
@@ -291,7 +300,7 @@ def strategy(
     """
 
     if not ctx.state:
-        ctx.state = State({}, {}, None)
+        ctx.state = State({}, None)
 
     ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions))
 

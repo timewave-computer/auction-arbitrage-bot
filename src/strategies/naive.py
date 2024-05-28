@@ -4,6 +4,7 @@ of hops using all available providers.
 """
 
 import multiprocessing
+import multiprocessing.dummy as dummy
 import asyncio
 import random
 import threading
@@ -27,6 +28,7 @@ from src.contracts.auction import AuctionProvider
 from src.scheduler import Ctx
 from src.strategies.util import (
     route_base_denom_profit_quantities,
+    route_base_denom_profit,
     transfer,
     exec_arb,
     fmt_route,
@@ -320,7 +322,7 @@ def strategy(
         if not balance_resp:
             continue
 
-        profit, _ = route_base_denom_profit_quantities(
+        profit = route_base_denom_profit(
             balance_resp,
             route,
         )
@@ -373,7 +375,7 @@ def eval_routes(
 
             continue
 
-        profit, _ = route_base_denom_profit_quantities(
+        profit = route_base_denom_profit(
             balance_resp,
             route,
         )
@@ -595,24 +597,7 @@ def listen_routes_with_depth_dfs(
                 )
                 random.shuffle(next_pools)
 
-                by_liquidity = map(leg_liquidity, next_pools)
-                key: Callable[[tuple[Leg, tuple[int, int]]], tuple[int, int]] = (
-                    lambda pool_liquidity: pool_liquidity[1]
-                )
-
-                # Order next pools by liquidity
-                sorted_pools = (
-                    pool_liquidity[0]
-                    for pool_liquidity in sorted(
-                        zip(next_pools, by_liquidity),
-                        key=key,
-                        reverse=True,
-                    )
-                )
-
-                await asyncio.gather(
-                    *(next_legs(path + [pool]) for pool in sorted_pools)
-                )
+                await asyncio.gather(*(next_legs(path + [pool]) for pool in next_pools))
 
             await asyncio.gather(*[next_legs([leg]) for leg in start_legs])
 

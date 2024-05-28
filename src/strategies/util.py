@@ -2,6 +2,9 @@
 Defines common utilities shared across arbitrage strategies.
 """
 
+import operator
+from functools import reduce
+from decimal import Decimal
 import logging
 import time
 from typing import Optional
@@ -14,6 +17,7 @@ from src.contracts.pool.astroport import (
 )
 
 from src.util import (
+    int_to_decimal,
     IBC_TRANSFER_TIMEOUT_SEC,
     IBC_TRANSFER_POLL_INTERVAL_SEC,
     try_multiple_rest_endpoints,
@@ -403,7 +407,8 @@ def route_base_denom_profit_quantities(
     route: list[Leg],
 ) -> tuple[int, list[int]]:
     """
-    Calculates the profit that can be obtained by following the route.
+    Calculates the profit that can be obtained by following the route
+    and the quantities that must be inputted to obtain the profit.
     """
 
     if len(route) == 0:
@@ -440,6 +445,45 @@ def route_base_denom_profit_quantities(
 
         quantities.append(int(leg.backend.simulate_swap_asset_b(prev_amt)))
 
-    print(quantities, route[-1].out_asset(), route[0].in_asset())
-
     return (quantities[-1] - quantities[0], quantities)
+
+
+def route_base_denom_profit(
+    starting_amount: int,
+    route: list[Leg],
+) -> int:
+    """
+    Determines whether or not a route is profitable
+    base on the exchange rates present in the route.
+    """
+
+    exchange_rates: list[Decimal] = []
+
+    for leg in route:
+        if isinstance(leg.backend, AuctionProvider):
+            if leg.in_asset != leg.backend.asset_a:
+                return 0
+
+            if leg.backend.remaining_asset_b() == 0:
+                return 0
+
+            exchange_rates.append(int_to_decimal(leg.backend.exchange_rate()))
+
+            continue
+
+        balance_asset_a, balance_asset_b = (
+            leg.backend.balance_asset_a(),
+            leg.backend.balance_asset_b(),
+        )
+
+        if balance_asset_a == 0 or balance_asset_b == 0:
+            return 0
+
+        if leg.in_asset == leg.backend.asset_a:
+            exchange_rates.append(Decimal(balance_asset_b) / Decimal(balance_asset_a))
+
+            continue
+
+        exchange_rates.append(Decimal(balance_asset_a) / Decimal(balance_asset_b))
+
+    return starting_amount - (starting_amount * reduce(operator.mul, exchange_rates, 1))
