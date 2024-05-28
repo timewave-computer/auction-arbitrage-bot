@@ -422,6 +422,8 @@ def quantities_for_route_profit(
     if len(route) == 0:
         return (0, [])
 
+    starting_amount = min(starting_amount, route[0].backend.balance_asset_a())
+
     quantities: list[int] = [starting_amount]
 
     while quantities[-1] - quantities[0] < target_profit:
