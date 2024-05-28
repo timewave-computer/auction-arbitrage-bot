@@ -27,6 +27,7 @@ from src.util import (
     try_multiple_clients,
     DenomChainInfo,
     denom_info_on_chain,
+    MAX_TRADE_IN_POOL_FRACTION,
 )
 from src.scheduler import Ctx
 import urllib3
@@ -422,7 +423,9 @@ def quantities_for_route_profit(
     if len(route) == 0:
         return (0, [])
 
-    starting_amount = min(starting_amount, route[0].backend.balance_asset_a())
+    starting_amount = min(
+        starting_amount * MAX_TRADE_IN_POOL_FRACTION, route[0].backend.balance_asset_a()
+    )
 
     quantities: list[int] = [starting_amount]
 
