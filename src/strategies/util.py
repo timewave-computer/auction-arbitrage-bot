@@ -486,4 +486,4 @@ def route_base_denom_profit(
 
         exchange_rates.append(Decimal(balance_asset_a) / Decimal(balance_asset_b))
 
-    return starting_amount - (starting_amount * reduce(operator.mul, exchange_rates, 1))
+    return starting_amount - reduce(operator.mul, exchange_rates, starting_amount)

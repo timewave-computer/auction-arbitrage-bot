@@ -72,80 +72,7 @@ class State:
     the route graph.
     """
 
-    last_discovered: Optional[datetime]
-    routes: Optional[List[List[Leg]]]
-
-    def __load_poolfile(
-        self,
-        ctx: Ctx,
-        endpoints: dict[str, dict[str, list[str]]],
-    ) -> None:
-        """
-        Loads routes from the poolfile provided in the --pool_file flag.
-        """
-
-        with open(ctx.cli_args["pool_file"], "r", encoding="utf-8") as f:
-            poolfile_cts = json.load(f)
-
-            def poolfile_ent_to_leg(ent: dict[str, Any]) -> Leg:
-                backend: Optional[Union[PoolProvider, AuctionProvider]] = None
-
-                if "osmosis" in ent:
-                    backend = OsmosisPoolProvider(
-                        endpoints["osmosis"],
-                        ent["osmosis"]["address"],
-                        ent["osmosis"]["pool_id"],
-                        (ent["osmosis"]["asset_a"], ent["osmosis"]["asset_b"]),
-                    )
-
-                if "neutron_astroport" in ent:
-                    backend = NeutronAstroportPoolProvider(
-                        endpoints["neutron"],
-                        ContractInfo(
-                            deployments()["pools"]["astroport"]["neutron"],
-                            ctx.clients["neutron"],
-                            ent["neutron_astroport"]["address"],
-                            "pair",
-                        ),
-                        asset_info_to_token(ent["neutron_astroport"]["asset_a"]),
-                        asset_info_to_token(ent["neutron_astroport"]["asset_b"]),
-                    )
-
-                if "auction" in ent:
-                    backend = AuctionProvider(
-                        endpoints["neutron"],
-                        ContractInfo(
-                            deployments()["auctions"]["neutron"],
-                            ctx.clients["neutron"],
-                            ent["auction"]["address"],
-                            "auction",
-                        ),
-                        ent["auction"]["asset_a"],
-                        ent["auction"]["asset_b"],
-                    )
-
-                if backend:
-                    return Leg(
-                        (
-                            backend.asset_a
-                            if ent["in_asset"] == backend.asset_a()
-                            else backend.asset_b
-                        ),
-                        (
-                            backend.asset_a
-                            if ent["out_asset"] == backend.asset_a()
-                            else backend.asset_b
-                        ),
-                        backend,
-                    )
-
-                raise ValueError("Invalid route leg type.")
-
-            if "routes" in poolfile_cts:
-                self.routes = [
-                    [poolfile_ent_to_leg(ent) for ent in route]
-                    for route in poolfile_cts["routes"]
-                ]
+    balance: Optional[int]
 
     def poll(
         self,
@@ -158,96 +85,17 @@ class State:
         alone, or producing a new state.
         """
 
-        # No need to update the state
-        if (
-            self.last_discovered is not None
-            and (datetime.now() - self.last_discovered).total_seconds()
-            < ctx.cli_args["discovery_interval"]
-        ):
-            return self
+        if self.balance is None:
+            balance_resp = try_multiple_clients(
+                ctx.clients["neutron"],
+                lambda client: client.query_bank_balance(
+                    Address(ctx.wallet.public_key(), prefix="neutron"),
+                    ctx.cli_args["base_denom"],
+                ),
+            )
 
-        endpoints: dict[str, dict[str, list[str]]] = {
-            "neutron": {
-                "http": ["https://neutron-rest.publicnode.com"],
-                "grpc": ["grpc+https://neutron-grpc.publicnode.com:443"],
-            },
-            "osmosis": {
-                "http": ["https://lcd.osmosis.zone"],
-                "grpc": ["grpc+https://osmosis-grpc.publicnode.com:443"],
-            },
-        }
-
-        if ctx.cli_args["net_config"] is not None:
-            with open(ctx.cli_args["net_config"], "r", encoding="utf-8") as f:
-                endpoints = json.load(f)
-
-        # Check for a poolfile to specify routes
-        if ctx.cli_args["pool_file"] is not None:
-            self.__load_poolfile(ctx, endpoints)
-
-        # Store all built routes
-        vertices = sum(
-            (len(pool_set) for base in pools.values() for pool_set in base.values())
-        ) + sum((1 for base in auctions.values() for _ in base.values()))
-
-        # Perform a breadth-first traversal, exploring all possible
-        # routes with increasing hops
-        logger.info(
-            "Building route tree from %s with %d vertices (this may take a while)",
-            ctx.cli_args["base_denom"],
-            vertices,
-        )
-
-        if self.routes is None:
-            self.routes: List[List[Leg]] = []
-
-        logger.info(
-            "Finished building route tree; discovered %d routes",
-            len(self.routes),
-        )
-        self.last_discovered = datetime.now()
-
-        def dump_leg(leg: Leg) -> dict[str, Any]:
-            if isinstance(leg.backend, AuctionProvider):
-                return {
-                    "auction": {
-                        "asset_a": leg.backend.asset_a(),
-                        "asset_b": leg.backend.asset_b(),
-                        "address": leg.backend.contract_info.address,
-                    },
-                    "in_asset": leg.in_asset(),
-                    "out_asset": leg.out_asset(),
-                }
-
-            if isinstance(leg.backend, NeutronAstroportPoolProvider):
-                return {
-                    "neutron_astroport": leg.backend.dump(),
-                    "in_asset": leg.in_asset(),
-                    "out_asset": leg.out_asset(),
-                }
-
-            if isinstance(leg.backend, OsmosisPoolProvider):
-                return {
-                    "osmosis": leg.backend.dump(),
-                    "in_asset": leg.in_asset(),
-                    "out_asset": leg.out_asset(),
-                }
-
-            raise ValueError("Invalid route leg type.")
-
-        # The user wants to dump discovered routes, so we can exit now
-        if ctx.cli_args["cmd"] == "dump":
-            with open(ctx.cli_args["pool_file"], "r+", encoding="utf-8") as f:
-                poolfile_cts = json.load(f)
-                poolfile_cts["routes"] = [
-                    [dump_leg(pool) for pool in route] for route in self.routes
-                ]
-
-                f.seek(0)
-                json.dump(poolfile_cts, f)
-
-                # Exit the event loop and the program
-                ctx.cancel()
+            if balance_resp:
+                self.balance = balance_resp
 
         return self
 
@@ -260,6 +108,11 @@ def strategy(
     """
     Finds new arbitrage opportunities using the context, pools, and auctions.
     """
+
+    if not ctx.state:
+        ctx.state = State(None, None, None)
+
+    ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions))
 
     if ctx.cli_args["cmd"] == "dump":
         return ctx.cancel()
@@ -311,19 +164,11 @@ def strategy(
 
         logger.debug("Route queued: %s", fmt_route(route))
 
-        balance_resp = try_multiple_clients(
-            ctx.clients["neutron"],
-            lambda client: client.query_bank_balance(
-                Address(ctx.wallet.public_key(), prefix="neutron"),
-                ctx.cli_args["base_denom"],
-            ),
-        )
-
-        if not balance_resp:
+        if not ctx.state.balance:
             continue
 
         profit = route_base_denom_profit(
-            balance_resp,
+            ctx.state.balance,
             route,
         )
 
@@ -340,6 +185,17 @@ def strategy(
 
         try:
             exec_arb(route, ctx)
+
+            balance_resp = try_multiple_clients(
+                ctx.clients["neutron"],
+                lambda client: client.query_bank_balance(
+                    Address(ctx.wallet.public_key(), prefix="neutron"),
+                    ctx.cli_args["base_denom"],
+                ),
+            )
+
+            if not balance_resp:
+                ctx.state.balance = balance_resp
         except Exception as e:
             logger.error("Arb failed %s: %s", fmt_route(route), e)
 
@@ -352,22 +208,16 @@ def strategy(
 
 
 def eval_routes(
-    in_routes: Queue[List[Leg]], out_routes: Queue[List[Leg]], ctx: Ctx
+    in_routes: Queue[List[Leg]],
+    out_routes: Queue[List[Leg]],
+    ctx: Ctx,
 ) -> None:
     while True:
         route = in_routes.get()
 
         logger.debug("Evaluating route for profitability: %s", fmt_route(route))
 
-        balance_resp = try_multiple_clients(
-            ctx.clients["neutron"],
-            lambda client: client.query_bank_balance(
-                Address(ctx.wallet.public_key(), prefix="neutron"),
-                ctx.cli_args["base_denom"],
-            ),
-        )
-
-        if not balance_resp:
+        if not ctx.state.balance:
             logger.error(
                 "Failed to fetch bot wallet balance for account %s",
                 str(Address(ctx.wallet.public_key(), prefix="neutron")),
@@ -376,7 +226,7 @@ def eval_routes(
             continue
 
         profit = route_base_denom_profit(
-            balance_resp,
+            ctx.state.balance,
             route,
         )
 

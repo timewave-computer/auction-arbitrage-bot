@@ -300,7 +300,7 @@ def strategy(
     """
 
     if not ctx.state:
-        ctx.state = State({}, None)
+        ctx.state = State({}, None, None)
 
     ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions))
 
