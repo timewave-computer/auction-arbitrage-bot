@@ -85,17 +85,16 @@ class State:
         alone, or producing a new state.
         """
 
-        if self.balance is None:
-            balance_resp = try_multiple_clients(
-                ctx.clients["neutron"],
-                lambda client: client.query_bank_balance(
-                    Address(ctx.wallet.public_key(), prefix="neutron"),
-                    ctx.cli_args["base_denom"],
-                ),
-            )
+        balance_resp = try_multiple_clients(
+            ctx.clients["neutron"],
+            lambda client: client.query_bank_balance(
+                Address(ctx.wallet.public_key(), prefix="neutron"),
+                ctx.cli_args["base_denom"],
+            ),
+        )
 
-            if balance_resp:
-                self.balance = balance_resp
+        if balance_resp:
+            self.balance = balance_resp
 
         return self
 
@@ -110,7 +109,7 @@ def strategy(
     """
 
     if not ctx.state:
-        ctx.state = State(None, None, None)
+        ctx.state = State(None)
 
     ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions))
 
@@ -186,16 +185,7 @@ def strategy(
         try:
             exec_arb(route, ctx)
 
-            balance_resp = try_multiple_clients(
-                ctx.clients["neutron"],
-                lambda client: client.query_bank_balance(
-                    Address(ctx.wallet.public_key(), prefix="neutron"),
-                    ctx.cli_args["base_denom"],
-                ),
-            )
-
-            if not balance_resp:
-                ctx.state.balance = balance_resp
+            ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions))
         except Exception as e:
             logger.error("Arb failed %s: %s", fmt_route(route), e)
 
