@@ -21,7 +21,7 @@ from src.contracts.auction import AuctionProvider
 from src.contracts.pool.provider import PoolProvider
 from src.contracts.leg import Leg
 from src.scheduler import Ctx
-from src.strategies.util import fmt_route, exec_arb, route_base_denom_profit_quantities
+from src.strategies.util import fmt_route, exec_arb, route_base_denom_profit
 from src.util import (
     DISCOVERY_CONCURRENCY_FACTOR,
     denom_info,
@@ -300,7 +300,7 @@ def strategy(
     """
 
     if not ctx.state:
-        ctx.state = State({}, None, None)
+        ctx.state = State({}, None)
 
     ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions))
 
@@ -336,7 +336,7 @@ def strategy(
     if not balance_resp:
         return ctx
 
-    profit, _ = route_base_denom_profit_quantities(
+    profit = route_base_denom_profit(
         balance_resp,
         route,
     )

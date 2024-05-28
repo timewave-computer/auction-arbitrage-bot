@@ -2,6 +2,7 @@
 Defines common utilities shared across arbitrage strategies.
 """
 
+from math import floor
 import operator
 from functools import reduce
 from decimal import Decimal
@@ -18,6 +19,7 @@ from src.contracts.pool.astroport import (
 
 from src.util import (
     int_to_decimal,
+    decimal_to_int,
     IBC_TRANSFER_TIMEOUT_SEC,
     IBC_TRANSFER_POLL_INTERVAL_SEC,
     try_multiple_rest_endpoints,
@@ -90,32 +92,37 @@ def exec_arb(
     in each trade.
     """
 
-    swap_balance: Optional[int] = try_multiple_clients(
-        ctx.clients["neutron"],
-        lambda client: client.query_bank_balance(
-            Address(ctx.wallet.public_key(), prefix="neutron"),
-            ctx.cli_args["base_denom"],
-        ),
-    )
+    swap_balance = ctx.state.balance
 
     if not swap_balance:
-        return
+        raise ValueError("Couldn't fetch wallet balance")
 
-    _, quantities = route_base_denom_profit_quantities(
+    profit, quantities = quantities_for_route_profit(
         swap_balance,
+        ctx.cli_args["profit_margin"],
         route,
     )
+
+    if len(quantities) < len(route):
+        raise ValueError(
+            f"Insufficient execution planning for route {fmt_route(route)}; canceling"
+        )
+
+    if profit < ctx.cli_args["profit_margin"]:
+        raise ValueError(
+            f"Insufficient realized profit for route {fmt_route(route)}; canceling"
+        )
 
     prev_leg: Optional[Leg] = None
 
     # Submit arb trades for all profitable routes
     logger.info(
-        ("Queueing candidate arbitrage opportunity with " "route with %d hop(s): %s"),
+        ("Queueing candidpate arbitrage opportunity with " "route with %d hop(s): %s"),
         len(route),
         fmt_route(route),
     )
 
-    for leg in route:
+    for leg, to_swap in zip(route, quantities):
         logger.info(
             "Queueing arb leg on %s with %s -> %s",
             fmt_route_leg(leg),
@@ -141,7 +148,7 @@ def exec_arb(
             prev_asset_info = asyncio.run(get_denom_info())
 
         to_swap = (
-            swap_balance
+            to_swap
             if not prev_leg
             else try_multiple_clients_fatal(
                 ctx.clients[prev_leg.backend.chain_id.split("-")[0]],
@@ -402,13 +409,14 @@ def transfer(
             break
 
 
-def route_base_denom_profit_quantities(
+def quantities_for_route_profit(
     starting_amount: int,
+    target_profit: int,
     route: list[Leg],
 ) -> tuple[int, list[int]]:
     """
-    Calculates the profit that can be obtained by following the route
-    and the quantities that must be inputted to obtain the profit.
+    Calculates what quantities should be used to obtain
+    a net profit of `profit` by traversing the route.
     """
 
     if len(route) == 0:
@@ -416,36 +424,47 @@ def route_base_denom_profit_quantities(
 
     quantities: list[int] = [starting_amount]
 
-    for leg in route:
-        if quantities[-1] == 0:
-            break
+    while quantities[-1] - quantities[0] < target_profit:
+        if starting_amount < target_profit:
+            logger.debug(
+                "Hit investment backstop (%d) in route planning: %s",
+                target_profit,
+                starting_amount,
+            )
 
-        prev_amt = min(
-            quantities[-1],
-            (
-                leg.backend.remaining_asset_b()
-                if isinstance(leg.backend, AuctionProvider)
-                else (
-                    leg.backend.balance_asset_a()
-                    if leg.in_asset == leg.backend.asset_a
-                    else leg.backend.balance_asset_b()
+            return (0, [])
+
+        quantities = [starting_amount]
+
+        for leg in route:
+            if quantities[-1] == 0:
+                break
+
+            prev_amt = quantities[-1]
+
+            if isinstance(leg.backend, AuctionProvider):
+                if leg.in_asset != leg.backend.asset_a:
+                    return (0, [])
+
+                if leg.backend.remaining_asset_b() == 0:
+                    return (0, [])
+
+                quantities.append(
+                    int(int_to_decimal(leg.backend.exchange_rate()) * prev_amt)
                 )
-            ),
-        )
 
-        if isinstance(leg.backend, AuctionProvider):
-            quantities.append(leg.backend.exchange_rate() * prev_amt)
+                continue
 
-            continue
+            if leg.in_asset == leg.backend.asset_a:
+                quantities.append(int(leg.backend.simulate_swap_asset_a(prev_amt)))
 
-        if leg.in_asset == leg.backend.asset_a:
-            quantities.append(int(leg.backend.simulate_swap_asset_a(prev_amt)))
+                continue
 
-            continue
+            quantities.append(int(leg.backend.simulate_swap_asset_b(prev_amt)))
 
-        quantities.append(int(leg.backend.simulate_swap_asset_b(prev_amt)))
+        starting_amount = int(Decimal(starting_amount) / Decimal(2.0))
 
-    return (quantities[-1] - quantities[0], quantities)
+    return (quantities[-1] - starting_amount, quantities)
 
 
 def route_base_denom_profit(

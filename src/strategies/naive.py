@@ -27,7 +27,7 @@ from src.contracts.pool.astroport import (
 from src.contracts.auction import AuctionProvider
 from src.scheduler import Ctx
 from src.strategies.util import (
-    route_base_denom_profit_quantities,
+    quantities_for_route_profit,
     route_base_denom_profit,
     transfer,
     exec_arb,
@@ -185,9 +185,11 @@ def strategy(
         try:
             exec_arb(route, ctx)
 
-            ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions))
+            logger.info("Executed route successfully: %s", fmt_route(route))
         except Exception as e:
             logger.error("Arb failed %s: %s", fmt_route(route), e)
+        finally:
+            ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions))
 
     for worker in workers:
         worker.join()
@@ -215,8 +217,26 @@ def eval_routes(
 
             continue
 
+        # First pass heuristic (is it even possible for this route to be
+        # profitable)
         profit = route_base_denom_profit(
             ctx.state.balance,
+            route,
+        )
+
+        if profit < ctx.cli_args["profit_margin"]:
+            logger.debug(
+                "Route is not profitable with profit of %d: %s",
+                profit,
+                fmt_route_debug(route),
+            )
+
+            continue
+
+        # Second pass: could we reasonably profit from this arb?
+        profit, _ = quantities_for_route_profit(
+            ctx.state.balance,
+            ctx.cli_args["profit_margin"],
             route,
         )
 
