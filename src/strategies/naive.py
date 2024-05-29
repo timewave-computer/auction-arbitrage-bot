@@ -193,12 +193,18 @@ async def eval_route(
 
     if profit < ctx.cli_args["profit_margin"]:
         logger.debug(
-            "Route is not profitable with profit of %d: %s",
+            "Route is not theoretically profitable with profit of %d: %s",
             profit,
             fmt_route_debug(route),
         )
 
         return None
+
+    logger.debug(
+        "Route has theoretical profit of %d: %s",
+        profit,
+        fmt_route_debug(route),
+    )
 
     # Second pass: could we reasonably profit from this arb?
     profit, quantities = await quantities_for_route_profit(

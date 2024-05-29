@@ -95,9 +95,15 @@ class Scheduler:
             deployments(),
             ctx.http_session,
             [
-                grpc.aio.secure_channel(
-                    endpoint.split("grpc+https://")[1],
-                    grpc.ssl_channel_credentials(),
+                (
+                    grpc.aio.secure_channel(
+                        endpoint.split("grpc+https://")[1],
+                        grpc.ssl_channel_credentials(),
+                    )
+                    if "https" in endpoint
+                    else grpc.aio.insecure_channel(
+                        endpoint.split("grpc+http://")[1],
+                    )
                 )
                 for endpoint in ctx.endpoints["neutron"]["grpc"]
             ],

@@ -14,7 +14,12 @@ import schedule
 from cosmpy.aerial.client import LedgerClient, NetworkConfig  # type: ignore
 from cosmpy.aerial.wallet import LocalWallet  # type: ignore
 from src.scheduler import Scheduler, Ctx
-from src.util import deployments, NEUTRON_NETWORK_CONFIG, custom_neutron_network_config
+from src.util import (
+    deployments,
+    NEUTRON_NETWORK_CONFIG,
+    custom_neutron_network_config,
+    DISCOVERY_CONCURRENCY_FACTOR,
+)
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
 from src.strategies.naive import strategy
@@ -105,7 +110,11 @@ async def main() -> None:
 
     logger.info("Building pool catalogue")
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(
+        connector=aiohttp.TCPConnector(
+            force_close=True, limit_per_host=DISCOVERY_CONCURRENCY_FACTOR
+        )
+    ) as session:
         ctx = Ctx(
             {
                 "neutron": [
@@ -163,9 +172,15 @@ async def main() -> None:
             deployments(),
             ctx.http_session,
             [
-                grpc.aio.secure_channel(
-                    endpoint.split("grpc+https://")[1],
-                    grpc.ssl_channel_credentials(),
+                (
+                    grpc.aio.secure_channel(
+                        endpoint.split("grpc+https://")[1],
+                        grpc.ssl_channel_credentials(),
+                    )
+                    if "https" in endpoint
+                    else grpc.aio.insecure_channel(
+                        endpoint.split("grpc+http://")[1],
+                    )
                 )
                 for endpoint in endpoints["neutron"]["grpc"]
             ],

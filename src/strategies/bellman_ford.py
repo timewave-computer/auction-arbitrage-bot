@@ -2,6 +2,7 @@
 Implements an arbitrage strategy based on bellman ford.
 """
 
+from queue import Queue
 import json
 from functools import reduce
 import logging
@@ -56,73 +57,7 @@ class State:
     # A mapping from a given denom to each corresponding denom
     # and all auctions/pools that provide the pairing,
     # with their weight
-    weights: dict[str, dict[str, list[Edge]]]
-
-    async def poll(
-        self,
-        ctx: Ctx,
-        pools: dict[str, dict[str, list[PoolProvider]]],
-        auctions: dict[str, dict[str, AuctionProvider]],
-    ) -> Self:
-        """
-        Updates weights of all edges in the graph.
-        """
-
-        endpoints: dict[str, dict[str, list[str]]] = ctx.endpoints
-
-        # Store all built routes
-        vertices = sum(
-            (len(pool_set) for base in pools.values() for pool_set in base.values())
-        ) + sum((1 for base in auctions.values() for _ in base.values()))
-
-        # Calculate all weights for possibly connected pools in the graph
-        logger.info(
-            "Building route tree from with %d vertices (this may take a while)",
-            vertices,
-        )
-
-        weights_for_bases: list[tuple[str, dict[str, list[Edge]]]] = (
-            await asyncio.gather(
-                *(weights_for(base, pools, auctions, ctx) for base in pools.keys())
-            )
-        )
-
-        self.weights = {base: edges for (base, edges) in weights_for_bases}
-
-        logger.info(
-            "Finished building route tree",
-        )
-        self.last_discovered = datetime.now()
-
-        def dump_leg(leg: Leg) -> dict[str, Any]:
-            if isinstance(leg.backend, AuctionProvider):
-                return {
-                    "auction": {
-                        "asset_a": leg.backend.asset_a(),
-                        "asset_b": leg.backend.asset_b(),
-                        "address": leg.backend.contract_info.address,
-                    },
-                    "in_asset": leg.in_asset(),
-                    "out_asset": leg.out_asset(),
-                }
-
-            if isinstance(leg.backend, NeutronAstroportPoolProvider):
-                return {
-                    "neutron_astroport": leg.backend.dump(),
-                    "in_asset": leg.in_asset(),
-                    "out_asset": leg.out_asset(),
-                }
-
-            if isinstance(leg.backend, OsmosisPoolProvider):
-                return {
-                    "osmosis": leg.backend.dump(),
-                    "in_asset": leg.in_asset(),
-                    "out_asset": leg.out_asset(),
-                }
-
-            raise ValueError("Invalid route leg type.")
-
-        return self
+    denom_cache: dict[str, dict[str, str]]
 
 
 async def pair_provider_edge(
@@ -131,6 +66,8 @@ async def pair_provider_edge(
     """
     Calculates edge weights for all pairs connected to a base pair.
     """
+
+    logger.debug("Getting weight for edge %s -> %s", src, pair)
 
     if isinstance(provider, AuctionProvider):
         if await provider.remaining_asset_b() == 0:
@@ -203,56 +140,62 @@ async def weights_for(
     pools: dict[str, dict[str, list[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
     ctx: Ctx,
+    n_denoms: Queue[int],
 ) -> tuple[str, dict[str, list[Edge]]]:
     """
     Gets all denoms which have a direct conncetion to the src denom,
     including cross-chain connections.
     """
 
+    logger.debug("Fetching weights for src %s", src)
+
     # Also include providers for all denoms that this src is associated with
-    denom_infos = await denom_info(
-        "neutron-1",
-        src,
-        ctx.http_session,
-    )
-
-    matching_denoms = {
-        info.chain_id: info.denom
-        for info in (
-            denom_infos
-            + [
-                DenomChainInfo(
-                    denom=src,
-                    port=None,
-                    channel=None,
-                    chain_id="neutron-1",
-                )
-            ]
+    if src not in ctx.state.denom_cache:
+        denom_infos = await denom_info(
+            "neutron-1",
+            src,
+            ctx.http_session,
         )
-        if info.chain_id
-    }
 
-    providers_for_pair: Iterator[
-        tuple[str, str, Union[PoolProvider, AuctionProvider]]
-    ] = itertools.chain(
-        (
+        ctx.state.denom_cache[src] = {
+            info.chain_id: info.denom
+            for info in (
+                denom_infos
+                + [
+                    DenomChainInfo(
+                        denom=src,
+                        port=None,
+                        channel=None,
+                        chain_id="neutron-1",
+                    )
+                ]
+            )
+            if info.chain_id
+        }
+
+    matching_denoms: dict[str, str] = ctx.state.denom_cache.get(src, {})
+
+    providers_for_pair: list[tuple[str, str, Union[PoolProvider, AuctionProvider]]] = [
+        *(
             (src, pair, pool)
             for (pair, pool_set) in pools.get(src, {}).items()
             for pool in pool_set
         ),
-        ((src, pair, auction) for (pair, auction) in auctions.get(src, {}).items()),
-        (
+        *((src, pair, auction) for (pair, auction) in auctions.get(src, {}).items()),
+        *(
             (src, pair, pool)
             for denom in matching_denoms.values()
             for (pair, pool_set) in pools.get(denom, {}).items()
             for pool in pool_set
         ),
-        (
+        *(
             (src, pair, auction)
             for denom in matching_denoms.values()
             for (pair, auction) in auctions.get(denom, {}).items()
         ),
-    )
+    ]
+
+    logger.debug("Getting edge weights for %d peer pools", len(providers_for_pair))
 
     with_weights: list[tuple[str, Optional[Edge]]] = await asyncio.gather(
         *(
@@ -269,6 +212,8 @@ async def weights_for(
 
         pair_edges[pair] = pair_edges.get(pair, []) + [edge]
 
+    logger.debug("Got weights for denom #%d", n_denoms.get())
+
     return (src, pair_edges)
 
 
@@ -284,8 +229,6 @@ async def strategy(
     if not ctx.state:
         ctx.state = State({})
 
-    ctx = ctx.with_state(await ctx.state.poll(ctx, pools, auctions))
-
     if ctx.cli_args["cmd"] == "dump":
         return ctx.cancel()
 
@@ -294,7 +237,7 @@ async def strategy(
         "Finding profitable routes",
     )
 
-    route = route_bellman_ford(
+    route = await route_bellman_ford(
         ctx.cli_args["base_denom"],
         pools,
         auctions,
@@ -344,7 +287,7 @@ async def strategy(
     return ctx
 
 
-def route_bellman_ford(
+async def route_bellman_ford(
     src: str,
     pools: dict[str, dict[str, list[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
@@ -358,31 +301,47 @@ def route_bellman_ford(
     if not ctx.state:
         return None
 
+    denoms = {*pools.keys(), *auctions.keys()}
+
+    n_denoms_fetch: Queue[int] = Queue()
+
+    for i in range(len(denoms)):
+        n_denoms_fetch.put(i)
+
+    tup_denom_pair_edges = await asyncio.gather(
+        *[weights_for(denom, pools, auctions, ctx, n_denoms_fetch) for denom in denoms]
+    )
+    denom_pair_edges: dict[str, dict[str, list[Edge]]] = {
+        denom: pair_edges for (denom, pair_edges) in tup_denom_pair_edges
+    }
+
     dist: dict[str, tuple[Decimal, Optional[Edge]]] = {
-        denom: (Decimal("inf"), None) for denom in ctx.state.weights.keys()
+        denom: (Decimal("inf"), None) for denom in denoms
     }
-    pred: dict[str, Optional[tuple[str, Edge]]] = {
-        denom: None for denom in ctx.state.weights.keys()
-    }
+    pred: dict[str, Optional[tuple[str, Edge]]] = {denom: None for denom in denoms}
 
     dist[src] = (Decimal(0), None)
 
-    for denom, pair_edges in ctx.state.weights.items():
-        for pair, edges in pair_edges:
+    for denom in denoms:
+        logger.debug("Relaxing edges for %s", denom)
+
+        pair_edges = denom_pair_edges[denom]
+
+        for pair, edges in pair_edges.items():
             for edge in edges:
                 if dist[denom][0] + edge.weight >= dist[pair][0]:
                     continue
 
-                dist[pair] = (dist[denom][0] + edge.weight, edge.backend)
-                pred[pair] = (denom, edge.backend)
+                dist[pair] = (dist[denom][0] + edge.weight, edge)
+                pred[pair] = (denom, edge)
 
-    for denom, pair_edges in ctx.state.weights.items():
-        for pair, edges in pair_edges:
+    for denom, pair_edges in denom_pair_edges.items():
+        for pair, edges in pair_edges.items():
             for edge in edges:
                 if dist[denom][0] + edge.weight >= dist[pair][0]:
                     continue
 
-                pred[pair] = (denom, edge.backend)
+                pred[pair] = (denom, edge)
 
                 visited = set()
                 visited.add(pair)
