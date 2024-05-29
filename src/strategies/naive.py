@@ -11,7 +11,7 @@ import threading
 from queue import Queue
 from decimal import Decimal
 import json
-from typing import List, Union, Optional, Self, Any, Callable
+from typing import List, Union, Optional, Self, Any, Callable, Iterator
 from datetime import datetime, timedelta
 import time
 from collections import deque
@@ -136,6 +136,7 @@ async def strategy(
                 set(ctx.cli_args["require_leg_types"]),
                 pools,
                 auctions,
+                ctx,
             ],
         )
     )
@@ -147,12 +148,8 @@ async def strategy(
     for _ in range(EVALUATION_CONCURRENCY_FACTOR):
         workers.append(
             threading.Thread(
-                target=eval_routes,
-                args=[
-                    to_eval,
-                    to_exec,
-                    ctx,
-                ],
+                target=asyncio.run,
+                args=[eval_routes(to_eval, to_exec, ctx)],
             )
         )
         workers[-1].start()
@@ -438,9 +435,33 @@ def listen_routes_with_depth_dfs(
                     ),
                 }
             )
-            random.shuffle(next_pools)
 
-            await asyncio.gather(*(next_legs(path + [pool]) for pool in next_pools))
+            async def attach_liquidity(leg: Leg) -> tuple[tuple[int, int], Leg]:
+                if isinstance(leg.backend, AuctionProvider):
+                    bal = await leg.backend.remaining_asset_b()
+
+                    return ((bal, bal), leg)
+
+                return (
+                    (
+                        await leg.backend.balance_asset_a(),
+                        await leg.backend.balance_asset_b(),
+                    ),
+                    leg,
+                )
+
+            with_liquidity: list[tuple[tuple[int, int], Leg]] = await asyncio.gather(
+                *[attach_liquidity(leg) for leg in next_pools]
+            )
+            with_liquidity = sorted(
+                with_liquidity, key=lambda liquidity_leg: liquidity_leg[0], reverse=True
+            )
+
+            sorted_next_pools: Iterator[Leg] = (pool for (_, pool) in with_liquidity)
+
+            await asyncio.gather(
+                *[next_legs(path + [pool]) for pool in sorted_next_pools]
+            )
 
         await asyncio.gather(*[next_legs([leg]) for leg in start_legs])
 
