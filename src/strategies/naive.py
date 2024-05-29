@@ -118,74 +118,49 @@ async def strategy(
     workers = []
 
     # Routes to evaluate for profitability, and routes to execute
-    to_eval: Queue[List[Leg]] = Queue(maxsize=0)
-    to_exec: Queue[List[Leg]] = Queue(maxsize=0)
+    to_exec: Queue[tuple[int, int, List[Leg]]] = Queue(maxsize=0)
 
     # Report route stats to user
     logger.info(
         "Finding profitable routes",
     )
 
-    workers.append(
-        threading.Thread(
-            target=listen_routes_with_depth_dfs,
-            args=[
-                to_eval,
-                ctx.cli_args["hops"],
-                ctx.cli_args["base_denom"],
-                set(ctx.cli_args["require_leg_types"]),
-                pools,
-                auctions,
-                ctx,
-            ],
-        )
-    )
+    def exec_loop() -> None:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+        while True:
+            (quantities, profit, route) = to_exec.get()
+
+            logger.debug("Route queued: %s", fmt_route(route))
+
+            if not ctx.state.balance:
+                continue
+
+            logger.info(
+                "Executing route with profit of %d: %s", profit, fmt_route(route)
+            )
+
+            try:
+                asyncio.run(exec_arb(route, quantities, profit, ctx))
+
+                logger.info("Executed route successfully: %s", fmt_route(route))
+            except Exception as e:
+                logger.error("Arb failed %s: %s", fmt_route(route), e)
+            finally:
+                ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions))
+
+    workers.append(threading.Thread(target=exec_loop, args=[]))
     workers[-1].start()
 
-    # Evaluate up to util/EVALUATION_CONCURRENCY_FACTOR
-    # arbs at the same time for profitability (based
-    # and optimizatoinmaxxing pilled)
-    for _ in range(EVALUATION_CONCURRENCY_FACTOR):
-        workers.append(
-            threading.Thread(
-                target=asyncio.run,
-                args=[eval_routes(to_eval, to_exec, ctx)],
-            )
-        )
-        workers[-1].start()
-
-    while True:
-        route = to_exec.get()
-
-        logger.debug("Route queued: %s", fmt_route(route))
-
-        if not ctx.state.balance:
-            continue
-
-        profit = route_base_denom_profit(
-            ctx.state.balance,
-            route,
-        )
-
-        if profit < ctx.cli_args["profit_margin"]:
-            logger.debug(
-                "Route is not profitable with profit of %d: %s",
-                profit,
-                fmt_route(route),
-            )
-
-            continue
-
-        logger.info("Executing route with profit of %d: %s", profit, fmt_route(route))
-
-        try:
-            asyncio.run(exec_arb(route, ctx))
-
-            logger.info("Executed route successfully: %s", fmt_route(route))
-        except Exception as e:
-            logger.error("Arb failed %s: %s", fmt_route(route), e)
-        finally:
-            ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions))
+    await listen_routes_with_depth_dfs(
+        to_exec,
+        ctx.cli_args["hops"],
+        ctx.cli_args["base_denom"],
+        set(ctx.cli_args["require_leg_types"]),
+        pools,
+        auctions,
+        ctx,
+    )
 
     for worker in workers:
         worker.join()
@@ -195,60 +170,56 @@ async def strategy(
     return ctx
 
 
-async def eval_routes(
-    in_routes: Queue[List[Leg]],
-    out_routes: Queue[List[Leg]],
+async def eval_route(
+    route: list[Leg],
     ctx: Ctx,
-) -> None:
-    while True:
-        route = in_routes.get()
+) -> Optional[tuple[int, int, list[Leg]]]:
+    logger.debug("Evaluating route for profitability: %s", fmt_route(route))
 
-        logger.debug("Evaluating route for profitability: %s", fmt_route(route))
-
-        if not ctx.state.balance:
-            logger.error(
-                "Failed to fetch bot wallet balance for account %s",
-                str(Address(ctx.wallet.public_key(), prefix="neutron")),
-            )
-
-            continue
-
-        # First pass heuristic (is it even possible for this route to be
-        # profitable)
-        profit = await route_base_denom_profit(
-            ctx.state.balance,
-            route,
+    if not ctx.state.balance:
+        logger.error(
+            "Failed to fetch bot wallet balance for account %s",
+            str(Address(ctx.wallet.public_key(), prefix="neutron")),
         )
 
-        if profit < ctx.cli_args["profit_margin"]:
-            logger.debug(
-                "Route is not profitable with profit of %d: %s",
-                profit,
-                fmt_route_debug(route),
-            )
+        return None
 
-            continue
+    # First pass heuristic (is it even possible for this route to be
+    # profitable)
+    profit = await route_base_denom_profit(
+        ctx.state.balance,
+        route,
+    )
 
-        # Second pass: could we reasonably profit from this arb?
-        profit, quantities = await quantities_for_route_profit(
-            ctx.state.balance,
-            ctx.cli_args["profit_margin"],
-            route,
+    if profit < ctx.cli_args["profit_margin"]:
+        logger.debug(
+            "Route is not profitable with profit of %d: %s",
+            profit,
+            fmt_route_debug(route),
         )
 
-        logger.debug("Route %s has execution plan: %s", fmt_route(route), quantities)
+        return None
 
-        if profit < ctx.cli_args["profit_margin"]:
-            logger.debug(
-                "Route is not profitable with profit of %d: %s",
-                profit,
-                fmt_route_debug(route),
-            )
+    # Second pass: could we reasonably profit from this arb?
+    profit, quantities = await quantities_for_route_profit(
+        ctx.state.balance,
+        ctx.cli_args["profit_margin"],
+        route,
+    )
 
-            continue
+    logger.debug("Route %s has execution plan: %s", fmt_route(route), quantities)
 
-        # Queue the route for execution, since it is profitable
-        out_routes.put(route)
+    if profit < ctx.cli_args["profit_margin"]:
+        logger.debug(
+            "Route is not profitable with profit of %d: %s",
+            profit,
+            fmt_route_debug(route),
+        )
+
+        return None
+
+    # Queue the route for execution, since it is profitable
+    return (profit, quantities, route)
 
 
 async def leg_liquidity(leg: Leg) -> tuple[int, int]:
@@ -264,8 +235,8 @@ async def leg_liquidity(leg: Leg) -> tuple[int, int]:
     )
 
 
-def listen_routes_with_depth_dfs(
-    routes: Queue[List[Leg]],
+async def listen_routes_with_depth_dfs(
+    routes: Queue[tuple[int, int, list[Leg]]],
     depth: int,
     src: str,
     required_leg_types: set[str],
@@ -273,8 +244,6 @@ def listen_routes_with_depth_dfs(
     auctions: dict[str, dict[str, AuctionProvider]],
     ctx: Ctx,
 ) -> None:
-    asyncio.set_event_loop(asyncio.new_event_loop())
-
     denom_cache: dict[str, dict[str, str]] = {}
 
     start_pools: list[Union[AuctionProvider, PoolProvider]] = [
@@ -293,176 +262,154 @@ def listen_routes_with_depth_dfs(
 
     random.shuffle(start_legs)
 
-    async def init_searcher() -> None:
-        async def next_legs(path: list[Leg]) -> None:
-            nonlocal denom_cache
-            nonlocal routes
+    async def next_legs(path: list[Leg]) -> None:
+        logger.debug("Searching for next leg in path: %s", fmt_route(path))
 
-            if len(path) >= 2:
-                assert (
-                    path[-1].in_asset() == path[-2].out_asset()
-                    or path[-1].in_asset() in denom_cache[path[-2].out_asset()].values()
-                )
+        nonlocal denom_cache
+        nonlocal routes
 
-            # Only find `limit` pools
-            # with a depth less than `depth
-            if len(path) > depth:
+        if len(path) >= 2:
+            assert (
+                path[-1].in_asset() == path[-2].out_asset()
+                or path[-1].in_asset() in denom_cache[path[-2].out_asset()].values()
+            )
+
+        # Only find `limit` pools
+        # with a depth less than `depth
+        if len(path) > depth:
+            return
+
+        # We must be finding the next leg
+        # in an already existing path
+        assert len(path) > 0
+
+        prev_pool = path[-1]
+
+        # This leg **must** be connected to the previous
+        # by construction, so therefore, if any
+        # of the denoms match the starting denom, we are
+        # finished, and the circuit is closed
+        if len(path) > 1 and src == prev_pool.out_asset():
+            logger.debug(
+                "Circuit closed with length %d: %s",
+                len(path),
+                fmt_route(path),
+            )
+
+            if (
+                len(required_leg_types - set((fmt_route_leg(leg) for leg in path))) > 0
+                or len(path) < depth
+            ):
                 return
 
-            # We must be finding the next leg
-            # in an already existing path
-            assert len(path) > 0
+            logger.debug(
+                "Discovered route with length %d: %s",
+                len(path),
+                fmt_route(path),
+            )
 
-            prev_pool = path[-1]
+            resp = await eval_route(path, ctx)
 
-            # This leg **must** be connected to the previous
-            # by construction, so therefore, if any
-            # of the denoms match the starting denom, we are
-            # finished, and the circuit is closed
-            if len(path) > 1 and src == prev_pool.out_asset():
-                logger.debug(
-                    "Circuit closed with length %d: %s",
-                    len(path),
-                    fmt_route(path),
-                )
-
-                if (
-                    len(required_leg_types - set((fmt_route_leg(leg) for leg in path)))
-                    > 0
-                    or len(path) < depth
-                ):
-                    return
-
-                logger.debug(
-                    "Discovered route with length %d: %s",
-                    len(path),
-                    fmt_route(path),
-                )
-
-                routes.put(path)
-
+            if not resp:
                 return
 
-            # Find all pools that start where this leg ends
-            # the "ending" point of this leg is defined
-            # as its denom which is not shared by the
-            # leg before it.
+            routes.put(resp)
 
-            # note: the previous leg's denoms will
-            # be in the denom cache by construction
-            # if this is the first leg, then there is
-            # no more work to do
-            end = prev_pool.out_asset()
+            return
 
-            if not end in denom_cache:
-                denom_infos = await denom_info(
-                    prev_pool.backend.chain_id, end, ctx.http_session
+        # Find all pools that start where this leg ends
+        # the "ending" point of this leg is defined
+        # as its denom which is not shared by the
+        # leg before it.
+
+        # note: the previous leg's denoms will
+        # be in the denom cache by construction
+        # if this is the first leg, then there is
+        # no more work to do
+        end = prev_pool.out_asset()
+
+        if not end in denom_cache:
+            denom_infos = await denom_info(
+                prev_pool.backend.chain_id, end, ctx.http_session
+            )
+
+            denom_cache[end] = {
+                info.chain_id: info.denom
+                for info in (
+                    denom_infos
+                    + [
+                        DenomChainInfo(
+                            denom=end,
+                            port=None,
+                            channel=None,
+                            chain_id=prev_pool.backend.chain_id,
+                        )
+                    ]
                 )
+                if info.chain_id
+            }
 
-                denom_cache[end] = {
-                    info.chain_id: info.denom
-                    for info in (
-                        denom_infos
-                        + [
-                            DenomChainInfo(
-                                denom=end,
-                                port=None,
-                                channel=None,
-                                chain_id=prev_pool.backend.chain_id,
-                            )
-                        ]
+        # A pool is a candidate to be a next pool if it has a denom
+        # contained in denom_cache[end] or one of its denoms *is* end
+        next_pools: list[Leg] = list(
+            {
+                # Atomic pools
+                *(
+                    Leg(
+                        (
+                            auction.asset_a
+                            if auction.asset_a() == end
+                            else auction.asset_b
+                        ),
+                        (
+                            auction.asset_a
+                            if auction.asset_a() != end
+                            else auction.asset_b
+                        ),
+                        auction,
                     )
-                    if info.chain_id
-                }
+                    for auction in auctions.get(end, {}).values()
+                ),
+                *(
+                    Leg(
+                        (pool.asset_a if pool.asset_a() == end else pool.asset_b),
+                        pool.asset_a if pool.asset_a() != end else pool.asset_b,
+                        pool,
+                    )
+                    for pool_set in pools.get(end, {}).values()
+                    for pool in pool_set
+                ),
+                # IBC pools
+                *(
+                    Leg(
+                        (
+                            auction.asset_a
+                            if auction.asset_a() == denom
+                            else auction.asset_b
+                        ),
+                        (
+                            auction.asset_a
+                            if auction.asset_a() != denom
+                            else auction.asset_b
+                        ),
+                        auction,
+                    )
+                    for denom in denom_cache[end].values()
+                    for auction in auctions.get(denom, {}).values()
+                ),
+                *(
+                    Leg(
+                        (pool.asset_a if pool.asset_a() == denom else pool.asset_b),
+                        (pool.asset_a if pool.asset_a() != denom else pool.asset_b),
+                        pool,
+                    )
+                    for denom in denom_cache[end].values()
+                    for pool_set in pools.get(denom, {}).values()
+                    for pool in pool_set
+                ),
+            }
+        )
 
-            # A pool is a candidate to be a next pool if it has a denom
-            # contained in denom_cache[end] or one of its denoms *is* end
-            next_pools: list[Leg] = list(
-                {
-                    # Atomic pools
-                    *(
-                        Leg(
-                            (
-                                auction.asset_a
-                                if auction.asset_a() == end
-                                else auction.asset_b
-                            ),
-                            (
-                                auction.asset_a
-                                if auction.asset_a() != end
-                                else auction.asset_b
-                            ),
-                            auction,
-                        )
-                        for auction in auctions.get(end, {}).values()
-                    ),
-                    *(
-                        Leg(
-                            (pool.asset_a if pool.asset_a() == end else pool.asset_b),
-                            pool.asset_a if pool.asset_a() != end else pool.asset_b,
-                            pool,
-                        )
-                        for pool_set in pools.get(end, {}).values()
-                        for pool in pool_set
-                    ),
-                    # IBC pools
-                    *(
-                        Leg(
-                            (
-                                auction.asset_a
-                                if auction.asset_a() == denom
-                                else auction.asset_b
-                            ),
-                            (
-                                auction.asset_a
-                                if auction.asset_a() != denom
-                                else auction.asset_b
-                            ),
-                            auction,
-                        )
-                        for denom in denom_cache[end].values()
-                        for auction in auctions.get(denom, {}).values()
-                    ),
-                    *(
-                        Leg(
-                            (pool.asset_a if pool.asset_a() == denom else pool.asset_b),
-                            (pool.asset_a if pool.asset_a() != denom else pool.asset_b),
-                            pool,
-                        )
-                        for denom in denom_cache[end].values()
-                        for pool_set in pools.get(denom, {}).values()
-                        for pool in pool_set
-                    ),
-                }
-            )
+        await asyncio.gather(*[next_legs(path + [pool]) for pool in next_pools])
 
-            async def attach_liquidity(leg: Leg) -> tuple[tuple[int, int], Leg]:
-                if isinstance(leg.backend, AuctionProvider):
-                    bal = await leg.backend.remaining_asset_b()
-
-                    return ((bal, bal), leg)
-
-                return (
-                    (
-                        await leg.backend.balance_asset_a(),
-                        await leg.backend.balance_asset_b(),
-                    ),
-                    leg,
-                )
-
-            with_liquidity: list[tuple[tuple[int, int], Leg]] = await asyncio.gather(
-                *[attach_liquidity(leg) for leg in next_pools]
-            )
-            with_liquidity = sorted(
-                with_liquidity, key=lambda liquidity_leg: liquidity_leg[0], reverse=True
-            )
-
-            sorted_next_pools: Iterator[Leg] = (pool for (_, pool) in with_liquidity)
-
-            await asyncio.gather(
-                *[next_legs(path + [pool]) for pool in sorted_next_pools]
-            )
-
-        await asyncio.gather(*[next_legs([leg]) for leg in start_legs])
-
-    asyncio.run(init_searcher())
+    await asyncio.gather(*[next_legs([leg]) for leg in start_legs])

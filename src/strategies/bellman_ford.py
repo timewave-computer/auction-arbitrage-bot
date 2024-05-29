@@ -335,7 +335,7 @@ async def strategy(
     logger.info("Executing route with profit of %d: %s", profit, fmt_route(route))
 
     try:
-        asyncio.run(exec_arb(route, ctx))
+        await exec_arb(route, ctx)
     except Exception as e:
         logger.error("Arb failed %s: %s", fmt_route(route), e)
 

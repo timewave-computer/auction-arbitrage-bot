@@ -83,6 +83,8 @@ def fmt_route_debug(route: list[Leg]) -> str:
 
 
 async def exec_arb(
+    profit: int,
+    quantities: list[int],
     route: list[Leg],
     ctx: Ctx,
 ) -> None:
@@ -94,15 +96,6 @@ async def exec_arb(
     """
 
     swap_balance = ctx.state.balance
-
-    if not swap_balance:
-        raise ValueError("Couldn't fetch wallet balance")
-
-    profit, quantities = await quantities_for_route_profit(
-        swap_balance,
-        ctx.cli_args["profit_margin"],
-        route,
-    )
 
     logger.debug("Route %s has execution plan: %s", fmt_route(route), quantities)
 
