@@ -18,6 +18,7 @@ from src.util import (
     try_multiple_rest_endpoints,
     try_multiple_clients_fatal,
 )
+import aiohttp
 
 
 class OsmosisPoolProvider(PoolProvider):
@@ -31,6 +32,7 @@ class OsmosisPoolProvider(PoolProvider):
         address: str,
         pool_id: int,
         assets: tuple[str, str],
+        session: aiohttp.ClientSession,
     ):
         """
         Initializes the Osmosis pool provider.
@@ -50,6 +52,7 @@ class OsmosisPoolProvider(PoolProvider):
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b
         self.pool_id = pool_id
+        self.session = session
 
     @cached_property
     def ledgers(self) -> List[LedgerClient]:
@@ -66,14 +69,15 @@ class OsmosisPoolProvider(PoolProvider):
             for url in self.grpc_endpoints
         ]
 
-    def __exchange_rate(self, asset_a: str, asset_b: str, amount: int) -> int:
-        res = try_multiple_rest_endpoints(
+    async def __exchange_rate(self, asset_a: str, asset_b: str, amount: int) -> int:
+        res = await try_multiple_rest_endpoints(
             self.endpoints,
             (
                 f"/osmosis/poolmanager/v1beta1/{self.pool_id}"
                 f"/estimate/single_pool_swap_exact_amount_in?pool_id={self.pool_id}"
                 f"&token_in={amount}{asset_a}&token_out_denom={asset_b}"
             ),
+            self.session,
         )
 
         if not res or ("code" in res and res["code"] == 13):
@@ -81,14 +85,15 @@ class OsmosisPoolProvider(PoolProvider):
 
         return int(res["token_out_amount"])
 
-    def __rev_exchange_rate(self, asset_a: str, asset_b: str, amount: int) -> int:
-        res = try_multiple_rest_endpoints(
+    async def __rev_exchange_rate(self, asset_a: str, asset_b: str, amount: int) -> int:
+        res = await try_multiple_rest_endpoints(
             self.endpoints,
             (
                 f"/osmosis/poolmanager/v1beta1/{self.pool_id}"
                 f"/estimate/single_pool_swap_exact_amount_out?pool_id={self.pool_id}"
                 f"&token_in_denom={asset_b}&token_out={amount}{asset_a}"
             ),
+            self.session,
         )
 
         if not res or ("code" in res and res["code"] == 13):
@@ -144,13 +149,14 @@ class OsmosisPoolProvider(PoolProvider):
             lambda client: client.broadcast_tx(tx),
         )
 
-    def __balance(self, asset: str) -> int:
-        res = try_multiple_rest_endpoints(
+    async def __balance(self, asset: str) -> int:
+        res = await try_multiple_rest_endpoints(
             self.endpoints,
             (
                 f"/osmosis/poolmanager/v1beta1/pools/{self.pool_id}"
                 f"/total_pool_liquidity"
             ),
+            self.session,
         )
 
         if (
@@ -162,17 +168,25 @@ class OsmosisPoolProvider(PoolProvider):
 
         return int(next(b for b in res["liquidity"] if b["denom"] == asset)["amount"])
 
-    def simulate_swap_asset_a(self, amount: int) -> int:
-        return self.__exchange_rate(self.asset_a_denom, self.asset_b_denom, amount)
+    async def simulate_swap_asset_a(self, amount: int) -> int:
+        return await self.__exchange_rate(
+            self.asset_a_denom, self.asset_b_denom, amount
+        )
 
-    def simulate_swap_asset_b(self, amount: int) -> int:
-        return self.__exchange_rate(self.asset_b_denom, self.asset_a_denom, amount)
+    async def simulate_swap_asset_b(self, amount: int) -> int:
+        return await self.__exchange_rate(
+            self.asset_b_denom, self.asset_a_denom, amount
+        )
 
-    def reverse_simulate_swap_asset_a(self, amount: int) -> int:
-        return self.__rev_exchange_rate(self.asset_a_denom, self.asset_b_denom, amount)
+    async def reverse_simulate_swap_asset_a(self, amount: int) -> int:
+        return await self.__rev_exchange_rate(
+            self.asset_a_denom, self.asset_b_denom, amount
+        )
 
-    def reverse_simulate_swap_asset_b(self, amount: int) -> int:
-        return self.__rev_exchange_rate(self.asset_b_denom, self.asset_a_denom, amount)
+    async def reverse_simulate_swap_asset_b(self, amount: int) -> int:
+        return await self.__rev_exchange_rate(
+            self.asset_b_denom, self.asset_a_denom, amount
+        )
 
     def swap_asset_a(
         self,
@@ -204,11 +218,11 @@ class OsmosisPoolProvider(PoolProvider):
     def asset_b(self) -> str:
         return self.asset_b_denom
 
-    def balance_asset_a(self) -> int:
-        return self.__balance(self.asset_a_denom)
+    async def balance_asset_a(self) -> int:
+        return await self.__balance(self.asset_a_denom)
 
-    def balance_asset_b(self) -> int:
-        return self.__balance(self.asset_b_denom)
+    async def balance_asset_b(self) -> int:
+        return await self.__balance(self.asset_b_denom)
 
     def dump(self) -> dict[str, Any]:
         """
@@ -234,6 +248,7 @@ class OsmosisPoolDirectory:
 
     def __init__(
         self,
+        session: aiohttp.ClientSession,
         poolfile_path: Optional[str] = None,
         endpoints: Optional[dict[str, list[str]]] = None,
     ) -> None:
@@ -248,6 +263,7 @@ class OsmosisPoolDirectory:
                 "grpc": ["grpc+https://osmosis-grpc.publicnode.com:443"],
             }
         )
+        self.session = session
 
     def __pools_cached(self) -> dict[str, dict[str, OsmosisPoolProvider]]:
         """
@@ -266,6 +282,7 @@ class OsmosisPoolDirectory:
                 poolfile_entry["address"],
                 poolfile_entry["pool_id"],
                 (asset_a, asset_b),
+                self.session,
             )
 
             # Register the pool
@@ -280,7 +297,7 @@ class OsmosisPoolDirectory:
 
         return pools
 
-    def pools(self) -> dict[str, dict[str, OsmosisPoolProvider]]:
+    async def pools(self) -> dict[str, dict[str, OsmosisPoolProvider]]:
         """
         Gets an OsmosisPoolProvider for every pair on Osmosis.
         """
@@ -300,8 +317,10 @@ class OsmosisPoolDirectory:
 
             return []
 
-        pools_res = try_multiple_rest_endpoints(
-            self.endpoints["http"], "/osmosis/poolmanager/v1beta1/all-pools"
+        pools_res = await try_multiple_rest_endpoints(
+            self.endpoints["http"],
+            "/osmosis/poolmanager/v1beta1/all-pools",
+            self.session,
         )
 
         if not pools_res:
@@ -323,6 +342,7 @@ class OsmosisPoolDirectory:
                 pool["address"],
                 pool_id,
                 (denom_addrs[0], denom_addrs[1]),
+                self.session,
             )
 
             # Register the pool

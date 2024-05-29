@@ -20,6 +20,8 @@ from src.util import (
     try_multiple_clients,
     try_exec_multiple_fatal,
 )
+import aiohttp
+import grpc
 
 
 class AuctionProvider(WithContract):
@@ -33,6 +35,8 @@ class AuctionProvider(WithContract):
         contract_info: ContractInfo,
         asset_a: str,
         asset_b: str,
+        session: aiohttp.ClientSession,
+        grpc_channels: list[grpc.aio.Channel],
     ):
         WithContract.__init__(self, contract_info)
         self.asset_a_denom = asset_a
@@ -42,13 +46,17 @@ class AuctionProvider(WithContract):
         self.chain_fee_denom = "untrn"
         self.kind = "auction"
         self.endpoints = endpoints["http"]
+        self.session = session
+        self.grpc_channels = grpc_channels
 
-    def exchange_rate(self) -> int:
+    async def exchange_rate(self) -> int:
         """
         Gets the number of asset_b required to purchase a single asset_a.
         """
 
-        auction_info = try_query_multiple(self.contracts, "get_auction")
+        auction_info = await try_query_multiple(
+            self.contracts, "get_auction", self.session, self.grpc_channels
+        )
 
         if not auction_info:
             return 0
@@ -102,17 +110,30 @@ class AuctionProvider(WithContract):
             self.contracts, wallet, {"bid": {}}, funds=f"{amount}{self.asset_a_denom}"
         )
 
-    def remaining_asset_b(self) -> int:
+    async def remaining_asset_b(self) -> int:
         """
         Gets the amount of the asking asset left in the auction.
         """
 
-        res = try_query_multiple(self.contracts, "get_auction")
+        res = await try_query_multiple(
+            self.contracts, "get_auction", self.session, self.grpc_channels
+        )
 
         if not res:
             return 0
 
         return int(res["available_amount"])
+
+    def dump(self) -> dict[str, Any]:
+        """
+        Gets a JSON representation of the auction.
+        """
+
+        return {
+            "asset_a": self.asset_a(),
+            "asset_b": self.asset_b(),
+            "address": self.contract_info.address,
+        }
 
     def __hash__(self) -> int:
         return hash(self.contract_info.address)
@@ -130,6 +151,8 @@ class AuctionDirectory:
     def __init__(
         self,
         deployments: dict[str, Any],
+        session: aiohttp.ClientSession,
+        grpc_channels: list[grpc.aio.Channel],
         poolfile_path: Optional[str] = None,
         endpoints: Optional[dict[str, list[str]]] = None,
     ) -> None:
@@ -143,6 +166,8 @@ class AuctionDirectory:
         )
         self.deployment_info = deployments["auctions"]["neutron"]
         self.cached_auctions = None
+        self.session = session
+        self.grpc_channels = grpc_channels
 
         # The user wants to load auctions from the poolfile
         if poolfile_path is not None:
@@ -187,6 +212,8 @@ class AuctionDirectory:
                 ),
                 asset_a,
                 asset_b,
+                self.session,
+                self.grpc_channels,
             )
 
             # Register the auction
@@ -197,7 +224,7 @@ class AuctionDirectory:
 
         return auctions
 
-    def auctions(self) -> dict[str, dict[str, AuctionProvider]]:
+    async def auctions(self) -> dict[str, dict[str, AuctionProvider]]:
         """
         Gets an AuctionProvider for every pair on valence.
         """
@@ -205,8 +232,11 @@ class AuctionDirectory:
         if self.cached_auctions is not None:
             return self.__auctions_cached()
 
-        auction_infos = try_query_multiple(
-            self.directory_contract, {"get_pairs": {"start_after": None, "limit": None}}
+        auction_infos = await try_query_multiple(
+            self.directory_contract,
+            {"get_pairs": {"start_after": None, "limit": None}},
+            self.session,
+            self.grpc_channels,
         )
 
         if not auction_infos:
@@ -223,6 +253,8 @@ class AuctionDirectory:
                 ContractInfo(self.deployment_info, self.clients, addr, "auction"),
                 asset_a,
                 asset_b,
+                self.session,
+                self.grpc_channels,
             )
 
             if asset_a not in auctions:

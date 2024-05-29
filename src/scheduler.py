@@ -2,13 +2,16 @@
 Implements a strategy runner with an arbitrary provider set in an event-loop style.
 """
 
-from typing import Callable, List, Any, Self, Optional
+import asyncio
+from typing import Callable, List, Any, Self, Optional, Awaitable
 from dataclasses import dataclass
 from cosmpy.aerial.client import LedgerClient  # type: ignore
 from cosmpy.aerial.wallet import LocalWallet  # type: ignore
 from src.contracts.auction import AuctionDirectory, AuctionProvider
 from src.contracts.pool.provider import PoolProvider
 from src.util import deployments
+import aiohttp
+import grpc
 
 
 @dataclass
@@ -25,6 +28,7 @@ class Ctx:
     cli_args: dict[str, Any]
     state: Optional[Any]
     terminated: bool
+    http_session: aiohttp.ClientSession
 
     def with_state(self, state: Any) -> Self:
         """
@@ -60,7 +64,7 @@ class Scheduler:
             dict[str, dict[str, List[PoolProvider]]],
             dict[str, dict[str, AuctionProvider]],
         ],
-        Ctx,
+        Awaitable[Ctx],
     ]
     providers: dict[str, dict[str, List[PoolProvider]]]
     auction_manager: AuctionDirectory
@@ -75,7 +79,7 @@ class Scheduler:
                 dict[str, dict[str, List[PoolProvider]]],
                 dict[str, dict[str, AuctionProvider]],
             ],
-            Ctx,
+            Awaitable[Ctx],
         ],
     ) -> None:
         """
@@ -89,10 +93,25 @@ class Scheduler:
 
         self.auction_manager = AuctionDirectory(
             deployments(),
+            ctx.http_session,
+            [
+                grpc.aio.secure_channel(
+                    endpoint.split("grpc+https://")[1],
+                    grpc.ssl_channel_credentials(),
+                )
+                for endpoint in ctx.endpoints["neutron"]["grpc"]
+            ],
             endpoints=ctx.endpoints["neutron"],
             poolfile_path=ctx.cli_args["pool_file"],
         )
-        self.auctions = self.auction_manager.auctions()
+        self.auctions = {}
+
+    async def register_auctions(self) -> None:
+        """
+        Registers all auctions into the pool provider.
+        """
+
+        self.auctions = await self.auction_manager.auctions()
 
     def register_provider(self, provider: PoolProvider) -> None:
         """
@@ -114,9 +133,9 @@ class Scheduler:
         self.providers[provider.asset_a()][provider.asset_b()].append(provider)
         self.providers[provider.asset_b()][provider.asset_a()].append(provider)
 
-    def poll(self) -> None:
+    async def poll(self) -> None:
         """
         Polls the strategy function with all registered providers.
         """
 
-        self.ctx = self.strategy(self.ctx, self.providers, self.auctions)
+        self.ctx = await self.strategy(self.ctx, self.providers, self.auctions)

@@ -2,6 +2,7 @@
 Implements utilities for implementing arbitrage bots.
 """
 
+from base64 import standard_b64encode
 import json
 from decimal import Decimal
 from typing import Any, cast, Optional, Callable, TypeVar
@@ -14,6 +15,7 @@ from cosmpy.aerial.client import NetworkConfig, LedgerClient  # type: ignore
 from cosmpy.aerial.contract import LedgerContract  # type: ignore
 from cosmpy.aerial.wallet import LocalWallet  # type: ignore
 from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
+from cosmwasm.wasm.v1 import query_pb2, query_pb2_grpc
 
 
 DENOM_RESOLVER_TIMEOUT_SEC = 5
@@ -62,50 +64,22 @@ def custom_neutron_network_config(url: str) -> NetworkConfig:
     )
 
 
-def try_multiple_rest_endpoints(
-    endpoints: list[str], route: str
+async def try_multiple_rest_endpoints(
+    endpoints: list[str], route: str, session: aiohttp.ClientSession
 ) -> Optional[dict[str, Any]]:
     """
     Returns the response from the first queried endpoint that responds successfully.
     """
 
-    client = urllib3.PoolManager()
-
     for endpoint in endpoints:
-        try:
-            return cast(
-                dict[str, Any],
-                json.loads(
-                    client.request(
-                        "GET",
-                        f"{endpoint}{route}",
-                    ).data
-                ),
-            )
-        except RuntimeError:
-            continue
-        except ValueError:
-            continue
+        async with session.get(
+            f"{endpoint}{route}",
+            headers={"accept": "application/json", "content-type": "application/json"},
+        ) as resp:
+            if resp.status != 200:
+                continue
 
-    return None
-
-
-def try_multiple_grpc_endpoints(
-    endpoints: list[str], method: str, request: Any
-) -> Optional[Any]:
-    """
-    Returns the response from the first queried grpc endpoint that responds successfully.
-    """
-
-    channels = [grpc.insecure_channel(endpoint) for endpoint in endpoints]
-
-    for channel in channels:
-        try:
-            return channel.unary_unary(method, None, None).with_call(request)
-        except RuntimeError:
-            continue
-        except ValueError:
-            continue
+            return await resp.json()
 
     return None
 
@@ -155,21 +129,55 @@ def try_multiple_clients_fatal(
     assert False
 
 
-def try_query_multiple(providers: list[LedgerContract], query: Any) -> Optional[Any]:
+async def try_query_multiple(
+    providers: list[LedgerContract],
+    query: Any,
+    session: aiohttp.ClientSession,
+    chans: list[grpc.aio.Channel],
+) -> Optional[dict[str, Any]]:
     """
     Attempts to query the first LedgerContract in the list, falling back to
     further providers.
     """
 
+    ser_query = json.dumps(query).encode("utf-8")
+
     for prov in providers:
+        if prov._client._network_config.url.startswith("rest+"):
+            async with session.get(
+                f"{prov._client._network_config.url}/cosmwasm/wasm/v1/contract/{prov.address}/smart/{standard_b64encode(ser_query).decode('utf-8')}"
+            ) as resp:
+                if resp.status != 200:
+                    continue
+
+                try:
+                    return cast(dict[str, Any], await resp.json())
+                except RuntimeError:
+                    continue
+                except ValueError:
+                    continue
+
+            continue
+
+    for chan in chans:
         try:
-            return cast(dict[str, Any], prov.query(query))
+            stub = query_pb2_grpc.QueryStub(chan)
+            resp = await stub.SmartContractState(
+                query_pb2.QuerySmartContractStateRequest(
+                    address=providers[0].address, query_data=ser_query
+                )
+            )
+
+            if not resp:
+                continue
+
+            return cast(dict[str, Any], json.loads(resp.data))
         except RuntimeError:
             continue
         except ValueError:
             continue
-        except grpc._channel._InactiveRpcError:
-            continue
+
+        continue
 
     return None
 

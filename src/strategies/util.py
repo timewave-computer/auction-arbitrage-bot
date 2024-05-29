@@ -8,7 +8,7 @@ from functools import reduce
 from decimal import Decimal
 import logging
 import time
-from typing import Optional
+from typing import Optional, Any
 from src.contracts.leg import Leg
 from src.contracts.auction import AuctionProvider
 from src.contracts.pool.provider import PoolProvider
@@ -82,7 +82,7 @@ def fmt_route_debug(route: list[Leg]) -> str:
     )
 
 
-def exec_arb(
+async def exec_arb(
     route: list[Leg],
     ctx: Ctx,
 ) -> None:
@@ -98,11 +98,13 @@ def exec_arb(
     if not swap_balance:
         raise ValueError("Couldn't fetch wallet balance")
 
-    profit, quantities = quantities_for_route_profit(
+    profit, quantities = await quantities_for_route_profit(
         swap_balance,
         ctx.cli_args["profit_margin"],
         route,
     )
+
+    logger.debug("Route %s has execution plan: %s", fmt_route(route), quantities)
 
     if len(quantities) < len(route):
         raise ValueError(
@@ -136,17 +138,12 @@ def exec_arb(
         prev_asset_info: Optional[DenomChainInfo] = None
 
         if prev_leg:
-
-            async def get_denom_info() -> Optional[DenomChainInfo]:
-                async with aiohttp.ClientSession() as session:
-                    return await denom_info_on_chain(
-                        prev_leg.backend.chain_id,
-                        prev_leg.out_asset(),
-                        leg.backend.chain_id,
-                        session,
-                    )
-
-            prev_asset_info = asyncio.run(get_denom_info())
+            prev_asset_info = await denom_info_on_chain(
+                prev_leg.backend.chain_id,
+                prev_leg.out_asset(),
+                leg.backend.chain_id,
+                ctx.http_session,
+            )
 
         to_swap = (
             to_swap
@@ -187,7 +184,7 @@ def exec_arb(
 
             # Cancel arb if the transfer fails
             try:
-                transfer(prev_leg.out_asset(), prev_leg, leg, ctx, to_swap)
+                await transfer(prev_leg.out_asset(), prev_leg, leg, ctx, to_swap)
             except Exception as e:
                 logger.error(
                     "Failed to transfer funds from %s -> %s: %s",
@@ -232,9 +229,9 @@ def exec_arb(
         # on asset A, producing asset B
         if isinstance(leg.backend, PoolProvider):
             to_receive = (
-                leg.backend.simulate_swap_asset_a(to_swap)
+                await leg.backend.simulate_swap_asset_a(to_swap)
                 if leg.in_asset == leg.backend.asset_a
-                else leg.backend.simulate_swap_asset_b(to_swap)
+                else await leg.backend.simulate_swap_asset_b(to_swap)
             )
 
             if isinstance(leg.backend, NeutronAstroportPoolProvider):
@@ -277,7 +274,7 @@ def exec_arb(
         prev_leg = leg
 
 
-def transfer(
+async def transfer(
     denom: str,
     prev_leg: Leg,
     leg: Leg,
@@ -291,23 +288,20 @@ def transfer(
     succeeded.
     """
 
-    async def get_denom_info() -> Optional[DenomChainInfo]:
-        async with aiohttp.ClientSession() as session:
-            return await denom_info_on_chain(
-                src_chain=prev_leg.backend.chain_id,
-                src_denom=denom,
-                dest_chain=leg.backend.chain_id,
-                session=session,
-            )
-
-    denom_info = asyncio.run(get_denom_info())
+    denom_info = await denom_info_on_chain(
+        src_chain=prev_leg.backend.chain_id,
+        src_denom=denom,
+        dest_chain=leg.backend.chain_id,
+        session=ctx.http_session,
+    )
 
     if not denom_info:
         raise ValueError("Missing denom info for target chain in IBC transfer")
 
-    channel_info = try_multiple_rest_endpoints(
+    channel_info = await try_multiple_rest_endpoints(
         ctx.endpoints[leg.backend.chain_id.split("-")[0]]["http"],
         f"/ibc/core/channel/v1/channels/{denom_info.channel}/ports/{denom_info.port}",
+        ctx.http_session,
     )
 
     if not channel_info:
@@ -377,23 +371,25 @@ def transfer(
     # or cancel the arb if the timeout passes
     # Future note: This could be async so other arbs can make
     # progress while this is happening
-    def transfer_or_continue() -> bool:
+    async def transfer_or_continue() -> bool:
         logger.info("Checking IBC transfer status %s", submitted.tx_hash)
 
         # Check for a package acknowledgement by querying osmosis
-        ack_resp = try_multiple_rest_endpoints(
+        ack_resp = await try_multiple_rest_endpoints(
             leg.backend.endpoints,
             (
                 f"/ibc/core/channel/v1/channels/{denom_info.channel}/"
                 f"ports/{denom_info.port}/packet_acks/"
                 f"{submitted.response.events['send_packet']['packet_sequence']}"
             ),
+            ctx.http_session,
         )
 
-        # Try again
+        # try again
         if not ack_resp:
             logger.info(
-                "IBC transfer %s has not yet completed; waiting...", submitted.tx_hash
+                "IBC transfer %s has not yet completed; waiting...",
+                submitted.tx_hash,
             )
 
             return False
@@ -406,11 +402,11 @@ def transfer(
     while time.time() < timeout:
         time.sleep(IBC_TRANSFER_POLL_INTERVAL_SEC)
 
-        if transfer_or_continue():
+        if asyncio.run(transfer_or_continue()):
             break
 
 
-def quantities_for_route_profit(
+async def quantities_for_route_profit(
     starting_amount: int,
     target_profit: int,
     route: list[Leg],
@@ -424,7 +420,15 @@ def quantities_for_route_profit(
         return (0, [])
 
     starting_amount = min(
-        starting_amount * MAX_TRADE_IN_POOL_FRACTION, route[0].backend.balance_asset_a()
+        int(Decimal(starting_amount) * Decimal(MAX_TRADE_IN_POOL_FRACTION)),
+        (
+            int(
+                Decimal(await route[0].backend.remaining_asset_b())
+                / Decimal(await route[0].backend.exchange_rate())
+            )
+            if isinstance(route[0].backend, AuctionProvider)
+            else await route[0].backend.balance_asset_a()
+        ),
     )
 
     quantities: list[int] = [starting_amount]
@@ -451,28 +455,35 @@ def quantities_for_route_profit(
                 if leg.in_asset != leg.backend.asset_a:
                     return (0, [])
 
-                if leg.backend.remaining_asset_b() == 0:
+                if await leg.backend.remaining_asset_b() == 0:
                     return (0, [])
 
                 quantities.append(
-                    int(int_to_decimal(leg.backend.exchange_rate()) * prev_amt)
+                    int(int_to_decimal(await leg.backend.exchange_rate()) * prev_amt)
                 )
 
                 continue
 
             if leg.in_asset == leg.backend.asset_a:
-                quantities.append(int(leg.backend.simulate_swap_asset_a(prev_amt)))
+                quantities.append(
+                    int(await leg.backend.simulate_swap_asset_a(prev_amt))
+                )
 
                 continue
 
-            quantities.append(int(leg.backend.simulate_swap_asset_b(prev_amt)))
+            quantities.append(int(await leg.backend.simulate_swap_asset_b(prev_amt)))
 
         starting_amount = int(Decimal(starting_amount) / Decimal(2.0))
 
-    return (quantities[-1] - starting_amount, quantities)
+    logger.debug("Got execution plan: %s", quantities)
+
+    if quantities[-1] - quantities[0] > 0:
+        logger.debug("Route is profitable: %s", fmt_route(route))
+
+    return (quantities[-1] - quantities[0], quantities)
 
 
-def route_base_denom_profit(
+async def route_base_denom_profit(
     starting_amount: int,
     route: list[Leg],
 ) -> int:
@@ -488,16 +499,16 @@ def route_base_denom_profit(
             if leg.in_asset != leg.backend.asset_a:
                 return 0
 
-            if leg.backend.remaining_asset_b() == 0:
+            if await leg.backend.remaining_asset_b() == 0:
                 return 0
 
-            exchange_rates.append(int_to_decimal(leg.backend.exchange_rate()))
+            exchange_rates.append(int_to_decimal(await leg.backend.exchange_rate()))
 
             continue
 
         balance_asset_a, balance_asset_b = (
-            leg.backend.balance_asset_a(),
-            leg.backend.balance_asset_b(),
+            await leg.backend.balance_asset_a(),
+            await leg.backend.balance_asset_b(),
         )
 
         if balance_asset_a == 0 or balance_asset_b == 0:
@@ -511,3 +522,26 @@ def route_base_denom_profit(
         exchange_rates.append(Decimal(balance_asset_a) / Decimal(balance_asset_b))
 
     return starting_amount - reduce(operator.mul, exchange_rates, starting_amount)
+
+
+def pools_to_ser(
+    pools: dict[str, dict[str, list[PoolProvider]]]
+) -> dict[str, dict[str, list[dict[str, Any]]]]:
+    """
+    Serializes all pools in `pools`.
+    """
+
+    return {
+        k: {k1: [pool.dump() for pool in v1] for (k1, v1) in v.items()}
+        for (k, v) in pools.items()
+    }
+
+
+def auctions_to_ser(
+    auctions: dict[str, dict[str, AuctionProvider]]
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """
+    Serializes all auctions in `auctions`.
+    """
+
+    return {k: {k1: v1.dump() for (k1, v1) in v.items()} for (k, v) in auctions.items()}

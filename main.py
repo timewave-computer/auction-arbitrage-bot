@@ -2,6 +2,7 @@
 Implements a command-line interface for running arbitrage strategies.
 """
 
+import asyncio
 from multiprocessing import Process
 import json
 import argparse
@@ -18,11 +19,13 @@ from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
 from src.strategies.naive import strategy
 from dotenv import load_dotenv
+import aiohttp
+import grpc
 
 logger = logging.getLogger(__name__)
 
 
-def main() -> None:
+async def main() -> None:
     """
     Entrypoint for the arbitrage bot.
     """
@@ -102,119 +105,137 @@ def main() -> None:
 
     logger.info("Building pool catalogue")
 
-    ctx = Ctx(
-        {
-            "neutron": [
-                LedgerClient(NEUTRON_NETWORK_CONFIG),
-                *[
-                    LedgerClient(custom_neutron_network_config(endpoint))
-                    for endpoint in endpoints["neutron"]["grpc"]
+    async with aiohttp.ClientSession() as session:
+        ctx = Ctx(
+            {
+                "neutron": [
+                    LedgerClient(NEUTRON_NETWORK_CONFIG),
+                    *[
+                        LedgerClient(custom_neutron_network_config(endpoint))
+                        for endpoint in endpoints["neutron"]["grpc"]
+                    ],
                 ],
-            ],
-            "osmosis": [
-                *[
-                    LedgerClient(
-                        NetworkConfig(
-                            chain_id="osmosis-1",
-                            url=endpoint,
-                            fee_minimum_gas_price=0.0053,
-                            fee_denomination="uosmo",
-                            staking_denomination="uosmo",
+                "osmosis": [
+                    *[
+                        LedgerClient(
+                            NetworkConfig(
+                                chain_id="osmosis-1",
+                                url=endpoint,
+                                fee_minimum_gas_price=0.0053,
+                                fee_denomination="uosmo",
+                                staking_denomination="uosmo",
+                            )
                         )
-                    )
-                    for endpoint in endpoints["osmosis"]["grpc"]
+                        for endpoint in endpoints["osmosis"]["grpc"]
+                    ],
                 ],
+            },
+            endpoints,
+            LocalWallet.from_mnemonic(
+                os.environ.get("WALLET_MNEMONIC"), prefix="neutron"
+            ),
+            {
+                "pool_file": args.pool_file,
+                "poll_interval": int(args.poll_interval),
+                "discovery_interval": int(args.discovery_interval),
+                "hops": int(args.hops),
+                "require_leg_types": args.require_leg_types,
+                "base_denom": args.base_denom,
+                "profit_margin": int(args.profit_margin),
+                "wallet_mnemonic": os.environ.get("WALLET_MNEMONIC"),
+                "cmd": args.cmd,
+                "net_config": args.net_config,
+                "log_file": args.log_file,
+            },
+            None,
+            False,
+            session,
+        )
+        sched = Scheduler(ctx, strategy)
+
+        # Register Osmosis and Astroport providers
+        osmosis = OsmosisPoolDirectory(
+            ctx.http_session,
+            poolfile_path=args.pool_file,
+            endpoints=endpoints["osmosis"],
+        )
+        astro = NeutronAstroportPoolDirectory(
+            deployments(),
+            ctx.http_session,
+            [
+                grpc.aio.secure_channel(
+                    endpoint.split("grpc+https://")[1],
+                    grpc.ssl_channel_credentials(),
+                )
+                for endpoint in endpoints["neutron"]["grpc"]
             ],
-        },
-        endpoints,
-        LocalWallet.from_mnemonic(os.environ.get("WALLET_MNEMONIC"), prefix="neutron"),
-        {
-            "pool_file": args.pool_file,
-            "poll_interval": int(args.poll_interval),
-            "discovery_interval": int(args.discovery_interval),
-            "hops": int(args.hops),
-            "require_leg_types": args.require_leg_types,
-            "base_denom": args.base_denom,
-            "profit_margin": int(args.profit_margin),
-            "wallet_mnemonic": os.environ.get("WALLET_MNEMONIC"),
-            "cmd": args.cmd,
-            "net_config": args.net_config,
-            "log_file": args.log_file,
-        },
-        None,
-        False,
-    )
-    sched = Scheduler(ctx, strategy)
+            poolfile_path=args.pool_file,
+            endpoints=endpoints["neutron"],
+        )
 
-    # Register Osmosis and Astroport providers
-    osmosis = OsmosisPoolDirectory(
-        poolfile_path=args.pool_file,
-        endpoints=endpoints["osmosis"],
-    )
-    astro = NeutronAstroportPoolDirectory(
-        deployments(), poolfile_path=args.pool_file, endpoints=endpoints["neutron"]
-    )
+        osmo_pools = await osmosis.pools()
+        astro_pools = await astro.pools()
 
-    osmo_pools = osmosis.pools()
-    astro_pools = astro.pools()
+        # Save pools to the specified file if the user wants to dump pools
+        if args.cmd is not None and args.cmd == "dump":
+            # The user wants to dump to a nonexistent file
+            if args.pool_file is None:
+                logger.error("Dump command provided but no poolfile specified.")
 
-    # Save pools to the specified file if the user wants to dump pools
-    if args.cmd is not None and args.cmd == "dump":
-        # The user wants to dump to a nonexistent file
-        if args.pool_file is None:
-            logger.error("Dump command provided but no poolfile specified.")
+                sys.exit(1)
 
-            sys.exit(1)
-
-        with open(args.pool_file, "r+", encoding="utf-8") as f:
-            f.seek(0)
-            json.dump(
-                {
-                    "pools": {
-                        "osmosis": OsmosisPoolDirectory.dump_pools(osmo_pools),
-                        "neutron_astroport": NeutronAstroportPoolDirectory.dump_pools(
-                            astro_pools
-                        ),
+            with open(args.pool_file, "r+", encoding="utf-8") as f:
+                f.seek(0)
+                json.dump(
+                    {
+                        "pools": {
+                            "osmosis": OsmosisPoolDirectory.dump_pools(osmo_pools),
+                            "neutron_astroport": NeutronAstroportPoolDirectory.dump_pools(
+                                astro_pools
+                            ),
+                        },
+                        "auctions": sched.auction_manager.dump_auctions(sched.auctions),
                     },
-                    "auctions": sched.auction_manager.dump_auctions(sched.auctions),
-                },
-                f,
-            )
+                    f,
+                )
 
-    for osmo_base in osmo_pools.values():
-        for osmo_pool in osmo_base.values():
-            sched.register_provider(osmo_pool)
+        for osmo_base in osmo_pools.values():
+            for osmo_pool in osmo_base.values():
+                sched.register_provider(osmo_pool)
 
-    for astro_base in astro_pools.values():
-        for astro_pool in astro_base.values():
-            sched.register_provider(astro_pool)
+        for astro_base in astro_pools.values():
+            for astro_pool in astro_base.values():
+                sched.register_provider(astro_pool)
 
-    # Calculate the number of pools by summing up the number of pools for a particular base
-    # in Osmosis and Astroport
-    n_pools: int = sum(map(lambda base: len(base.values()), osmo_pools.values())) + sum(
-        map(lambda base: len(base.values()), astro_pools.values())
-    )
+        await sched.register_auctions()
 
-    logger.info("Built pool catalogue with %d pools", n_pools)
+        # Calculate the number of pools by summing up the number of pools for a particular base
+        # in Osmosis and Astroport
+        n_pools: int = sum(
+            map(lambda base: len(base.values()), osmo_pools.values())
+        ) + sum(map(lambda base: len(base.values()), astro_pools.values()))
 
-    def event_loop():
-        # Continuously poll the strategy on the specified interval
-        schedule.every(args.poll_interval).seconds.do(sched.poll)
+        logger.info("Built pool catalogue with %d pools", n_pools)
 
-        sched.poll()
+        async def event_loop():
+            # Continuously poll the strategy on the specified interval
+            schedule.every(args.poll_interval).seconds.do(sched.poll)
 
-        while not sched.ctx.terminated:
-            schedule.run_pending()
+            await sched.poll()
 
-    # Save pools to the specified file if the user wants to dump pools
-    if args.cmd is not None and args.cmd == "daemon":
-        Process(target=event_loop, args=[]).run()
-        logger.info("Spawned searcher daemon")
+            while not sched.ctx.terminated:
+                schedule.run_pending()
 
-        return
+        # Save pools to the specified file if the user wants to dump pools
+        if args.cmd is not None and args.cmd == "daemon":
+            Process(target=event_loop, args=[]).run()
+            logger.info("Spawned searcher daemon")
 
-    event_loop()
+            return
+
+        await event_loop()
 
 
 if __name__ == "__main__":
-    main()
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())

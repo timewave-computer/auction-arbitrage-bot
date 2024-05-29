@@ -4,7 +4,7 @@ Defines an interface for all providers of pricing information to fulfill.
 
 import json
 from decimal import Decimal
-from typing import Any, Optional, cast
+from typing import Any, Optional, cast, Self
 from abc import ABC, abstractmethod
 from cosmpy.aerial.wallet import LocalWallet  # type: ignore
 from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
@@ -48,7 +48,7 @@ class PoolProvider(ABC):
     kind: str
 
     @abstractmethod
-    def simulate_swap_asset_a(self, amount: int) -> int:
+    async def simulate_swap_asset_a(self, amount: int) -> int:
         """
         Gets the current exchange rate per quantity of asset a in the base denomination.
         """
@@ -56,7 +56,7 @@ class PoolProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def simulate_swap_asset_b(self, amount: int) -> int:
+    async def simulate_swap_asset_b(self, amount: int) -> int:
         """
         Gets the current exchange rate per quantity of asset b in the base denomination.
         """
@@ -64,7 +64,7 @@ class PoolProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def reverse_simulate_swap_asset_a(self, amount: int) -> int:
+    async def reverse_simulate_swap_asset_a(self, amount: int) -> int:
         """
         Gets the amount of asset b required to return a specified amount of asset a.
         """
@@ -72,7 +72,7 @@ class PoolProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def reverse_simulate_swap_asset_b(self, amount: int) -> int:
+    async def reverse_simulate_swap_asset_b(self, amount: int) -> int:
         """
         Gets the amount of asset a required to return a specified amount of asset b.
         """
@@ -124,7 +124,7 @@ class PoolProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def balance_asset_a(self) -> int:
+    async def balance_asset_a(self) -> int:
         """
         Gets the quantity of asset A left in the pool.
         """
@@ -132,7 +132,7 @@ class PoolProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def balance_asset_b(self) -> int:
+    async def balance_asset_b(self) -> int:
         """
         Gets the quantity of asset B left in the pool.
         """

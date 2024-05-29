@@ -29,7 +29,6 @@ from src.util import (
     try_multiple_clients,
     DenomChainInfo,
 )
-import aiohttp
 from cosmpy.crypto.address import Address  # type: ignore
 
 
@@ -59,9 +58,7 @@ class State:
     # with their weight
     weights: dict[str, dict[str, list[Edge]]]
 
-    last_updated: Optional[datetime]
-
-    def poll(
+    async def poll(
         self,
         ctx: Ctx,
         pools: dict[str, dict[str, list[PoolProvider]]],
@@ -70,13 +67,6 @@ class State:
         """
         Updates weights of all edges in the graph.
         """
-
-        if (
-            self.last_updated is not None
-            and (datetime.now() - self.last_updated).total_seconds()
-            < ctx.cli_args["discovery_interval"]
-        ):
-            return self
 
         endpoints: dict[str, dict[str, list[str]]] = ctx.endpoints
 
@@ -91,9 +81,10 @@ class State:
             vertices,
         )
 
-        pool = multiprocessing.Pool(10)
-        weights_for_bases: list[tuple[str, dict[str, list[Edge]]]] = pool.map(
-            weights_for, ((base, pools, auctions) for base in pools.keys())
+        weights_for_bases: list[tuple[str, dict[str, list[Edge]]]] = (
+            await asyncio.gather(
+                *(weights_for(base, pools, auctions, ctx) for base in pools.keys())
+            )
         )
 
         self.weights = {base: edges for (base, edges) in weights_for_bases}
@@ -134,17 +125,15 @@ class State:
         return self
 
 
-def pair_provider_edge(
-    src_pair_provider: tuple[str, str, Union[PoolProvider, AuctionProvider]]
+async def pair_provider_edge(
+    src: str, pair: str, provider: Union[PoolProvider, AuctionProvider]
 ) -> tuple[str, Optional[Edge]]:
     """
     Calculates edge weights for all pairs connected to a base pair.
     """
 
-    (src, pair, provider) = src_pair_provider
-
     if isinstance(provider, AuctionProvider):
-        if provider.remaining_asset_b() == 0:
+        if await provider.remaining_asset_b() == 0:
             return (pair, None)
 
         return (
@@ -163,13 +152,13 @@ def pair_provider_edge(
                     ),
                     provider,
                 ),
-                -Decimal.ln(int_to_decimal(provider.exchange_rate())),
+                -Decimal.ln(int_to_decimal(await provider.exchange_rate())),
             ),
         )
 
     balance_asset_a, balance_asset_b = (
-        provider.balance_asset_a(),
-        provider.balance_asset_b(),
+        await provider.balance_asset_a(),
+        await provider.balance_asset_b(),
     )
 
     if balance_asset_a == 0 or balance_asset_b == 0:
@@ -209,30 +198,23 @@ def pair_provider_edge(
     )
 
 
-def weights_for(
-    src_pools_auctions: tuple[
-        str,
-        dict[str, dict[str, list[PoolProvider]]],
-        dict[str, dict[str, AuctionProvider]],
-    ]
+async def weights_for(
+    src: str,
+    pools: dict[str, dict[str, list[PoolProvider]]],
+    auctions: dict[str, dict[str, AuctionProvider]],
+    ctx: Ctx,
 ) -> tuple[str, dict[str, list[Edge]]]:
     """
     Gets all denoms which have a direct conncetion to the src denom,
     including cross-chain connections.
     """
 
-    (src, pools, auctions) = src_pools_auctions
-
     # Also include providers for all denoms that this src is associated with
-    async def get_denom_info() -> list[DenomChainInfo]:
-        async with aiohttp.ClientSession() as session:
-            return await denom_info(
-                "neutron-1",
-                src,
-                session,
-            )
-
-    denom_infos = asyncio.run(get_denom_info())
+    denom_infos = await denom_info(
+        "neutron-1",
+        src,
+        ctx.http_session,
+    )
 
     matching_denoms = {
         info.chain_id: info.denom
@@ -272,11 +254,11 @@ def weights_for(
         ),
     )
 
-    pool = multiprocessing.Pool(10)
-
-    with_weights: list[tuple[str, Optional[Edge]]] = pool.map(
-        pair_provider_edge,
-        providers_for_pair,
+    with_weights: list[tuple[str, Optional[Edge]]] = await asyncio.gather(
+        *(
+            pair_provider_edge(src, pair, provider)
+            for (src, pair, provider) in providers_for_pair
+        )
     )
 
     pair_edges: dict[str, list[Edge]] = {}
@@ -290,7 +272,7 @@ def weights_for(
     return (src, pair_edges)
 
 
-def strategy(
+async def strategy(
     ctx: Ctx,
     pools: dict[str, dict[str, list[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
@@ -300,9 +282,9 @@ def strategy(
     """
 
     if not ctx.state:
-        ctx.state = State({}, None)
+        ctx.state = State({})
 
-    ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions))
+    ctx = ctx.with_state(await ctx.state.poll(ctx, pools, auctions))
 
     if ctx.cli_args["cmd"] == "dump":
         return ctx.cancel()
@@ -353,7 +335,7 @@ def strategy(
     logger.info("Executing route with profit of %d: %s", profit, fmt_route(route))
 
     try:
-        exec_arb(route, ctx)
+        asyncio.run(exec_arb(route, ctx))
     except Exception as e:
         logger.error("Arb failed %s: %s", fmt_route(route), e)
 
