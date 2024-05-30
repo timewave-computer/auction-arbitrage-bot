@@ -66,11 +66,14 @@ class State:
     # with their weight
     denom_cache: dict[str, dict[str, str]]
 
+    # Which chain a given denom exists on
+    chain_cache: dict[str, str]
+
     # Edge weights for providers representing a connection
     # between a base denom and a pair denom
-    weights_cache: dict[str, dict[str, list[Edge]]]
+    weights: dict[Union[AuctionProvider, PoolProvider], tuple[Edge, Edge]]
 
-    def poll(
+    async def poll(
         self,
         ctx: Ctx,
         pools: dict[str, dict[str, list[PoolProvider]]],
@@ -81,7 +84,54 @@ class State:
         alone, or producing a new state.
         """
 
-        self.weights_cache = {}
+        self.weights = {}
+
+        vertices: set[Union[AuctionProvider, PoolProvider]] = {
+            *(
+                provider
+                for base, pair_providers in pools.items()
+                for providers in pair_providers.values()
+                for provider in providers
+            ),
+            *(
+                auction
+                for base, pair_auctions in auctions.items()
+                for auction in pair_auctions.values()
+            ),
+        }
+
+        logger.info(
+            "Building route tree with %d vertices (this may take a while)",
+            len(vertices),
+        )
+
+        async def all_edges_for(
+            vertex: Union[AuctionProvider, PoolProvider]
+        ) -> tuple[
+            Union[AuctionProvider, PoolProvider], Optional[Edge], Optional[Edge]
+        ]:
+            return (
+                vertex,
+                (await pair_provider_edge(vertex.asset_a(), vertex.asset_b(), vertex))[
+                    1
+                ],
+                (await pair_provider_edge(vertex.asset_b(), vertex.asset_a(), vertex))[
+                    1
+                ],
+            )
+
+        # Calculate all ege weights
+        weights: Iterator[tuple[Union[AuctionProvider, PoolProvider], Edge, Edge]] = (
+            (prov, edge_a, edge_b)
+            for prov, edge_a, edge_b in (
+                await asyncio.gather(*[all_edges_for(vertex) for vertex in vertices])
+            )
+            if edge_a and edge_b
+        )
+
+        self.weights = {prov: (edge_a, edge_b) for prov, edge_a, edge_b in weights}
+
+        logger.info("Got %d weights", len(weights.values()))
 
         return self
 
@@ -161,88 +211,6 @@ async def pair_provider_edge(
     )
 
 
-async def weights_for(
-    src: str,
-    pools: dict[str, dict[str, list[PoolProvider]]],
-    auctions: dict[str, dict[str, AuctionProvider]],
-    ctx: Ctx,
-) -> tuple[str, dict[str, list[Edge]]]:
-    """
-    Gets all denoms which have a direct conncetion to the src denom,
-    including cross-chain connections.
-    """
-
-    if not ctx.state:
-        return (src, {})
-
-    logger.debug("Fetching weights for src %s", src)
-
-    # Also include providers for all denoms that this src is associated with
-    if src not in ctx.state.denom_cache:
-        denom_infos = await denom_info(
-            "neutron-1",
-            src,
-            ctx.http_session,
-        )
-
-        ctx.state.denom_cache[src] = {
-            info.chain_id: info.denom
-            for info in (
-                denom_infos
-                + [
-                    DenomChainInfo(
-                        denom=src,
-                        port=None,
-                        channel=None,
-                        chain_id="neutron-1",
-                    )
-                ]
-            )
-            if info.chain_id
-        }
-
-    matching_denoms: dict[str, str] = ctx.state.denom_cache.get(src, {})
-
-    providers_for_pair: list[tuple[str, str, Union[PoolProvider, AuctionProvider]]] = [
-        *(
-            (src, pair, pool)
-            for (pair, pool_set) in pools.get(src, {}).items()
-            for pool in pool_set
-        ),
-        *((src, pair, auction) for (pair, auction) in auctions.get(src, {}).items()),
-        *(
-            (src, pair, pool)
-            for denom in matching_denoms.values()
-            for (pair, pool_set) in pools.get(denom, {}).items()
-            for pool in pool_set
-        ),
-        *(
-            (src, pair, auction)
-            for denom in matching_denoms.values()
-            for (pair, auction) in auctions.get(denom, {}).items()
-        ),
-    ]
-
-    logger.debug("Getting edge weights for %d peer pools", len(providers_for_pair))
-
-    with_weights: list[tuple[str, Optional[Edge]]] = await asyncio.gather(
-        *(
-            pair_provider_edge(src, pair, provider)
-            for (src, pair, provider) in providers_for_pair
-        )
-    )
-
-    pair_edges: dict[str, list[Edge]] = {}
-
-    for pair, edge in with_weights:
-        if edge is None:
-            continue
-
-        pair_edges[pair] = pair_edges.get(pair, []) + [edge]
-
-    return (src, pair_edges)
-
-
 async def strategy(
     ctx: Ctx,
     pools: dict[str, dict[str, list[PoolProvider]]],
@@ -253,9 +221,9 @@ async def strategy(
     """
 
     if not ctx.state:
-        ctx.state = State({}, {})
+        ctx.state = State({}, {}, {})
 
-    ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions))
+    ctx = ctx.with_state(await ctx.state.poll(ctx, pools, auctions))
 
     if ctx.cli_args["cmd"] == "dump":
         return ctx.cancel()
@@ -365,39 +333,84 @@ async def route_bellman_ford(
     while len(to_explore) != 0:
         pair = to_explore.popleft()
 
-        def providers_for(a: str, b: str) -> Iterator[Leg]:
-            providers = (
+        async def providers_for(a: str) -> Iterator[Leg]:
+            if not a in ctx.state.denom_cache:
+                denom_infos = await denom_info(
+                    (
+                        "neutron-1"
+                        if not a in ctx.state.chain_cache
+                        else ctx.state.chain_cache[a]
+                    ),
+                    src,
+                    ctx.http_session,
+                )
+
+                all_denom_infos = denom_infos + [
+                    DenomChainInfo(
+                        denom=src,
+                        port=None,
+                        channel=None,
+                        chain_id="neutron-1",
+                    )
+                ]
+
+                ctx.state.denom_cache[pair] = {
+                    info.chain_id: info.denom
+                    for info in all_denom_infos
+                    if info.chain_id
+                }
+
+                for info in all_denom_infos:
+                    if not info.chain_id:
+                        continue
+
+                    ctx.state.chain_cache[info.denom] = info.chain_id
+
+            providers: set[Union[AuctionProvider, PoolProvider]] = {
                 x
                 for x in (
-                    *pools.get(a, {}).get(b, []),
-                    *[auctions.get(a, {}).get(b, None)],
+                    *pools.get(a, {}).values(),
+                    *(
+                        pools.get(a_denom, {}).values()
+                        for a_denom in ctx.state.denom_cache.get(a, {}).values()
+                    ),
+                    *[auctions.get(a, {}).values()],
+                    *(
+                        auctions.get(a, {}).values()
+                        for a_denom in ctx.state.denom_cache.get(a, {}).values()
+                    ),
                 )
                 if x
-            )
+            }
 
             return (
                 Leg(
-                    prov.asset_a if prov.asset_a() == a else prov.asset_b,
-                    prov.asset_b if prov.asset_a() == a else prov.asset_a,
+                    (
+                        prov.asset_a
+                        if prov.asset_a() == a
+                        or prov.asset_a() in ctx.state.denom_cache.get(a)
+                        else prov.asset_b
+                    ),
+                    (
+                        prov.asset_b
+                        if prov.asset_a() == a
+                        or prov.asset_a() in ctx.state.denom_cache.get(a)
+                        else prov.asset_a
+                    ),
                     prov,
                 )
                 for prov in providers
             )
 
-        if not src in ctx.state.weights_cache:
-            pair_edges_for: tuple[str, dict[str, list[Edge]]] = await weights_for(
-                src, pools, auctions, ctx
-            )
-            ctx.state.weights_cache[src] = pair_edges_for[1]
+        for provider in await providers_for(pair):
+            edges_for = ctx.state.weights.get(provider, {})
+            match_pair = provider.out_asset()
 
-        edges_for = ctx.state.weights_cache.get(src, {})
+            if not edges_for:
+                continue
 
-        if not edges_for:
-            continue
-
-        for match_pair, edges in edges_for.items():
-            # Get all pools that convert between these two assets
-            for provider in providers_for(pair, match_pair):
+            for match_pair, edges in edges_for.items():
+                # Get all pools that convert between these two assets
                 pair_edge: tuple[str, Optional[Edge]] = await pair_provider_edge(
                     src, pair, provider.backend
                 )
@@ -422,7 +435,7 @@ async def route_bellman_ford(
 
                         return path
 
-                    if pair not in to_explore:
-                        to_explore.appendleft(pair)
+                if pair not in to_explore:
+                    to_explore.appendleft(pair)
 
     return None
