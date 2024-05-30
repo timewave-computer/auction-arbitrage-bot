@@ -22,7 +22,7 @@ from src.util import (
 )
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
-from src.strategies.naive import strategy
+from src.strategies.bellman_ford import strategy
 from dotenv import load_dotenv
 import aiohttp
 import grpc
@@ -46,6 +46,7 @@ async def main() -> None:
     parser.add_argument("-p", "--poll_interval", default=120)
     parser.add_argument("-d", "--discovery_interval", default=600)
     parser.add_argument("-nh", "--hops", default=3)
+    parser.add_argument("-np", "--pools", default=None)
     parser.add_argument(
         "-r",
         "--require_leg_types",
@@ -60,7 +61,7 @@ async def main() -> None:
     parser.add_argument(
         "-pm",
         "--profit_margin",
-        default=1000,
+        default=500,
     )
     parser.add_argument(
         "-l",
@@ -148,6 +149,7 @@ async def main() -> None:
                 "poll_interval": int(args.poll_interval),
                 "discovery_interval": int(args.discovery_interval),
                 "hops": int(args.hops),
+                "pools": int(args.pools) if args.pools else None,
                 "require_leg_types": args.require_leg_types,
                 "base_denom": args.base_denom,
                 "profit_margin": int(args.profit_margin),
@@ -232,18 +234,17 @@ async def main() -> None:
 
         logger.info("Built pool catalogue with %d pools", n_pools)
 
-        async def event_loop():
-            # Continuously poll the strategy on the specified interval
-            schedule.every(args.poll_interval).seconds.do(sched.poll)
+        async def event_loop() -> None:
+            while True:
+                await sched.poll()
 
-            await sched.poll()
-
-            while not sched.ctx.terminated:
-                schedule.run_pending()
+        def daemon() -> None:
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(event_loop())
 
         # Save pools to the specified file if the user wants to dump pools
         if args.cmd is not None and args.cmd == "daemon":
-            Process(target=event_loop, args=[]).run()
+            Process(target=daemon, args=[]).run()
             logger.info("Spawned searcher daemon")
 
             return

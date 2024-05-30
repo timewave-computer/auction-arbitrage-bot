@@ -224,6 +224,12 @@ async def eval_route(
 
         return None
 
+    logger.debug(
+        "Route is profitable with realizable profit of %d: %s",
+        profit,
+        fmt_route_debug(route),
+    )
+
     # Queue the route for execution, since it is profitable
     return (profit, quantities, route)
 

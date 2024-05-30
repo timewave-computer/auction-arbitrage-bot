@@ -468,6 +468,8 @@ async def quantities_for_route_profit(
 
         starting_amount = int(Decimal(starting_amount) / Decimal(2.0))
 
+    print(quantities, target_profit)
+
     logger.debug("Got execution plan: %s", quantities)
 
     if quantities[-1] - quantities[0] > 0:

@@ -2,6 +2,8 @@
 Implements an arbitrage strategy based on bellman ford.
 """
 
+from collections import deque
+import random
 from queue import Queue
 import json
 from functools import reduce
@@ -22,7 +24,12 @@ from src.contracts.auction import AuctionProvider
 from src.contracts.pool.provider import PoolProvider
 from src.contracts.leg import Leg
 from src.scheduler import Ctx
-from src.strategies.util import fmt_route, exec_arb, route_base_denom_profit
+from src.strategies.util import (
+    fmt_route,
+    exec_arb,
+    route_base_denom_profit,
+    quantities_for_route_profit,
+)
 from src.util import (
     DISCOVERY_CONCURRENCY_FACTOR,
     denom_info,
@@ -58,6 +65,25 @@ class State:
     # and all auctions/pools that provide the pairing,
     # with their weight
     denom_cache: dict[str, dict[str, str]]
+
+    # Edge weights for providers representing a connection
+    # between a base denom and a pair denom
+    weights_cache: dict[str, dict[str, list[Edge]]]
+
+    def poll(
+        self,
+        ctx: Ctx,
+        pools: dict[str, dict[str, list[PoolProvider]]],
+        auctions: dict[str, dict[str, AuctionProvider]],
+    ) -> Self:
+        """
+        Polls the state for a potential update, leaving the state
+        alone, or producing a new state.
+        """
+
+        self.weights_cache = {}
+
+        return self
 
 
 async def pair_provider_edge(
@@ -140,12 +166,14 @@ async def weights_for(
     pools: dict[str, dict[str, list[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
     ctx: Ctx,
-    n_denoms: Queue[int],
 ) -> tuple[str, dict[str, list[Edge]]]:
     """
     Gets all denoms which have a direct conncetion to the src denom,
     including cross-chain connections.
     """
+
+    if not ctx.state:
+        return (src, {})
 
     logger.debug("Fetching weights for src %s", src)
 
@@ -212,8 +240,6 @@ async def weights_for(
 
         pair_edges[pair] = pair_edges.get(pair, []) + [edge]
 
-    logger.debug("Got weights for denom #%d", n_denoms.get())
-
     return (src, pair_edges)
 
 
@@ -227,7 +253,9 @@ async def strategy(
     """
 
     if not ctx.state:
-        ctx.state = State({})
+        ctx.state = State({}, {})
+
+    ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions))
 
     if ctx.cli_args["cmd"] == "dump":
         return ctx.cancel()
@@ -261,8 +289,23 @@ async def strategy(
     if not balance_resp:
         return ctx
 
-    profit = route_base_denom_profit(
+    profit = await route_base_denom_profit(
         balance_resp,
+        route,
+    )
+
+    if profit < ctx.cli_args["profit_margin"]:
+        logger.debug(
+            "Route is not profitable with profit of %d: %s",
+            profit,
+            fmt_route(route),
+        )
+
+        return ctx
+
+    profit, quantities = await quantities_for_route_profit(
+        ctx.state.balance,
+        ctx.cli_args["profit_margin"],
         route,
     )
 
@@ -278,7 +321,7 @@ async def strategy(
     logger.info("Executing route with profit of %d: %s", profit, fmt_route(route))
 
     try:
-        await exec_arb(route, ctx)
+        await exec_arb(profit, quantities, route, ctx)
     except Exception as e:
         logger.error("Arb failed %s: %s", fmt_route(route), e)
 
@@ -295,84 +338,91 @@ async def route_bellman_ford(
     ctx: Ctx,
 ) -> Optional[list[Leg]]:
     """
-    Searches for profitable arbitrage routes via the recorded weights.
+    Searches for profitable arbitrage routes by finding negative cycles in the graph.
     """
 
     if not ctx.state:
         return None
 
-    denoms = {*pools.keys(), *auctions.keys()}
+    vertices: set[str] = {*pools.keys(), *auctions.keys()}
 
-    n_denoms_fetch: Queue[int] = Queue()
+    if ctx.cli_args["pools"]:
+        vertices = set(random.sample(sorted(vertices), ctx.cli_args["pools"] - 1))
 
-    for i in range(len(denoms)):
-        n_denoms_fetch.put(i)
+    vertices = {*vertices, ctx.cli_args["base_denom"]}
 
-    tup_denom_pair_edges = await asyncio.gather(
-        *[weights_for(denom, pools, auctions, ctx, n_denoms_fetch) for denom in denoms]
-    )
-    denom_pair_edges: dict[str, dict[str, list[Edge]]] = {
-        denom: pair_edges for (denom, pair_edges) in tup_denom_pair_edges
-    }
+    # How far a given denom is from the `src` denom
+    distances: dict[str, Decimal] = {vertex: Decimal("inf") for vertex in vertices}
+    distances[src] = Decimal(0)
+    pred: dict[str, Leg] = {}
 
-    dist: dict[str, tuple[Decimal, Optional[Edge]]] = {
-        denom: (Decimal("inf"), None) for denom in denoms
-    }
-    pred: dict[str, Optional[tuple[str, Edge]]] = {denom: None for denom in denoms}
+    # Number of times a vertex has been visited
+    visits: dict[str, int] = {vertex: 0 for vertex in vertices}
 
-    dist[src] = (Decimal(0), None)
+    to_explore: deque[str] = deque()
+    to_explore.append(src)
 
-    for denom in denoms:
-        logger.debug("Relaxing edges for %s", denom)
+    while len(to_explore) != 0:
+        pair = to_explore.popleft()
 
-        pair_edges = denom_pair_edges[denom]
+        def providers_for(a: str, b: str) -> Iterator[Leg]:
+            providers = (
+                x
+                for x in (
+                    *pools.get(a, {}).get(b, []),
+                    *[auctions.get(a, {}).get(b, None)],
+                )
+                if x
+            )
 
-        for pair, edges in pair_edges.items():
-            for edge in edges:
-                if dist[denom][0] + edge.weight >= dist[pair][0]:
+            return (
+                Leg(
+                    prov.asset_a if prov.asset_a() == a else prov.asset_b,
+                    prov.asset_b if prov.asset_a() == a else prov.asset_a,
+                    prov,
+                )
+                for prov in providers
+            )
+
+        if not src in ctx.state.weights_cache:
+            pair_edges_for: tuple[str, dict[str, list[Edge]]] = await weights_for(
+                src, pools, auctions, ctx
+            )
+            ctx.state.weights_cache[src] = pair_edges_for[1]
+
+        edges_for = ctx.state.weights_cache.get(src, {})
+
+        if not edges_for:
+            continue
+
+        for match_pair, edges in edges_for.items():
+            # Get all pools that convert between these two assets
+            for provider in providers_for(pair, match_pair):
+                pair_edge: tuple[str, Optional[Edge]] = await pair_provider_edge(
+                    src, pair, provider.backend
+                )
+                _, edge = pair_edge
+
+                if not edge:
                     continue
 
-                dist[pair] = (dist[denom][0] + edge.weight, edge)
-                pred[pair] = (denom, edge)
+                if distances[pair] + edge.weight < distances[match_pair]:
+                    distances[match_pair] = distances[pair] + edge.weight
+                    pred[match_pair] = edge.backend
+                    visits[match_pair] = visits[pair] + 1
 
-    for denom, pair_edges in denom_pair_edges.items():
-        for pair, edges in pair_edges.items():
-            for edge in edges:
-                if dist[denom][0] + edge.weight >= dist[pair][0]:
-                    continue
+                    # Find the negative cycle
+                    if visits[match_pair] == len(vertices):
+                        curr: Leg = pred[src]
+                        path: list[Leg] = [curr]
 
-                pred[pair] = (denom, edge)
+                        while curr.in_asset() != src:
+                            path.append(pred[curr.in_asset()])
+                            curr = pred[curr.in_asset()]
 
-                visited = set()
-                visited.add(pair)
+                        return path
 
-                while not denom in visited:
-                    visited.add(denom)
-
-                    pred_denom = pred[denom]
-
-                    if not pred_denom:
-                        continue
-
-                    denom = pred_denom[0]
-
-                pred_denom = pred[denom]
-
-                if not pred_denom:
-                    continue
-
-                path: list[Leg] = [pred_denom[1].backend]
-                pair = pred_denom[0]
-
-                while pair != denom:
-                    pred_pair = pred[pair]
-
-                    if not pred_pair:
-                        break
-
-                    path = [pred_pair[1].backend] + path
-                    pair = pred_pair[0]
-
-                return path
+                    if pair not in to_explore:
+                        to_explore.appendleft(pair)
 
     return None
