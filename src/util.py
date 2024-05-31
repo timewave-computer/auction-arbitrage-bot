@@ -36,6 +36,11 @@ EVALUATION_CONCURRENCY_FACTOR = 10
 MAX_TRADE_IN_POOL_FRACTION = 0.05
 
 
+# The quantity of a denom below which
+# it is no longer worthwhile checking for profit
+DENOM_QUANTITY_ABORT_ARB = 50
+
+
 NEUTRON_NETWORK_CONFIG = NetworkConfig(
     chain_id="neutron-1",
     url="grpc+http://grpc-kralum.neutron-1.neutron.org:80",
@@ -152,9 +157,7 @@ async def try_query_multiple(
 
                 try:
                     return cast(dict[str, Any], await resp.json())
-                except RuntimeError:
-                    continue
-                except ValueError:
+                except (RuntimeError, ValueError, grpc.aio._call.AioRpcError):
                     continue
 
             continue
@@ -172,9 +175,7 @@ async def try_query_multiple(
                 continue
 
             return cast(dict[str, Any], json.loads(resp.data))
-        except RuntimeError:
-            continue
-        except ValueError:
+        except (RuntimeError, ValueError, grpc.aio._call.AioRpcError):
             continue
 
         continue

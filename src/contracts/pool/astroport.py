@@ -162,7 +162,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
                 return 0
 
             return int(simulated_pricing_info["offer_amount"])
-        except _InactiveRpcError as e:
+        except (_InactiveRpcError, grpc.aio._call.AioRpcError) as e:
             details = e.details()
 
             # The pool has no assets in it

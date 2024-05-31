@@ -110,19 +110,30 @@ class State:
         ) -> tuple[
             Union[AuctionProvider, PoolProvider], Optional[Edge], Optional[Edge]
         ]:
+            edge_a_b = await pair_provider_edge(
+                vertex.asset_a(), vertex.asset_b(), vertex
+            )
+
             try:
                 return (
                     vertex,
                     (
-                        await pair_provider_edge(
-                            vertex.asset_a(), vertex.asset_b(), vertex
-                        )
-                    )[1],
+                        Edge(edge_a_b[1].backend, -Decimal.ln(edge_a_b[1].weight))
+                        if edge_a_b[1]
+                        else None
+                    ),
                     (
-                        await pair_provider_edge(
-                            vertex.asset_b(), vertex.asset_a(), vertex
+                        Edge(
+                            Leg(
+                                edge_a_b[1].backend.out_asset,
+                                edge_a_b[1].backend.in_asset,
+                                edge_a_b[1].backend.backend,
+                            ),
+                            -Decimal.ln(Decimal(1) / edge_a_b[1].weight),
                         )
-                    )[1],
+                        if edge_a_b[1]
+                        else None
+                    ),
                 )
             except asyncio.TimeoutError:
                 return (vertex, None, None)
@@ -139,8 +150,6 @@ class State:
         self.weights = {prov: (edge_a, edge_b) for prov, edge_a, edge_b in weights}
 
         logger.info("Got %d weights", len(self.weights.values()))
-
-        print(self.weights)
 
         return self
 
@@ -174,7 +183,7 @@ async def pair_provider_edge(
                     ),
                     provider,
                 ),
-                -Decimal.ln(int_to_decimal(await provider.exchange_rate())),
+                int_to_decimal(await provider.exchange_rate()),
             ),
         )
 
@@ -203,7 +212,7 @@ async def pair_provider_edge(
                     ),
                     provider,
                 ),
-                -Decimal.ln(Decimal(balance_asset_b) / Decimal(balance_asset_a)),
+                Decimal(balance_asset_b) / Decimal(balance_asset_a),
             ),
         )
 
@@ -215,7 +224,7 @@ async def pair_provider_edge(
                 (provider.asset_b if provider.asset_a() == pair else provider.asset_a),
                 provider,
             ),
-            -Decimal.ln(Decimal(balance_asset_a) / Decimal(balance_asset_b)),
+            Decimal(balance_asset_a) / Decimal(balance_asset_b),
         ),
     )
 
@@ -242,7 +251,7 @@ async def strategy(
         "Finding profitable routes",
     )
 
-    route = await route_bellman_ford(
+    route_profit = await route_bellman_ford(
         ctx.cli_args["base_denom"],
         pools,
         auctions,
@@ -250,10 +259,12 @@ async def strategy(
         ctx,
     )
 
-    if not route:
+    if not route_profit:
         return ctx
 
-    logger.debug("Route queued: %s", fmt_route(route))
+    profit, route = route_profit
+
+    logger.info("Route queued (%d): %s", profit, fmt_route(route))
 
     balance_resp = try_multiple_clients(
         ctx.clients["neutron"],
@@ -266,13 +277,10 @@ async def strategy(
     if not balance_resp:
         return ctx
 
-    profit = await route_base_denom_profit(
-        balance_resp,
-        route,
-    )
+    profit = await route_base_denom_profit(balance_resp, route)
 
     if profit < ctx.cli_args["profit_margin"]:
-        logger.debug(
+        logger.info(
             "Route is not profitable with profit of %d: %s",
             profit,
             fmt_route(route),
@@ -281,7 +289,7 @@ async def strategy(
         return ctx
 
     profit, quantities = await quantities_for_route_profit(
-        ctx.state.balance,
+        balance_resp,
         ctx.cli_args["profit_margin"],
         route,
     )
@@ -313,7 +321,7 @@ async def route_bellman_ford(
     auctions: dict[str, dict[str, AuctionProvider]],
     required_leg_types: set[str],
     ctx: Ctx,
-) -> Optional[list[Leg]]:
+) -> Optional[tuple[int, list[Leg]]]:
     """
     Searches for profitable arbitrage routes by finding negative cycles in the graph.
     """
@@ -331,7 +339,9 @@ async def route_bellman_ford(
     # How far a given denom is from the `src` denom
     distances: dict[str, Decimal] = {vertex: Decimal("inf") for vertex in vertices}
     distances[src] = Decimal(0)
-    pred: dict[str, Leg] = {}
+
+    pred: dict[str, str] = {}
+    pair_leg: dict[(str, str), Leg] = {}
 
     # Number of times a vertex has been visited
     visits: dict[str, int] = {vertex: 0 for vertex in vertices}
@@ -419,37 +429,77 @@ async def route_bellman_ford(
             )
 
         for provider in await providers_for(pair):
-            edges_for = ctx.state.weights.get(provider, {})
+            edges_for = list(ctx.state.weights.get(provider.backend, ()))
             match_pair = provider.out_asset()
 
             if not edges_for:
                 continue
 
-            for match_pair, edges in edges_for.items():
-                # Get all pools that convert between these two assets
-                pair_edge: tuple[str, Optional[Edge]] = await pair_provider_edge(
-                    src, pair, provider.backend
-                )
-                _, edge = pair_edge
-
-                if not edge:
+            for edge in edges_for:
+                if (
+                    edge.backend.in_asset() != pair
+                    and edge.backend.in_asset()
+                    not in ctx.state.denom_cache.get(pair, {}).values()
+                ):
                     continue
 
-                if distances[pair] + edge.weight < distances[match_pair]:
-                    distances[match_pair] = distances[pair] + edge.weight
-                    pred[match_pair] = edge.backend
+                pair_denom = (
+                    edge.backend.out_asset()
+                    if edge.backend.out_asset() == pair
+                    or edge.backend.out_asset()
+                    in ctx.state.denom_cache.get(pair, {}).values()
+                    else edge.backend.in_asset()
+                )
+                match_pair = (
+                    edge.backend.in_asset()
+                    if edge.backend.in_asset() != pair_denom
+                    else edge.backend.out_asset()
+                )
+
+                if (
+                    distances[pair] + edge.weight < distances[match_pair]
+                    or distances[pair_denom] + edge.weight < distances[match_pair]
+                ):
+                    distances[match_pair] = min(
+                        distances[pair] + edge.weight,
+                        distances[pair_denom] + edge.weight,
+                    )
+                    pred[match_pair] = (
+                        pair
+                        if distances[pair] + edge.weight
+                        < distances[pair_denom] + edge.weight
+                        else pair_denom
+                    )
+                    pair_leg[(match_pair, pair_denom)] = edge.backend
                     visits[match_pair] = visits[pair] + 1
 
                     # Find the negative cycle
                     if visits[match_pair] == len(vertices):
-                        curr: Leg = pred[src]
-                        path: list[Leg] = [curr]
+                        print(pred)
 
-                        while curr.in_asset() != src:
-                            path.append(pred[curr.in_asset()])
-                            curr = pred[curr.in_asset()]
+                        curr: str = src
+                        to_visit: deque[str] = deque()
 
-                        return path
+                        while not curr in to_visit:
+                            to_visit.appendleft(curr)
+                            curr = pred[curr]
+
+                        path = [curr]
+
+                        while to_visit[0] != curr:
+                            path.append(to_visit.popleft())
+
+                        path.append(curr)
+
+                        legs = []
+
+                        for i in range(len(path) - 1):
+                            curr = path[i]
+                            next_denom = path[i + 1]
+
+                            legs.append(pair_leg[(curr, next_denom)])
+
+                        return (distances[src], legs)
 
                 if pair not in to_explore:
                     to_explore.appendleft(pair)

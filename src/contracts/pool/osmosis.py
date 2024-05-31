@@ -241,6 +241,9 @@ class OsmosisPoolProvider(PoolProvider):
             "address": self.address,
         }
 
+    def __hash__(self) -> int:
+        return hash(self.pool_id)
+
 
 class OsmosisPoolDirectory:
     """

@@ -28,6 +28,7 @@ from src.util import (
     DenomChainInfo,
     denom_info_on_chain,
     MAX_TRADE_IN_POOL_FRACTION,
+    DENOM_QUANTITY_ABORT_ARB,
 )
 from src.scheduler import Ctx
 import urllib3
@@ -401,7 +402,6 @@ async def transfer(
 
 async def quantities_for_route_profit(
     starting_amount: int,
-    target_profit: int,
     route: list[Leg],
 ) -> tuple[int, list[int]]:
     """
@@ -409,7 +409,7 @@ async def quantities_for_route_profit(
     a net profit of `profit` by traversing the route.
     """
 
-    if len(route) == 0:
+    if len(route) <= 1:
         return (0, [])
 
     starting_amount = min(
@@ -426,11 +426,11 @@ async def quantities_for_route_profit(
 
     quantities: list[int] = [starting_amount]
 
-    while quantities[-1] - quantities[0] < target_profit:
-        if starting_amount < target_profit:
+    while quantities[-1] - quantities[0] <= 0:
+        if starting_amount < DENOM_QUANTITY_ABORT_ARB:
             logger.debug(
                 "Hit investment backstop (%d) in route planning: %s (%s)",
-                target_profit,
+                DENOM_QUANTITY_ABORT_ARB,
                 starting_amount,
                 quantities,
             )
@@ -472,9 +472,86 @@ async def quantities_for_route_profit(
     logger.debug("Got execution plan: %s", quantities)
 
     if quantities[-1] - quantities[0] > 0:
-        logger.debug("Route is profitable: %s", fmt_route(route))
+        logger.info("Route is profitable: %s", fmt_route(route))
 
     return (quantities[-1] - quantities[0], quantities)
+
+
+async def starting_quantity_for_route_profit(
+    starting_amount: int,
+    route: list[Leg],
+) -> int:
+    """
+    Calculates what quantities should be used to obtain
+    a net profit of `profit` by traversing the route.
+
+    Investment quantities are calculated using the
+    min liqiudity pool in the route.
+    """
+
+    if len(route) == 0:
+        return 0
+
+    async def leg_liquidity(leg: Leg, index: int) -> list[tuple[str, int, int]]:
+        if isinstance(leg.backend, AuctionProvider):
+            return [
+                (leg.backend.asset_b(), await leg.backend.remaining_asset_b(), index)
+            ]
+
+        return [
+            (leg.backend.asset_a(), await leg.backend.balance_asset_a(), index),
+            (leg.backend.asset_b(), await leg.backend.balance_asset_b(), index),
+        ]
+
+    with_liquidity: list[tuple[str, int, int]] = [
+        denom_liquidity
+        for (i, leg) in enumerate(route)
+        for denom_liquidity in await leg_liquidity(leg, i)
+    ]
+    min_liquidity: tuple[str, int, int] = min(
+        with_liquidity, key=lambda liq_pair: liq_pair[1]
+    )
+
+    # "Back-prop" the lowest liqiudity so that all trades are in-line
+    # with lowest liqiudity
+    prev_backprop = []
+
+    for i in range(min_liquidity[2], -1, -1):
+        leg = route[i]
+
+        if i == min_liquidity[2]:
+            if min_liquidity[0] == leg.in_asset():
+                prev_backprop.append(int(MAX_TRADE_IN_POOL_FRACTION * min_liquidity[1]))
+                continue
+
+            if leg.in_asset == leg.backend.asset_a:
+                prev_backprop.append(
+                    await leg.backend.reverse_simulate_swap_asset_b(
+                        int(MAX_TRADE_IN_POOL_FRACTION * min_liquidity[1])
+                    )
+                )
+                continue
+
+            prev_backprop.append(
+                await leg.backend.reverse_simulate_swap_asset_a(
+                    int(MAX_TRADE_IN_POOL_FRACTION * min_liquidity[1])
+                )
+            )
+            continue
+
+        if leg.in_asset == leg.backend.asset_a:
+            prev_backprop.append(
+                await leg.backend.reverse_simulate_swap_asset_b(prev_backprop[-1])
+            )
+            continue
+
+        prev_backprop.append(
+            await leg.backend.reverse_simulate_swap_asset_a(prev_backprop[-1])
+        )
+
+    quantities = list(reversed(prev_backprop))
+
+    return min(quantities[0], starting_amount)
 
 
 async def route_base_denom_profit(

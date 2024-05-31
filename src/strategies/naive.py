@@ -34,6 +34,7 @@ from src.strategies.util import (
     fmt_route,
     fmt_route_debug,
     fmt_route_leg,
+    starting_quantity_for_route_profit,
 )
 from src.util import (
     DenomChainInfo,
@@ -206,10 +207,11 @@ async def eval_route(
         fmt_route_debug(route),
     )
 
+    starting_amt = await starting_quantity_for_route_profit(ctx.state.balance, route)
+
     # Second pass: could we reasonably profit from this arb?
     profit, quantities = await quantities_for_route_profit(
-        ctx.state.balance,
-        ctx.cli_args["profit_margin"],
+        starting_amt,
         route,
     )
 

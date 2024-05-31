@@ -22,7 +22,7 @@ from src.util import (
 )
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
-from src.strategies.bellman_ford import strategy
+from src.strategies.naive import strategy
 from dotenv import load_dotenv
 import aiohttp
 import grpc
