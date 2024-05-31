@@ -20,6 +20,7 @@
             cosmpy
             schedule
             python-dotenv
+            aiostream
             (skipCheckTests aiohttp)
             (skipCheckTests aiodns)
           ]);

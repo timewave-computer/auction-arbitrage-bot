@@ -11,7 +11,7 @@ import threading
 from queue import Queue
 from decimal import Decimal
 import json
-from typing import List, Union, Optional, Self, Any, Callable, Iterator
+from typing import List, Union, Optional, Self, Any, Callable, Iterator, AsyncGenerator
 from datetime import datetime, timedelta
 import time
 from collections import deque
@@ -61,6 +61,7 @@ import grpc
 import schedule
 from schedule import Scheduler
 import aiohttp
+from aiostream import stream
 
 logger = logging.getLogger(__name__)
 
@@ -116,55 +117,34 @@ async def strategy(
     if ctx.cli_args["cmd"] == "dump":
         return ctx.cancel()
 
-    workers = []
-
-    # Routes to evaluate for profitability, and routes to execute
-    to_exec: Queue[tuple[int, int, List[Leg]]] = Queue(maxsize=0)
-
     # Report route stats to user
     logger.info(
         "Finding profitable routes",
     )
 
-    def exec_loop() -> None:
-        asyncio.set_event_loop(asyncio.new_event_loop())
-
-        while True:
-            (quantities, profit, route) = to_exec.get()
-
-            logger.debug("Route queued: %s", fmt_route(route))
-
-            if not ctx.state.balance:
-                continue
-
-            logger.info(
-                "Executing route with profit of %d: %s", profit, fmt_route(route)
-            )
-
-            try:
-                asyncio.run(exec_arb(route, quantities, profit, ctx))
-
-                logger.info("Executed route successfully: %s", fmt_route(route))
-            except Exception as e:
-                logger.error("Arb failed %s: %s", fmt_route(route), e)
-            finally:
-                ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions))
-
-    workers.append(threading.Thread(target=exec_loop, args=[]))
-    workers[-1].start()
-
-    await listen_routes_with_depth_dfs(
-        to_exec,
+    async for quantities, profit, route in listen_routes_with_depth_dfs(
         ctx.cli_args["hops"],
         ctx.cli_args["base_denom"],
         set(ctx.cli_args["require_leg_types"]),
         pools,
         auctions,
         ctx,
-    )
+    ):
+        logger.info("Route queued: %s", fmt_route(route))
 
-    for worker in workers:
-        worker.join()
+        if not ctx.state.balance:
+            continue
+
+        logger.info("Executing route with profit of %d: %s", profit, fmt_route(route))
+
+        try:
+            asyncio.run(exec_arb(route, quantities, profit, ctx))
+
+            logger.info("Executed route successfully: %s", fmt_route(route))
+        except Exception as e:
+            logger.error("Arb failed %s: %s", fmt_route(route), e)
+        finally:
+            ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions))
 
     logger.info("Completed arbitrage round")
 
@@ -250,14 +230,13 @@ async def leg_liquidity(leg: Leg) -> tuple[int, int]:
 
 
 async def listen_routes_with_depth_dfs(
-    routes: Queue[tuple[int, int, list[Leg]]],
     depth: int,
     src: str,
     required_leg_types: set[str],
     pools: dict[str, dict[str, List[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
     ctx: Ctx,
-) -> None:
+) -> AsyncGenerator[tuple[int, int, list[Leg]], None]:
     denom_cache: dict[str, dict[str, str]] = {}
 
     start_pools: list[Union[AuctionProvider, PoolProvider]] = [
@@ -276,11 +255,12 @@ async def listen_routes_with_depth_dfs(
 
     random.shuffle(start_legs)
 
-    async def next_legs(path: list[Leg]) -> None:
+    async def next_legs(
+        path: list[Leg],
+    ) -> AsyncGenerator[tuple[int, int, list[Leg]], None]:
         logger.debug("Searching for next leg in path: %s", fmt_route(path))
 
         nonlocal denom_cache
-        nonlocal routes
 
         if len(path) >= 2:
             assert (
@@ -327,7 +307,7 @@ async def listen_routes_with_depth_dfs(
             if not resp:
                 return
 
-            routes.put(resp)
+            yield resp
 
             return
 
@@ -427,6 +407,14 @@ async def listen_routes_with_depth_dfs(
             }
         )
 
-        await asyncio.gather(*[next_legs(path + [pool]) for pool in next_pools])
+        routes = stream.merge(*[next_legs(path + [pool]) for pool in next_pools])
 
-    await asyncio.gather(*[next_legs([leg]) for leg in start_legs])
+        async with routes.stream() as streamer:
+            async for route in streamer:
+                yield route
+
+    routes = stream.merge(*[next_legs([leg]) for leg in start_legs])
+
+    async with routes.stream() as streamer:
+        async for route in streamer:
+            yield route
