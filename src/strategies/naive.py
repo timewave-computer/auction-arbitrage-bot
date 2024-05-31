@@ -17,7 +17,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 import logging
-from src.contracts.leg import Leg
+from src.contracts.route import Leg
 from src.contracts.pool.provider import PoolProvider
 from src.contracts.pool.osmosis import OsmosisPoolProvider
 from src.contracts.pool.astroport import (

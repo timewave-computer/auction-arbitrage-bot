@@ -22,7 +22,7 @@ from src.contracts.pool.astroport import NeutronAstroportPoolProvider
 from src.contracts.pool.osmosis import OsmosisPoolProvider
 from src.contracts.auction import AuctionProvider
 from src.contracts.pool.provider import PoolProvider
-from src.contracts.leg import Leg
+from src.contracts.route import Leg
 from src.scheduler import Ctx
 from src.strategies.util import (
     fmt_route,
