@@ -35,6 +35,8 @@
             black
             osmosis
             neutron
+            jq
+            lz4
           ];
 
           packages = [ pythonWithPackages ];
@@ -42,6 +44,7 @@
           shellHook = ''
             export PYTHONPATH=src:build/gen
             make proto
+            make genesis
           '';
         };
       });
