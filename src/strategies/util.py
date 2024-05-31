@@ -429,9 +429,10 @@ async def quantities_for_route_profit(
     while quantities[-1] - quantities[0] < target_profit:
         if starting_amount < target_profit:
             logger.debug(
-                "Hit investment backstop (%d) in route planning: %s",
+                "Hit investment backstop (%d) in route planning: %s (%s)",
                 target_profit,
                 starting_amount,
+                quantities,
             )
 
             return (0, [])
@@ -467,8 +468,6 @@ async def quantities_for_route_profit(
             quantities.append(int(await leg.backend.simulate_swap_asset_b(prev_amt)))
 
         starting_amount = int(Decimal(starting_amount) / Decimal(2.0))
-
-    print(quantities, target_profit)
 
     logger.debug("Got execution plan: %s", quantities)
 

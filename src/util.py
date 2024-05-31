@@ -23,7 +23,7 @@ DENOM_RESOLVER_TIMEOUT_SEC = 5
 
 # Dictates the maximum number of concurrent calls to the skip
 # API in searching
-DISCOVERY_CONCURRENCY_FACTOR = 50
+DISCOVERY_CONCURRENCY_FACTOR = 20
 
 
 # Dictates the maximum number of concurrent calls to pool providers

@@ -110,15 +110,22 @@ class State:
         ) -> tuple[
             Union[AuctionProvider, PoolProvider], Optional[Edge], Optional[Edge]
         ]:
-            return (
-                vertex,
-                (await pair_provider_edge(vertex.asset_a(), vertex.asset_b(), vertex))[
-                    1
-                ],
-                (await pair_provider_edge(vertex.asset_b(), vertex.asset_a(), vertex))[
-                    1
-                ],
-            )
+            try:
+                return (
+                    vertex,
+                    (
+                        await pair_provider_edge(
+                            vertex.asset_a(), vertex.asset_b(), vertex
+                        )
+                    )[1],
+                    (
+                        await pair_provider_edge(
+                            vertex.asset_b(), vertex.asset_a(), vertex
+                        )
+                    )[1],
+                )
+            except asyncio.TimeoutError:
+                return (vertex, None, None)
 
         # Calculate all ege weights
         weights: Iterator[tuple[Union[AuctionProvider, PoolProvider], Edge, Edge]] = (
@@ -131,7 +138,9 @@ class State:
 
         self.weights = {prov: (edge_a, edge_b) for prov, edge_a, edge_b in weights}
 
-        logger.info("Got %d weights", len(weights.values()))
+        logger.info("Got %d weights", len(self.weights.values()))
+
+        print(self.weights)
 
         return self
 
@@ -369,15 +378,22 @@ async def route_bellman_ford(
             providers: set[Union[AuctionProvider, PoolProvider]] = {
                 x
                 for x in (
-                    *pools.get(a, {}).values(),
                     *(
-                        pools.get(a_denom, {}).values()
-                        for a_denom in ctx.state.denom_cache.get(a, {}).values()
+                        pool
+                        for pool_set in pools.get(a, {}).values()
+                        for pool in pool_set
                     ),
-                    *[auctions.get(a, {}).values()],
                     *(
-                        auctions.get(a, {}).values()
+                        pool
                         for a_denom in ctx.state.denom_cache.get(a, {}).values()
+                        for pool_set in pools.get(a_denom, {}).values()
+                        for pool in pool_set
+                    ),
+                    *auctions.get(a, {}).values(),
+                    *(
+                        auction
+                        for a_denom in ctx.state.denom_cache.get(a, {}).values()
+                        for auction in auctions.get(a_denom, {}).values()
                     ),
                 )
                 if x

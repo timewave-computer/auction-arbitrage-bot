@@ -114,7 +114,8 @@ async def main() -> None:
     async with aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(
             force_close=True, limit_per_host=DISCOVERY_CONCURRENCY_FACTOR
-        )
+        ),
+        timeout=aiohttp.ClientTimeout(30),
     ) as session:
         ctx = Ctx(
             {

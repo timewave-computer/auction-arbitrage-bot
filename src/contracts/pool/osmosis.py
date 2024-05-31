@@ -166,7 +166,12 @@ class OsmosisPoolProvider(PoolProvider):
         ):
             return 0
 
-        return int(next(b for b in res["liquidity"] if b["denom"] == asset)["amount"])
+        amts = [b for b in res["liquidity"] if b["denom"] == asset]
+
+        if len(amts) == 0:
+            return 0
+
+        return int(amts[0]["amount"])
 
     async def simulate_swap_asset_a(self, amount: int) -> int:
         return await self.__exchange_rate(

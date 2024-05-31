@@ -341,25 +341,28 @@ async def listen_routes_with_depth_dfs(
         end = prev_pool.out_asset()
 
         if not end in denom_cache:
-            denom_infos = await denom_info(
-                prev_pool.backend.chain_id, end, ctx.http_session
-            )
-
-            denom_cache[end] = {
-                info.chain_id: info.denom
-                for info in (
-                    denom_infos
-                    + [
-                        DenomChainInfo(
-                            denom=end,
-                            port=None,
-                            channel=None,
-                            chain_id=prev_pool.backend.chain_id,
-                        )
-                    ]
+            try:
+                denom_infos = await denom_info(
+                    prev_pool.backend.chain_id, end, ctx.http_session
                 )
-                if info.chain_id
-            }
+
+                denom_cache[end] = {
+                    info.chain_id: info.denom
+                    for info in (
+                        denom_infos
+                        + [
+                            DenomChainInfo(
+                                denom=end,
+                                port=None,
+                                channel=None,
+                                chain_id=prev_pool.backend.chain_id,
+                            )
+                        ]
+                    )
+                    if info.chain_id
+                }
+            except asyncio.TimeoutError:
+                return
 
         # A pool is a candidate to be a next pool if it has a denom
         # contained in denom_cache[end] or one of its denoms *is* end

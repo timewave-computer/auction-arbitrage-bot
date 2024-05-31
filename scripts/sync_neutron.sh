@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -uxe
 
+# Cosmovisor conf
+export DAEMON_NAME=neutrond
+export DAEMON_HOME=$HOME/.neutrond
+export DAEMON_RESTART_AFTER_UPGRADE=true
+
+mkdir -p $HOME/.neutrond/cosmovisor/genesis/bin
+stat $HOME/.neutrond/cosmovisor/genesis/bin/neutrond || cp $(which neutrond) $HOME/.neutrond/cosmovisor/genesis/bin
+
 # Get "trust_hash" and "trust_height".
 INTERVAL=100
 LATEST_HEIGHT=$(curl -s https://rpc-kralum.neutron-1.neutron.org/block | jq -r .result.block.header.height)
@@ -31,4 +39,4 @@ NEUTROND_P2P_SEEDS=$(curl -s https://raw.githubusercontent.com/cosmos/chain-regi
 export NEUTROND_P2P_SEEDS
 
 # Start chain.
-neutrond start --minimum-gas-prices 0.01untrn --x-crisis-skip-assert-invariants --iavl-disable-fastnode false
+cosmovisor run start --minimum-gas-prices 0.01untrn --x-crisis-skip-assert-invariants --iavl-disable-fastnode false
