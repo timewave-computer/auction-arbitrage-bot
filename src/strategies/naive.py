@@ -138,7 +138,7 @@ async def strategy(
         logger.info("Executing route with profit of %d: %s", profit, fmt_route(route))
 
         try:
-            asyncio.run(exec_arb(route, quantities, profit, ctx))
+            await exec_arb(profit, quantities, route, ctx)
 
             logger.info("Executed route successfully: %s", fmt_route(route))
         except Exception as e:
@@ -154,7 +154,7 @@ async def strategy(
 async def eval_route(
     route: list[Leg],
     ctx: Ctx,
-) -> Optional[tuple[int, int, list[Leg]]]:
+) -> Optional[tuple[list[int], int, list[Leg]]]:
     logger.debug("Evaluating route for profitability: %s", fmt_route(route))
 
     if not ctx.state.balance:
@@ -213,7 +213,7 @@ async def eval_route(
     )
 
     # Queue the route for execution, since it is profitable
-    return (profit, quantities, route)
+    return (quantities, profit, route)
 
 
 async def leg_liquidity(leg: Leg) -> tuple[int, int]:
@@ -236,7 +236,7 @@ async def listen_routes_with_depth_dfs(
     pools: dict[str, dict[str, List[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
     ctx: Ctx,
-) -> AsyncGenerator[tuple[int, int, list[Leg]], None]:
+) -> AsyncGenerator[tuple[list[int], int, list[Leg]], None]:
     denom_cache: dict[str, dict[str, str]] = {}
 
     start_pools: list[Union[AuctionProvider, PoolProvider]] = [
@@ -257,7 +257,7 @@ async def listen_routes_with_depth_dfs(
 
     async def next_legs(
         path: list[Leg],
-    ) -> AsyncGenerator[tuple[int, int, list[Leg]], None]:
+    ) -> AsyncGenerator[tuple[list[int], int, list[Leg]], None]:
         logger.debug("Searching for next leg in path: %s", fmt_route(path))
 
         nonlocal denom_cache
