@@ -66,7 +66,7 @@ class Route:
     def fmt_pretty(self) -> str:
         route_fmt = " -> ".join(map(lambda route_leg: str(route_leg), self.route))
 
-        return f"{str(self)} ({self.time_created}) expected ROI: {self.expected_profit}, realized P/L: {self.realized_profit}, status: {self.status}, path: {route_fmt}"
+        return f"{str(self)} ({self.time_created}) expected ROI: {self.expected_profit}, realized P/L: {self.realized_profit}, status: {self.status}, path: {route_fmt}, execution plan: {self.quantities}"
 
     def dumps(self) -> str:
         return json.dumps(

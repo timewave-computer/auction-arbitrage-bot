@@ -244,7 +244,14 @@ async def main() -> None:
                 logger.info("%s", ctx.order_history[order_id].fmt_pretty())
             else:
                 for order in ctx.order_history:
-                    logger.info("%s (%s)", order, order.time_created)
+                    logger.info(
+                        "%s (%s) expected ROI: %d, realized P/L: %d, status: %s",
+                        order,
+                        order.time_created,
+                        order.expected_profit,
+                        order.realized_profit if order.realized_profit else 0,
+                        order.status,
+                    )
 
                 # Print a profit summary
                 logger.info(
@@ -261,6 +268,60 @@ async def main() -> None:
                         [
                             order.realized_profit
                             for order in ctx.order_history
+                            if order.realized_profit
+                        ]
+                    ),
+                )
+
+                atomic_orders = [
+                    order
+                    for order in ctx.order_history
+                    if all(
+                        [
+                            leg.kind == "astroport" or leg.kind == "auction"
+                            for leg in order.route
+                        ]
+                    )
+                ]
+
+                ibc_orders = [
+                    order
+                    for order in ctx.order_history
+                    if any([leg.kind == "osmosis" for leg in order.route])
+                ]
+
+                logger.info(
+                    "Summary - total atomic routes attepmted: %d, total atomic routes completed: %d, total atomic P/L: %d",
+                    len(atomic_orders),
+                    len(
+                        [
+                            order
+                            for order in atomic_orders
+                            if order.status == Status.EXECUTED
+                        ]
+                    ),
+                    sum(
+                        [
+                            order.realized_profit
+                            for order in atomic_orders
+                            if order.realized_profit
+                        ]
+                    ),
+                )
+                logger.info(
+                    "Summary - total IBC routes attepmted: %d, total IBC routes completed: %d, total IBC P/L: %d",
+                    len(ibc_orders),
+                    len(
+                        [
+                            order
+                            for order in ibc_orders
+                            if order.status == Status.EXECUTED
+                        ]
+                    ),
+                    sum(
+                        [
+                            order.realized_profit
+                            for order in ibc_orders
                             if order.realized_profit
                         ]
                     ),
