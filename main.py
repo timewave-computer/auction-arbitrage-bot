@@ -62,7 +62,7 @@ async def main() -> None:
     parser.add_argument(
         "-pm",
         "--profit_margin",
-        default=10,
+        default=100,
     )
     parser.add_argument(
         "-l",
@@ -209,7 +209,7 @@ async def main() -> None:
         astro_pools = await astro.pools()
 
         # Save pools to the specified file if the user wants to dump pools
-        if args.cmd is not None and args.cmd[0] == "dump":
+        if args.cmd is not None and len(args.cmd) > 0 and args.cmd[0] == "dump":
             # The user wants to dump to a nonexistent file
             if args.pool_file is None:
                 logger.error("Dump command provided but no poolfile specified.")
@@ -231,7 +231,7 @@ async def main() -> None:
                     f,
                 )
 
-        if args.cmd is not None and args.cmd[0] == "hist":
+        if args.cmd is not None and len(args.cmd) > 0 and args.cmd[0] == "hist":
             # The user wnats to see a specific route
             if len(args.cmd) == 3 and args.cmd[1] == "show":
                 order_id = int(args.cmd[2])
@@ -245,7 +245,6 @@ async def main() -> None:
             else:
                 for order in ctx.order_history:
                     logger.info("%s (%s)", order, order.time_created)
-                )
 
                 # Print a profit summary
                 logger.info(
@@ -296,7 +295,7 @@ async def main() -> None:
             loop.run_until_complete(event_loop())
 
         # Save pools to the specified file if the user wants to dump pools
-        if args.cmd is not None and args.cmd == "daemon":
+        if args.cmd is not None and len(args.cmd) > 0 and args.cmd[0] == "daemon":
             Process(target=daemon, args=[]).run()
             logger.info("Spawned searcher daemon")
 

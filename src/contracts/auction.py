@@ -91,6 +91,21 @@ class AuctionProvider(WithContract):
 
         return decimal_to_int(current_price)
 
+    async def reverse_simulate_swap_asset_b(self, amount: int) -> int:
+        """
+        Gets the amount of asset a required to return a specified amount of asset b.
+        """
+        rate = await self.exchange_rate()
+
+        return Decimal(amount) // Decimal(rate)
+
+    async def reverse_simulate_swap_asset_a(self, amount: int) -> int:
+        """
+        Gets the amount of asset b required to return a specified amount of asset a.
+        """
+
+        return 0
+
     def asset_a(self) -> str:
         """
         Gets the asset being used to purchase in the pool.
