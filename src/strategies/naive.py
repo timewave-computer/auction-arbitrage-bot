@@ -279,8 +279,6 @@ async def listen_routes_with_depth_dfs(
     async def next_legs(
         path: list[Leg],
     ) -> AsyncGenerator[tuple[list[int], int, list[Leg]], None]:
-        logger.debug("Searching for next leg in path: %s", fmt_route(path))
-
         nonlocal denom_cache
 
         if len(path) >= 2:
@@ -305,23 +303,11 @@ async def listen_routes_with_depth_dfs(
         # of the denoms match the starting denom, we are
         # finished, and the circuit is closed
         if len(path) > 1 and src == prev_pool.out_asset():
-            logger.debug(
-                "Circuit closed with length %d: %s",
-                len(path),
-                fmt_route(path),
-            )
-
             if (
                 len(required_leg_types - set((fmt_route_leg(leg) for leg in path))) > 0
                 or len(path) < depth
             ):
                 return
-
-            logger.debug(
-                "Discovered route with length %d: %s",
-                len(path),
-                fmt_route(path),
-            )
 
             resp = await eval_route(path, ctx)
 
