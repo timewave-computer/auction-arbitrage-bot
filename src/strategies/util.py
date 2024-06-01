@@ -139,20 +139,6 @@ async def exec_arb(
                 ctx.http_session,
             )
 
-        to_swap = (
-            to_swap
-            if not prev_leg
-            else try_multiple_clients_fatal(
-                ctx.clients[prev_leg.backend.chain_id.split("-")[0]],
-                lambda client: client.query_bank_balance(
-                    Address(
-                        ctx.wallet.public_key(), prefix=prev_leg.backend.chain_prefix
-                    ),
-                    prev_leg.out_asset(),
-                ),
-            )
-        )
-
         logger.info(
             "Executing arb leg on %s with %d %s -> %s",
             fmt_route_leg(leg),
@@ -196,14 +182,6 @@ async def exec_arb(
             )
 
             time.sleep(IBC_TRANSFER_POLL_INTERVAL_SEC)
-
-            to_swap = try_multiple_clients_fatal(
-                ctx.clients[leg.backend.chain_id.split("-")[0]],
-                lambda client: client.query_bank_balance(
-                    Address(ctx.wallet.public_key(), prefix=leg.backend.chain_prefix),
-                    leg.in_asset(),
-                ),
-            )
 
             logger.debug(
                 "Balance to swap for %s on %s: %d",

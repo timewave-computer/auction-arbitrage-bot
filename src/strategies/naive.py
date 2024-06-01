@@ -17,7 +17,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 import logging
-from src.contracts.route import Leg
+from src.contracts.route import Leg, Status
 from src.contracts.pool.provider import PoolProvider
 from src.contracts.pool.osmosis import OsmosisPoolProvider
 from src.contracts.pool.astroport import (
@@ -137,14 +137,35 @@ async def strategy(
 
         logger.info("Executing route with profit of %d: %s", profit, fmt_route(route))
 
+        r = ctx.queue_route(route, profit, quantities)
+
         try:
+            balance_prior = ctx.state.balance
+
             await exec_arb(profit, quantities, route, ctx)
+
+            balance_after_resp = try_multiple_clients(
+                ctx.clients["neutron"],
+                lambda client: client.query_bank_balance(
+                    Address(ctx.wallet.public_key(), prefix="neutron"),
+                    ctx.cli_args["base_denom"],
+                ),
+            )
+
+            if balance_after_resp:
+                r.realized_profit = balance_after_resp - balance_prior
+
+            r.status = Status.EXECUTED
 
             logger.info("Executed route successfully: %s", fmt_route(route))
         except Exception as e:
             logger.error("Arb failed %s: %s", fmt_route(route), e)
+
+            r.status = Status.FAILED
         finally:
-            ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions))
+            ctx.update_route(r)
+
+            ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions)).commit_history()
 
     logger.info("Completed arbitrage round")
 

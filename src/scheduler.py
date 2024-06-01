@@ -2,12 +2,15 @@
 Implements a strategy runner with an arbitrary provider set in an event-loop style.
 """
 
+from datetime import datetime
+import json
 import asyncio
 from typing import Callable, List, Any, Self, Optional, Awaitable
 from dataclasses import dataclass
 from cosmpy.aerial.client import LedgerClient  # type: ignore
 from cosmpy.aerial.wallet import LocalWallet  # type: ignore
 from src.contracts.auction import AuctionDirectory, AuctionProvider
+from src.contracts.route import Route, load_route, LegRepr, Status, Leg
 from src.contracts.pool.provider import PoolProvider
 from src.util import deployments
 import aiohttp
@@ -29,6 +32,7 @@ class Ctx:
     state: Optional[Any]
     terminated: bool
     http_session: aiohttp.ClientSession
+    order_history: list[Route]
 
     def with_state(self, state: Any) -> Self:
         """
@@ -40,6 +44,28 @@ class Ctx:
 
         return self
 
+    def commit_history(self) -> Self:
+        """
+        Commits the order history to disk.
+        """
+
+        with open(self.cli_args["history_file"], "w", encoding="utf-8") as f:
+            f.seek(0)
+            json.dump([order.dumps() for order in self.order_history], f)
+
+        return self
+
+    def recover_history(self) -> Self:
+        """
+        Retrieves the order history from disk
+        """
+
+        with open(self.cli_args["history_file"], "r", encoding="utf-8") as f:
+            f.seek(0)
+            self.order_history = [load_route(json_route) for json_route in json.load(f)]
+
+        return self
+
     def cancel(self) -> Self:
         """
         Marks the event loop for termination.
@@ -48,6 +74,40 @@ class Ctx:
         self.terminated = True
 
         return self
+
+    def queue_route(
+        self, route: list[Leg], expected_profit: int, quantities: list[int]
+    ) -> Route:
+        """
+        Creates a new identified route, inserting it into the order history,
+        and returning it for later updating.
+        """
+
+        r = Route(
+            len(self.order_history),
+            [
+                LegRepr(leg.in_asset(), leg.out_asset(), leg.backend.kind)
+                for leg in route
+            ],
+            expected_profit,
+            None,
+            quantities,
+            Status.QUEUED,
+            datetime.now().strftime("%Y-%m-%d @ %H:%M:%S"),
+        )
+        self.order_history.append(r)
+
+        return r
+
+    def update_route(self, route: Route) -> None:
+        """
+        Updates the route in the scheduler.
+        """
+
+        if route.uid >= len(self.order_history) or route.uid < 0:
+            return
+
+        self.order_history[route.uid] = route
 
 
 class Scheduler:

@@ -1,28 +1,18 @@
+import json
+from datetime import datetime
+from enum import Enum
 from dataclasses import dataclass
-from typing import Union, Callable
+from typing import Union, Callable, Optional, Self
 from src.contracts.auction import AuctionProvider
 from src.contracts.pool.provider import PoolProvider
 
 
-@dataclass
-class Route:
-    """
-    Represents an identifiable sequence of arbitrage legs.
-    """
-
-    uuid: str
-    route: list[Leg]
-
-    def __hash__(self) -> int:
-        return hash(self.uuid)
-
-    def __str__(self) -> str:
-        return f"r{self.uuid}"
-
-    def fmt_pretty(self) -> str:
-        route_fmt = " -> ".join(map(lambda route_leg: str(route_leg), self.route))
-
-        return f"{str(self)} {route_fmt}"
+# Possible states for an arbitrage order
+class Status(Enum):
+    QUEUED = "QUEUED"
+    IN_PROGRESS = "IN_PROGRESS"
+    EXECUTED = "EXECUTED"
+    FAILED = "FAILED"
 
 
 @dataclass
@@ -40,3 +30,82 @@ class Leg:
 
     def __str__(self) -> str:
         return f"{self.backend.kind}: {self.in_asset()} -> {self.out_asset()}"
+
+
+@dataclass
+class LegRepr:
+    in_asset: str
+    out_asset: str
+    kind: str
+
+    def __str__(self) -> str:
+        return f"{self.kind}: {self.in_asset} -> {self.out_asset}"
+
+
+@dataclass
+class Route:
+    """
+    Represents an identifiable sequence of arbitrage legs
+    that is going to be executed.
+    """
+
+    uid: int
+    route: list[LegRepr]
+    expected_profit: int
+    realized_profit: Optional[int]
+    quantities: list[int]
+    status: Status
+    time_created: str
+
+    def __hash__(self) -> int:
+        return hash(self.uid)
+
+    def __str__(self) -> str:
+        return f"r{self.uid}"
+
+    def fmt_pretty(self) -> str:
+        route_fmt = " -> ".join(map(lambda route_leg: str(route_leg), self.route))
+
+        return f"{str(self)} ({self.time_created}) expected ROI: {self.expected_profit}, realized P/L: {self.realized_profit}, status: {self.status}, path: {route_fmt}"
+
+    def dumps(self) -> str:
+        return json.dumps(
+            {
+                "uid": self.uid,
+                "route": [
+                    json.dumps(
+                        {
+                            "in_asset": leg.in_asset,
+                            "out_asset": leg.out_asset,
+                            "kind": leg.kind,
+                        }
+                    )
+                    for leg in self.route
+                ],
+                "expected_profit": self.expected_profit,
+                "realized_profit": self.realized_profit,
+                "quantities": self.quantities,
+                "status": str(self.status),
+                "time_created": self.time_created,
+            }
+        )
+
+
+def load_route(s: str) -> Route:
+    loaded = json.loads(s)
+
+    return Route(
+        loaded["uid"],
+        [load_leg_repr(json_leg) for json_leg in loaded["route"]],
+        loaded["expected_profit"],
+        loaded["realized_profit"],
+        loaded["quantities"],
+        Status[loaded["status"].split(".")[1]],
+        loaded["time_created"],
+    )
+
+
+def load_leg_repr(s: str) -> LegRepr:
+    loaded = json.loads(s)
+
+    return LegRepr(loaded["in_asset"], loaded["out_asset"], loaded["kind"])

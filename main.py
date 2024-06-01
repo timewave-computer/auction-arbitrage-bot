@@ -22,6 +22,7 @@ from src.util import (
 )
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
+from src.contracts.route import Status
 from src.strategies.naive import strategy
 from dotenv import load_dotenv
 import aiohttp
@@ -67,8 +68,9 @@ async def main() -> None:
         "-l",
         "--log_file",
     )
+    parser.add_argument("-hf", "--history_file", default="arbs.json")
     parser.add_argument("-c", "--net_config")
-    parser.add_argument("cmd", nargs="?", default=None)
+    parser.add_argument("cmd", nargs="*", default=None)
 
     args = parser.parse_args()
 
@@ -80,6 +82,16 @@ async def main() -> None:
         logging.basicConfig(
             stream=sys.stdout, level=os.environ.get("LOGLEVEL", "INFO").upper()
         )
+
+    # Always make sure the history file exists
+    if args.history_file is not None and not path.isfile(args.history_file):
+        logger.info("Creating pool file")
+
+        with open(args.history_file, "w+", encoding="utf-8") as f:
+            json.dump(
+                [],
+                f,
+            )
 
     # If the user specified a poolfile, create the poolfile if it is empty
     if args.pool_file is not None and not path.isfile(args.pool_file):
@@ -158,11 +170,13 @@ async def main() -> None:
                 "cmd": args.cmd,
                 "net_config": args.net_config,
                 "log_file": args.log_file,
+                "history_file": args.history_file,
             },
             None,
             False,
             session,
-        )
+            [],
+        ).recover_history()
         sched = Scheduler(ctx, strategy)
 
         # Register Osmosis and Astroport providers
@@ -195,7 +209,7 @@ async def main() -> None:
         astro_pools = await astro.pools()
 
         # Save pools to the specified file if the user wants to dump pools
-        if args.cmd is not None and args.cmd == "dump":
+        if args.cmd is not None and args.cmd[0] == "dump":
             # The user wants to dump to a nonexistent file
             if args.pool_file is None:
                 logger.error("Dump command provided but no poolfile specified.")
@@ -216,6 +230,44 @@ async def main() -> None:
                     },
                     f,
                 )
+
+        if args.cmd is not None and args.cmd[0] == "hist":
+            # The user wnats to see a specific route
+            if len(args.cmd) == 3 and args.cmd[1] == "show":
+                order_id = int(args.cmd[2])
+
+                if order_id < 0 or order_id >= len(ctx.order_history):
+                    logger.critical("Route does not exist.")
+
+                    sys.exit(1)
+
+                logger.info("%s", ctx.order_history[order_id].fmt_pretty())
+            else:
+                for order in ctx.order_history:
+                    logger.info("%s (%s)", order, order.time_created)
+                )
+
+                # Print a profit summary
+                logger.info(
+                    "Summary - total routes attepmted: %d, total routes completed: %d, total P/L: %d",
+                    len(ctx.order_history),
+                    len(
+                        [
+                            order
+                            for order in ctx.order_history
+                            if order.status == Status.EXECUTED
+                        ]
+                    ),
+                    sum(
+                        [
+                            order.realized_profit
+                            for order in ctx.order_history
+                            if order.realized_profit
+                        ]
+                    ),
+                )
+
+            return
 
         for osmo_base in osmo_pools.values():
             for osmo_pool in osmo_base.values():
