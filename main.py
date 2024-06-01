@@ -258,13 +258,27 @@ async def main() -> None:
 
                 # Print a profit summary
                 logger.info(
-                    "Summary - total routes attepmted: %d, total routes completed: %d, total P/L: %d",
+                    "Summary - total routes attepmted: %d, total routes completed: %d, min P/L: %d, max P/L: %d, total P/L: %d",
                     len(ctx.order_history),
                     len(
                         [
                             order
                             for order in ctx.order_history
                             if order.status == Status.EXECUTED
+                        ]
+                    ),
+                    min(
+                        [
+                            order.realized_profit
+                            for order in ctx.order_history
+                            if order.realized_profit
+                        ]
+                    ),
+                    max(
+                        [
+                            order.realized_profit
+                            for order in ctx.order_history
+                            if order.realized_profit
                         ]
                     ),
                     sum(
@@ -294,13 +308,27 @@ async def main() -> None:
                 ]
 
                 logger.info(
-                    "Summary - total atomic routes attepmted: %d, total atomic routes completed: %d, total atomic P/L: %d",
+                    "Summary - total atomic routes attepmted: %d, total atomic routes completed: %d, min P/L: %d, max P/L: %d, total atomic P/L: %d",
                     len(atomic_orders),
                     len(
                         [
                             order
                             for order in atomic_orders
                             if order.status == Status.EXECUTED
+                        ]
+                    ),
+                    min(
+                        [
+                            order.realized_profit
+                            for order in atomic_orders
+                            if order.realized_profit
+                        ]
+                    ),
+                    max(
+                        [
+                            order.realized_profit
+                            for order in atomic_orders
+                            if order.realized_profit
                         ]
                     ),
                     sum(
@@ -312,13 +340,27 @@ async def main() -> None:
                     ),
                 )
                 logger.info(
-                    "Summary - total IBC routes attepmted: %d, total IBC routes completed: %d, total IBC P/L: %d",
+                    "Summary - total IBC routes attepmted: %d, total IBC routes completed: %d, min P/L: %d, max P/L: %d, total IBC P/L: %d",
                     len(ibc_orders),
                     len(
                         [
                             order
                             for order in ibc_orders
                             if order.status == Status.EXECUTED
+                        ]
+                    ),
+                    min(
+                        [
+                            order.realized_profit
+                            for order in atomic_orders
+                            if order.realized_profit
+                        ]
+                    ),
+                    max(
+                        [
+                            order.realized_profit
+                            for order in atomic_orders
+                            if order.realized_profit
                         ]
                     ),
                     sum(
