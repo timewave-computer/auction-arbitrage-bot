@@ -9,7 +9,7 @@ from decimal import Decimal
 import logging
 import time
 from typing import Optional, Any
-from src.contracts.route import Leg
+from src.contracts.route import Leg, Route
 from src.contracts.auction import AuctionProvider
 from src.contracts.pool.provider import PoolProvider
 from src.contracts.pool.osmosis import OsmosisPoolProvider
@@ -84,6 +84,7 @@ def fmt_route_debug(route: list[Leg]) -> str:
 
 
 async def exec_arb(
+    route_ent: Route,
     profit: int,
     quantities: list[int],
     route: list[Leg],
@@ -113,18 +114,23 @@ async def exec_arb(
     prev_leg: Optional[Leg] = None
 
     # Submit arb trades for all profitable routes
-    logger.info(
+    ctx.log_route(
+        route_ent,
+        "info",
         ("Queueing candidpate arbitrage opportunity with " "route with %d hop(s): %s"),
-        len(route),
-        fmt_route(route),
+        [len(route), fmt_route(route)],
     )
 
     for leg, to_swap in zip(route, quantities):
-        logger.info(
+        ctx.log_route(
+            route_ent,
+            "info",
             "Queueing arb leg on %s with %s -> %s",
-            fmt_route_leg(leg),
-            leg.in_asset(),
-            leg.out_asset(),
+            [
+                fmt_route_leg(leg),
+                leg.in_asset(),
+                leg.out_asset(),
+            ],
         )
 
         tx: Optional[SubmittedTx] = None
@@ -139,22 +145,29 @@ async def exec_arb(
                 ctx.http_session,
             )
 
-        logger.info(
+        ctx.log_route(
+            route_ent,
+            "info",
             "Executing arb leg on %s with %d %s -> %s",
-            fmt_route_leg(leg),
-            to_swap,
-            leg.in_asset(),
-            leg.out_asset(),
+            [
+                fmt_route_leg(leg),
+                to_swap,
+                leg.in_asset(),
+                leg.out_asset(),
+            ],
         )
 
         # The funds are not already on the current chain, so they need to be moved
         if prev_leg and prev_leg.backend.chain_id != leg.backend.chain_id:
-            logger.info(
-                "Transfering %s %s from %s -> %s",
-                to_swap,
-                prev_leg.out_asset(),
-                prev_leg.backend.chain_id,
-                leg.backend.chain_id,
+            ctx.log_route(
+                route_ent,
+                "info" "Transfering %s %s from %s -> %s",
+                [
+                    to_swap,
+                    prev_leg.out_asset(),
+                    prev_leg.backend.chain_id,
+                    leg.backend.chain_id,
+                ],
             )
 
             # Ensure that there is at least 5k of the base chain denom
@@ -164,21 +177,27 @@ async def exec_arb(
 
             # Cancel arb if the transfer fails
             try:
-                await transfer(prev_leg.out_asset(), prev_leg, leg, ctx, to_swap)
+                await transfer(
+                    route_ent, prev_leg.out_asset(), prev_leg, leg, ctx, to_swap
+                )
             except Exception as e:
-                logger.error(
-                    "Failed to transfer funds from %s -> %s: %s",
-                    prev_leg.backend.chain_id,
-                    leg.backend.chain_id,
-                    e,
+                ctx.log_route(
+                    route_ent,
+                    "error" "Failed to transfer funds from %s -> %s: %s",
+                    [
+                        prev_leg.backend.chain_id,
+                        leg.backend.chain_id,
+                        e,
+                    ],
                 )
 
                 return
 
-            logger.info(
+            ctx.log_route(
+                route_ent,
+                "info",
                 "Transfer succeeded: %s -> %s",
-                prev_leg.backend.chain_id,
-                leg.backend.chain_id,
+                [prev_leg.backend.chain_id, leg.backend.chain_id],
             )
 
             time.sleep(IBC_TRANSFER_POLL_INTERVAL_SEC)
@@ -190,7 +209,12 @@ async def exec_arb(
                 to_swap,
             )
         else:
-            logger.info("Arb leg can be executed atomically; no transfer necessary")
+            ctx.log_route(
+                route_ent,
+                "info",
+                "Arb leg can be executed atomically; no transfer necessary",
+                [],
+            )
 
         # Ensure that there is at least 5k of the base chain denom
         # at all times
@@ -207,12 +231,20 @@ async def exec_arb(
             )
 
             if isinstance(leg.backend, NeutronAstroportPoolProvider):
-                logger.info(
-                    "Submitting arb to contract: %s", leg.backend.contract_info.address
+                ctx.log_route(
+                    route_ent,
+                    "info",
+                    "Submitting arb to contract: %s",
+                    [leg.backend.contract_info.address],
                 )
 
             if isinstance(leg.backend, OsmosisPoolProvider):
-                logger.info("Submitting arb to pool: %d", leg.backend.pool_id)
+                ctx.log_route(
+                    route_ent,
+                    "info",
+                    "Submitting arb to pool: %d",
+                    [leg.backend.pool_id],
+                )
 
             # Submit the arb trade
             if leg.in_asset == leg.backend.asset_a:
@@ -236,17 +268,22 @@ async def exec_arb(
 
         if tx:
             # Notify the user of the arb trade
-            logger.info(
+            ctx.log_route(
+                route_ent,
+                "info",
                 "Executed leg %s -> %s: %s",
-                leg.in_asset(),
-                leg.out_asset(),
-                tx.tx_hash,
+                [
+                    leg.in_asset(),
+                    leg.out_asset(),
+                    tx.tx_hash,
+                ],
             )
 
         prev_leg = leg
 
 
 async def transfer(
+    route: Route,
     denom: str,
     prev_leg: Leg,
     leg: Leg,
@@ -332,11 +369,14 @@ async def transfer(
         lambda client: client.broadcast_tx(tx),
     ).wait_to_complete()
 
-    logger.info(
-        "Submitted IBC transfer from src %s to %s: %s",
-        prev_leg.backend.chain_id,
-        leg.backend.chain_id,
-        submitted.tx_hash,
+    ctx.log_route(
+        route,
+        "info" "Submitted IBC transfer from src %s to %s: %s",
+        [
+            prev_leg.backend.chain_id,
+            leg.backend.chain_id,
+            submitted.tx_hash,
+        ],
     )
 
     # Continuously check for a package acknowledgement
@@ -344,7 +384,9 @@ async def transfer(
     # Future note: This could be async so other arbs can make
     # progress while this is happening
     async def transfer_or_continue() -> bool:
-        logger.info("Checking IBC transfer status %s", submitted.tx_hash)
+        ctx.log_route(
+            route, "info", "Checking IBC transfer status %s", [submitted.tx_hash]
+        )
 
         # Check for a package acknowledgement by querying osmosis
         ack_resp = await try_multiple_rest_endpoints(
@@ -359,9 +401,11 @@ async def transfer(
 
         # try again
         if not ack_resp:
-            logger.info(
+            ctx.log_route(
+                route,
+                "info",
                 "IBC transfer %s has not yet completed; waiting...",
-                submitted.tx_hash,
+                [submitted.tx_hash],
             )
 
             return False

@@ -5,7 +5,7 @@ Implements a strategy runner with an arbitrary provider set in an event-loop sty
 from datetime import datetime
 import json
 import asyncio
-from typing import Callable, List, Any, Self, Optional, Awaitable
+from typing import Callable, List, Any, Self, Optional, Awaitable, Any
 from dataclasses import dataclass
 from cosmpy.aerial.client import LedgerClient  # type: ignore
 from cosmpy.aerial.wallet import LocalWallet  # type: ignore
@@ -94,6 +94,7 @@ class Ctx:
             quantities,
             Status.QUEUED,
             datetime.now().strftime("%Y-%m-%d @ %H:%M:%S"),
+            [],
         )
         self.order_history.append(r)
 
@@ -108,6 +109,33 @@ class Ctx:
             return
 
         self.order_history[route.uid] = route
+
+    def log_route(
+        self, route: Route, log_level: str, fmt_string: str, args: list[Any]
+    ) -> None:
+        """
+        Writes a log to the standard logger and to the log file of a route.
+        """
+
+        route.logs.append(f"{log_level.upper()} {fmt_string.format(*args)}")
+
+        if route.uid >= len(self.order_history) or route.uid < 0:
+            return
+
+        self.order_history[route.uid] = route
+
+        if log_level == "info":
+            logger.info(fmt_string, *args)
+
+            return
+
+        if log_level == "error":
+            logger.error(fmt_string, *args)
+
+            return
+
+        if log_level == "debug":
+            logger.debug(fmt_string, *args)
 
 
 class Scheduler:

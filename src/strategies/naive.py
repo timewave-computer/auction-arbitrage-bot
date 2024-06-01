@@ -157,9 +157,11 @@ async def strategy(
 
             r.status = Status.EXECUTED
 
-            logger.info("Executed route successfully: %s", fmt_route(route))
+            ctx.log_route(
+                r, "info", "Executed route successfully: %s", [fmt_route(route)]
+            )
         except Exception as e:
-            logger.error("Arb failed %s: %s", fmt_route(route), e)
+            ctx.log_route(r, "error", "Arb failed %s: %s", [fmt_route(route), e])
 
             r.status = Status.FAILED
         finally:

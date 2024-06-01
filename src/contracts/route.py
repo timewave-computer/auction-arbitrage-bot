@@ -56,6 +56,7 @@ class Route:
     quantities: list[int]
     status: Status
     time_created: str
+    logs: list[str]
 
     def __hash__(self) -> int:
         return hash(self.uid)
@@ -87,6 +88,7 @@ class Route:
                 "quantities": self.quantities,
                 "status": str(self.status),
                 "time_created": self.time_created,
+                "logs": self.logs,
             }
         )
 
@@ -102,6 +104,7 @@ def load_route(s: str) -> Route:
         loaded["quantities"],
         Status[loaded["status"].split(".")[1]],
         loaded["time_created"],
+        loaded["logs"],
     )
 
 

@@ -22,7 +22,7 @@ from src.contracts.pool.astroport import NeutronAstroportPoolProvider
 from src.contracts.pool.osmosis import OsmosisPoolProvider
 from src.contracts.auction import AuctionProvider
 from src.contracts.pool.provider import PoolProvider
-from src.contracts.route import Leg
+from src.contracts.route import Leg, Status
 from src.scheduler import Ctx
 from src.strategies.util import (
     fmt_route,
@@ -305,10 +305,24 @@ async def strategy(
 
     logger.info("Executing route with profit of %d: %s", profit, fmt_route(route))
 
+    r = ctx.queue_route(route, profit, quantities)
+
     try:
-        await exec_arb(profit, quantities, route, ctx)
+        await exec_arb(route, profit, quantities, route, ctx)
+
+        r.status = Status.EXECUTED
+
+        ctx.log_route(
+            route, "info", "Executed route successfully: %s", [fmt_route(route)]
+        )
     except Exception as e:
-        logger.error("Arb failed %s: %s", fmt_route(route), e)
+        ctx.log_route(route, "error", "Arb failed %s: %s", [fmt_route(route), e])
+
+        r.status = Status.FAILED
+    finally:
+        ctx.update_route(r)
+
+        ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions)).commit_history()
 
     logger.info("Completed arbitrage round")
 

@@ -253,6 +253,9 @@ async def main() -> None:
                         order.status,
                     )
 
+                    for log in order.logs:
+                        logger.info("%s", log)
+
                 # Print a profit summary
                 logger.info(
                     "Summary - total routes attepmted: %d, total routes completed: %d, total P/L: %d",
