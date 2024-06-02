@@ -14,7 +14,7 @@
         packageOverrides = pkgs.callPackage ./python-packages.nix { };
         skipCheckTests = drv:
           drv.overridePythonAttrs (old: { doCheck = false; });
-        python = pkgs.python3.override { inherit packageOverrides; };
+        python = pkgs.python312.override { inherit packageOverrides; };
         pythonWithPackages = python.withPackages (ps:
           with ps; [
             cosmpy

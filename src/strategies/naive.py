@@ -74,6 +74,7 @@ class State:
     """
 
     balance: Optional[int]
+    liquidity_cache: dict[Leg, tuple[int, int]]
 
     def poll(
         self,
@@ -85,6 +86,8 @@ class State:
         Polls the state for a potential update, leaving the state
         alone, or producing a new state.
         """
+
+        self.liquidity_cache = {}
 
         balance_resp = try_multiple_clients(
             ctx.clients["neutron"],
@@ -110,7 +113,7 @@ async def strategy(
     """
 
     if not ctx.state:
-        ctx.state = State(None)
+        ctx.state = State(None, {})
 
     ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions))
 
@@ -182,7 +185,7 @@ async def eval_route(
 ) -> Optional[tuple[Route, list[Leg]]]:
     r = ctx.queue_route(route, 0, 0, [])
 
-    logger.debug("Evaluating route for profitability: %s", fmt_route(route))
+    ctx.log_route(r, "info", "Evaluating route for profitability", [])
 
     if not ctx.state.balance:
         logger.error(
@@ -219,7 +222,9 @@ async def eval_route(
         ],
     )
 
-    starting_amt = await starting_quantity_for_route_profit(ctx.state.balance, route)
+    starting_amt = await starting_quantity_for_route_profit(
+        ctx.state.balance, route, r, ctx
+    )
 
     ctx.log_route(
         r,
@@ -306,6 +311,8 @@ async def listen_routes_with_depth_dfs(
     ]
 
     random.shuffle(start_legs)
+
+    sem = asyncio.Semaphore(DISCOVERY_CONCURRENCY_FACTOR)
 
     async def next_legs(
         path: list[Leg],
@@ -445,7 +452,29 @@ async def listen_routes_with_depth_dfs(
             }
         )
 
-        routes = stream.merge(*[next_legs(path + [pool]) for pool in next_pools])
+        async def leg_liquidity(leg: Leg) -> tuple[Leg, tuple[int, int]]:
+            if leg not in ctx.state.liquidity_cache:
+                async with sem:
+                    if isinstance(leg.backend, AuctionProvider):
+                        bal = await leg.backend.remaining_asset_b()
+
+                        ctx.state.liquidity_cache[leg] = (bal, bal)
+                    else:
+                        ctx.state.liquidity_cache[leg] = (
+                            await leg.backend.balance_asset_a(),
+                            await leg.backend.balance_asset_b(),
+                        )
+
+            return (leg, ctx.state.liquidity_cache[leg])
+
+        with_liquidity: list[tuple[Leg, tuple[int, int]]] = await asyncio.gather(
+            *[leg_liquidity(leg) for leg in next_pools]
+        )
+        with_liquidity.sort(key=lambda tup: tup[1], reverse=True)
+
+        sorted_next_pools = (tup[0] for tup in with_liquidity)
+
+        routes = stream.merge(*[next_legs(path + [pool]) for pool in sorted_next_pools])
 
         async with routes.stream() as streamer:
             async for route in streamer:

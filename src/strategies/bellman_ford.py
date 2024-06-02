@@ -294,7 +294,7 @@ async def strategy(
 
         return ctx
 
-    starting_amt = await starting_quantity_for_route_profit(balance_resp, route)
+    starting_amt = await starting_quantity_for_route_profit(balance_resp, route, r, ctx)
 
     profit, quantities = await quantities_for_route_profit(
         starting_amt,

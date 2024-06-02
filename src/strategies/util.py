@@ -506,6 +506,8 @@ async def quantities_for_route_profit(
 async def starting_quantity_for_route_profit(
     starting_amount: int,
     route: list[Leg],
+    r: Route,
+    ctx: Ctx,
 ) -> int:
     """
     Calculates what quantities should be used to obtain
@@ -520,8 +522,9 @@ async def starting_quantity_for_route_profit(
 
     async def leg_liquidity(leg: Leg, index: int) -> list[tuple[str, int, int]]:
         if isinstance(leg.backend, AuctionProvider):
+            bal = await leg.backend.remaining_asset_b()
             return [
-                (leg.backend.asset_b(), await leg.backend.remaining_asset_b(), index)
+                (leg.backend.asset_b(), bal, index),
             ]
 
         return [
@@ -529,13 +532,19 @@ async def starting_quantity_for_route_profit(
             (leg.backend.asset_b(), await leg.backend.balance_asset_b(), index),
         ]
 
-    with_liquidity: list[tuple[str, int, int]] = [
-        denom_liquidity
-        for (i, leg) in enumerate(route)
-        for denom_liquidity in await leg_liquidity(leg, i)
-    ]
-    min_liquidity: tuple[str, int, int] = min(
-        with_liquidity, key=lambda liq_pair: liq_pair[1]
+    with_liquidity: list[tuple[str, int, int]] = await asyncio.gather(
+        *[leg_liquidity(leg, i) for (i, leg) in enumerate(route)]
+    )
+    min_liquidity_pair: list[tuple[str, int, int]] = min(
+        with_liquidity, key=lambda liq_pair: (liq_pair[0][1], liq_pair[1][1])
+    )
+    min_liquidity = min(min_liquidity_pair)
+
+    ctx.log_route(
+        r,
+        "info",
+        "Least liquid route is: %s (%d, %d)",
+        [min_liquidity[0], min_liquidity[1], min_liquidity[2]],
     )
 
     # "Back-prop" the lowest liqiudity so that all trades are in-line
