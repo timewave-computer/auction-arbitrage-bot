@@ -10,6 +10,7 @@ from src.contracts.pool.provider import PoolProvider
 # Possible states for an arbitrage order
 class Status(Enum):
     QUEUED = "QUEUED"
+    ABORTED = "ABORTED"
     IN_PROGRESS = "IN_PROGRESS"
     EXECUTED = "EXECUTED"
     FAILED = "FAILED"
@@ -51,6 +52,7 @@ class Route:
 
     uid: int
     route: list[LegRepr]
+    theoretical_profit: int
     expected_profit: int
     realized_profit: Optional[int]
     quantities: list[int]
@@ -83,6 +85,7 @@ class Route:
                     )
                     for leg in self.route
                 ],
+                "theoretical_profit": self.theoretical_profit,
                 "expected_profit": self.expected_profit,
                 "realized_profit": self.realized_profit,
                 "quantities": self.quantities,
@@ -99,6 +102,7 @@ def load_route(s: str) -> Route:
     return Route(
         loaded["uid"],
         [load_leg_repr(json_leg) for json_leg in loaded["route"]],
+        loaded["theoretical_profit"],
         loaded["expected_profit"],
         loaded["realized_profit"],
         loaded["quantities"],

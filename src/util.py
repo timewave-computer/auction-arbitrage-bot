@@ -21,6 +21,11 @@ from cosmwasm.wasm.v1 import query_pb2, query_pb2_grpc
 DENOM_RESOLVER_TIMEOUT_SEC = 5
 
 
+# The maximum number of concurrent connections
+# that can be open to
+MAX_SKIP_CONCURRENT_CALLS = 5
+
+
 # Dictates the maximum number of concurrent calls to the skip
 # API in searching
 DISCOVERY_CONCURRENCY_FACTOR = 20

@@ -425,6 +425,8 @@ async def transfer(
 async def quantities_for_route_profit(
     starting_amount: int,
     route: list[Leg],
+    r: Route,
+    ctx: Ctx,
 ) -> tuple[int, list[int]]:
     """
     Calculates what quantities should be used to obtain
@@ -449,6 +451,8 @@ async def quantities_for_route_profit(
     quantities: list[int] = [starting_amount]
 
     while quantities[-1] - quantities[0] <= 0:
+        ctx.log_route(r, "info", "Route has possible execution plan: %s", [quantities])
+
         if starting_amount < DENOM_QUANTITY_ABORT_ARB:
             logger.debug(
                 "Hit investment backstop (%d) in route planning: %s (%s)",
@@ -491,10 +495,10 @@ async def quantities_for_route_profit(
 
         starting_amount = int(Decimal(starting_amount) / Decimal(2.0))
 
-    logger.debug("Got execution plan: %s", quantities)
+    ctx.log_route(r, "info", "Got execution plan: %s", [quantities])
 
     if quantities[-1] - quantities[0] > 0:
-        logger.info("Route is profitable: %s", fmt_route(route))
+        ctx.log_route(r, "info", "Route is profitable: %s", [fmt_route(route)])
 
     return (quantities[-1] - quantities[0], quantities)
 
@@ -614,7 +618,7 @@ async def route_base_denom_profit(
 
         exchange_rates.append(Decimal(balance_asset_a) / Decimal(balance_asset_b))
 
-    return starting_amount - reduce(operator.mul, exchange_rates, starting_amount)
+    return starting_amount - int(reduce(operator.mul, exchange_rates, starting_amount))
 
 
 def pools_to_ser(

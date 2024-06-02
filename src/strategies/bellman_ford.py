@@ -12,6 +12,7 @@ import itertools
 import math
 from decimal import Decimal
 import asyncio
+from asyncio import Semaphore
 import multiprocessing
 from datetime import datetime
 import threading
@@ -31,6 +32,7 @@ from src.strategies.util import (
     quantities_for_route_profit,
 )
 from src.util import (
+    MAX_SKIP_CONCURRENT_CALLS,
     DISCOVERY_CONCURRENCY_FACTOR,
     denom_info,
     int_to_decimal,
@@ -264,6 +266,8 @@ async def strategy(
 
     profit, route = route_profit
 
+    r = ctx.queue_route(route, profit, [])
+
     logger.info("Route queued (%d): %s", profit, fmt_route(route))
 
     balance_resp = try_multiple_clients(
@@ -279,6 +283,8 @@ async def strategy(
 
     profit = await route_base_denom_profit(balance_resp, route)
 
+    r.theoretical_profit = profit
+
     if profit < ctx.cli_args["profit_margin"]:
         logger.info(
             "Route is not profitable with profit of %d: %s",
@@ -288,11 +294,17 @@ async def strategy(
 
         return ctx
 
+    starting_amt = await starting_quantity_for_route_profit(balance_resp, route)
+
     profit, quantities = await quantities_for_route_profit(
-        balance_resp,
-        ctx.cli_args["profit_margin"],
+        starting_amt,
         route,
+        r,
+        ctx,
     )
+
+    r.expeted_profit = profit
+    r.quantities = quantities
 
     if profit < ctx.cli_args["profit_margin"]:
         logger.debug(
@@ -304,8 +316,6 @@ async def strategy(
         return ctx
 
     logger.info("Executing route with profit of %d: %s", profit, fmt_route(route))
-
-    r = ctx.queue_route(route, profit, quantities)
 
     try:
         await exec_arb(route, profit, quantities, route, ctx)
@@ -363,27 +373,34 @@ async def route_bellman_ford(
     to_explore: deque[str] = deque()
     to_explore.append(src)
 
+    sem = Semaphore(MAX_SKIP_CONCURRENT_CALLS)
+
     while len(to_explore) != 0:
         pair = to_explore.popleft()
 
         async def providers_for(a: str) -> Iterator[Leg]:
             if not a in ctx.state.denom_cache:
-                denom_infos = await denom_info(
-                    (
-                        "neutron-1"
-                        if not a in ctx.state.chain_cache
-                        else ctx.state.chain_cache[a]
-                    ),
-                    src,
-                    ctx.http_session,
-                )
+                async with sem:
+                    denom_infos = await denom_info(
+                        (
+                            "neutron-1"
+                            if not a in ctx.state.chain_cache
+                            else ctx.state.chain_cache[a]
+                        ),
+                        src,
+                        ctx.http_session,
+                    )
 
                 all_denom_infos = denom_infos + [
                     DenomChainInfo(
                         denom=src,
                         port=None,
                         channel=None,
-                        chain_id="neutron-1",
+                        chain_id=(
+                            "neutron-1"
+                            if not a in ctx.state.chain_cache
+                            else ctx.state.chain_cache[a]
+                        ),
                     )
                 ]
 
@@ -470,48 +487,22 @@ async def route_bellman_ford(
                     else edge.backend.out_asset()
                 )
 
-                if (
-                    distances[pair] + edge.weight < distances[match_pair]
-                    or distances[pair_denom] + edge.weight < distances[match_pair]
-                ):
-                    distances[match_pair] = min(
-                        distances[pair] + edge.weight,
-                        distances[pair_denom] + edge.weight,
-                    )
-                    pred[match_pair] = (
-                        pair
-                        if distances[pair] + edge.weight
-                        < distances[pair_denom] + edge.weight
-                        else pair_denom
-                    )
+                if distances[pair_denom] + edge.weight < distances[match_pair]:
+                    distances[match_pair] = distances[pair_denom] + edge.weight
+                    pred[match_pair] = pair_denom
                     pair_leg[(match_pair, pair_denom)] = edge.backend
-                    visits[match_pair] = visits[pair] + 1
+                    visits[match_pair] = visits[pair_denom] + 1
 
                     # Find the negative cycle
                     if visits[match_pair] == len(vertices):
-                        print(pred)
+                        legs = [pair_leg[(pred[src], src)]]
 
-                        curr: str = src
-                        to_visit: deque[str] = deque()
-
-                        while not curr in to_visit:
-                            to_visit.appendleft(curr)
-                            curr = pred[curr]
-
-                        path = [curr]
-
-                        while to_visit[0] != curr:
-                            path.append(to_visit.popleft())
-
-                        path.append(curr)
-
-                        legs = []
-
-                        for i in range(len(path) - 1):
-                            curr = path[i]
-                            next_denom = path[i + 1]
-
-                            legs.append(pair_leg[(curr, next_denom)])
+                        while legs[-1].in_asset() != legs[0].out_asset():
+                            legs.append(
+                                pair_leg[
+                                    (pred[legs[-1].in_asset()], legs[-1].in_asset())
+                                ]
+                            )
 
                         return (distances[src], legs)
 

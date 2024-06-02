@@ -2,6 +2,7 @@
 Implements a strategy runner with an arbitrary provider set in an event-loop style.
 """
 
+import logging
 from datetime import datetime
 import json
 import asyncio
@@ -15,6 +16,8 @@ from src.contracts.pool.provider import PoolProvider
 from src.util import deployments
 import aiohttp
 import grpc
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -76,7 +79,11 @@ class Ctx:
         return self
 
     def queue_route(
-        self, route: list[Leg], expected_profit: int, quantities: list[int]
+        self,
+        route: list[Leg],
+        theoretical_profit: int,
+        expected_profit: int,
+        quantities: list[int],
     ) -> Route:
         """
         Creates a new identified route, inserting it into the order history,
@@ -89,6 +96,7 @@ class Ctx:
                 LegRepr(leg.in_asset(), leg.out_asset(), leg.backend.kind)
                 for leg in route
             ],
+            theoretical_profit,
             expected_profit,
             None,
             quantities,
@@ -124,18 +132,20 @@ class Ctx:
 
         self.order_history[route.uid] = route
 
+        fmt_string = f"%s- {fmt_string}"
+
         if log_level == "info":
-            logger.info(fmt_string, *args)
+            logger.info(fmt_string, str(route), *args)
 
             return
 
         if log_level == "error":
-            logger.error(fmt_string, *args)
+            logger.error(fmt_string, str(route), *args)
 
             return
 
         if log_level == "debug":
-            logger.debug(fmt_string, *args)
+            logger.debug(fmt_string, str(route), *args)
 
 
 class Scheduler:

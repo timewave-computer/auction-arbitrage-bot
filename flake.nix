@@ -34,6 +34,8 @@
             mypy-protobuf
             mypy
             black
+            grpc
+            grpc_cli
           ];
 
           packages = [ pythonWithPackages ];

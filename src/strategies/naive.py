@@ -17,7 +17,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 import logging
-from src.contracts.route import Leg, Status
+from src.contracts.route import Leg, Status, Route
 from src.contracts.pool.provider import PoolProvider
 from src.contracts.pool.osmosis import OsmosisPoolProvider
 from src.contracts.pool.astroport import (
@@ -122,7 +122,7 @@ async def strategy(
         "Finding profitable routes",
     )
 
-    async for quantities, profit, route in listen_routes_with_depth_dfs(
+    async for r, route in listen_routes_with_depth_dfs(
         ctx.cli_args["hops"],
         ctx.cli_args["base_denom"],
         set(ctx.cli_args["require_leg_types"]),
@@ -135,9 +135,12 @@ async def strategy(
         if not ctx.state.balance:
             continue
 
-        logger.info("Executing route with profit of %d: %s", profit, fmt_route(route))
-
-        r = ctx.queue_route(route, profit, quantities)
+        ctx.log_route(
+            r,
+            "info",
+            "Executing route with profit of %d",
+            [profit],
+        )
 
         try:
             balance_prior = ctx.state.balance
@@ -164,10 +167,9 @@ async def strategy(
             ctx.log_route(r, "error", "Arb failed %s: %s", [fmt_route(route), e])
 
             r.status = Status.FAILED
-        finally:
-            ctx.update_route(r)
 
-            ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions)).commit_history()
+        ctx.update_route(r)
+    ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions)).commit_history()
 
     logger.info("Completed arbitrage round")
 
@@ -177,7 +179,9 @@ async def strategy(
 async def eval_route(
     route: list[Leg],
     ctx: Ctx,
-) -> Optional[tuple[list[int], int, list[Leg]]]:
+) -> Optional[tuple[Route, list[Leg]]]:
+    r = ctx.queue_route(route, 0, 0, [])
+
     logger.debug("Evaluating route for profitability: %s", fmt_route(route))
 
     if not ctx.state.balance:
@@ -195,6 +199,8 @@ async def eval_route(
         route,
     )
 
+    r.theoretical_profit = profit
+
     if profit < ctx.cli_args["profit_margin"]:
         logger.debug(
             "Route is not theoretically profitable with profit of %d: %s",
@@ -204,39 +210,62 @@ async def eval_route(
 
         return None
 
-    logger.debug(
-        "Route has theoretical profit of %d: %s",
-        profit,
-        fmt_route_debug(route),
+    ctx.log_route(
+        r,
+        "info",
+        "Route has theoretical profit of %d",
+        [
+            profit,
+        ],
     )
 
     starting_amt = await starting_quantity_for_route_profit(ctx.state.balance, route)
+
+    ctx.log_route(
+        r,
+        "info",
+        "Route has investment ramp of %d",
+        [
+            starting_amt,
+        ],
+    )
 
     # Second pass: could we reasonably profit from this arb?
     profit, quantities = await quantities_for_route_profit(
         starting_amt,
         route,
+        r,
+        ctx,
     )
+
+    r.expected_profit = profit
+    r.quantities = quantities
 
     logger.debug("Route %s has execution plan: %s", fmt_route(route), quantities)
 
     if profit < ctx.cli_args["profit_margin"]:
-        logger.debug(
-            "Route is not profitable with profit of %d: %s",
-            profit,
-            fmt_route_debug(route),
+        ctx.log_route(
+            r,
+            "info",
+            "Route is not profitable with profit of %d",
+            [
+                profit,
+            ],
         )
 
         return None
 
-    logger.debug(
-        "Route is profitable with realizable profit of %d: %s",
-        profit,
-        fmt_route_debug(route),
+    ctx.log_route(
+        r,
+        "info",
+        "Route is profitable with realizable profit of %d",
+        [
+            profit,
+        ],
     )
 
     # Queue the route for execution, since it is profitable
-    return (quantities, profit, route)
+    return (r, route)
 
 
 async def leg_liquidity(leg: Leg) -> tuple[int, int]:
@@ -259,7 +288,7 @@ async def listen_routes_with_depth_dfs(
     pools: dict[str, dict[str, List[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
     ctx: Ctx,
-) -> AsyncGenerator[tuple[list[int], int, list[Leg]], None]:
+) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
     denom_cache: dict[str, dict[str, str]] = {}
 
     start_pools: list[Union[AuctionProvider, PoolProvider]] = [
@@ -280,7 +309,7 @@ async def listen_routes_with_depth_dfs(
 
     async def next_legs(
         path: list[Leg],
-    ) -> AsyncGenerator[tuple[list[int], int, list[Leg]], None]:
+    ) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
         nonlocal denom_cache
 
         if len(path) >= 2:
