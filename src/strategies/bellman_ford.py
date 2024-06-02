@@ -487,9 +487,6 @@ async def route_bellman_ford(
                     pair_leg[(edge.backend.in_asset(), edge.backend.out_asset())] = (
                         edge.backend
                     )
-                    pair_leg[(edge.backend.out_asset(), edge.backend.in_asset())] = (
-                        edge.backend
-                    )
 
             relax_edge(edge_a)
             relax_edge(edge_b)
@@ -530,12 +527,12 @@ async def route_bellman_ford(
 
         cycle = check_cycle(edge_a)
 
-        if cycle and cycle[0] == src and cycle[-1] == src:
+        if cycle and len(cycle) > 3:
             cycles.append(cycle)
 
         cycle = check_cycle(edge_b)
 
-        if cycle and cycle[0] == src and cycle[-1] == src:
+        if cycle and len(cycle) > 3:
             cycles.append(cycle)
 
     if len(cycles) == 0:
