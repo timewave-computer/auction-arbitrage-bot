@@ -125,7 +125,70 @@ async def strategy(
         "Finding profitable routes",
     )
 
-    async for r, route in listen_routes_with_depth_dfs(
+    # Prevent more than 5 routes from being executed at once
+    sem = asyncio.Semaphore(EVALUATION_CONCURRENCY_FACTOR)
+
+    def handle_route(route: list[Leg], ctx: Ctx):
+        async def eval_exec_arb(route: list[Leg], ctx: Ctx):
+            async with sem:
+                resp = await eval_route(route, ctx)
+
+                if not resp:
+                    return
+
+                (r, route) = resp
+
+                logger.info("Route queued: %s", fmt_route(route))
+
+                if not ctx.state.balance:
+                    return
+
+                ctx.log_route(
+                    r,
+                    "info",
+                    "Executing route with profit of %d",
+                    [profit],
+                )
+
+                try:
+                    balance_prior = ctx.state.balance
+
+                    await exec_arb(profit, quantities, route, ctx)
+
+                    balance_after_resp = try_multiple_clients(
+                        ctx.clients["neutron"],
+                        lambda client: client.query_bank_balance(
+                            Address(ctx.wallet.public_key(), prefix="neutron"),
+                            ctx.cli_args["base_denom"],
+                        ),
+                    )
+
+                    if balance_after_resp:
+                        r.realized_profit = balance_after_resp - balance_prior
+
+                    r.status = Status.EXECUTED
+
+                    ctx.log_route(
+                        r, "info", "Executed route successfully: %s", [fmt_route(route)]
+                    )
+                except Exception as e:
+                    ctx.log_route(
+                        r, "error", "Arb failed %s: %s", [fmt_route(route), e]
+                    )
+
+                    r.status = Status.FAILED
+
+                ctx.update_route(r)
+
+                ctx = ctx.with_state(
+                    ctx.state.poll(ctx, pools, auctions)
+                ).commit_history()
+
+        asyncio.run(eval_exec_arb(route, ctx))
+
+    workers = []
+
+    async for route in listen_routes_with_depth_dfs(
         ctx.cli_args["hops"],
         ctx.cli_args["base_denom"],
         set(ctx.cli_args["require_leg_types"]),
@@ -133,46 +196,11 @@ async def strategy(
         auctions,
         ctx,
     ):
-        logger.info("Route queued: %s", fmt_route(route))
+        workers.append(threading.Thread(target=handle_route, args=[route, ctx]))
+        workers[-1].start()
 
-        if not ctx.state.balance:
-            continue
-
-        ctx.log_route(
-            r,
-            "info",
-            "Executing route with profit of %d",
-            [profit],
-        )
-
-        try:
-            balance_prior = ctx.state.balance
-
-            await exec_arb(profit, quantities, route, ctx)
-
-            balance_after_resp = try_multiple_clients(
-                ctx.clients["neutron"],
-                lambda client: client.query_bank_balance(
-                    Address(ctx.wallet.public_key(), prefix="neutron"),
-                    ctx.cli_args["base_denom"],
-                ),
-            )
-
-            if balance_after_resp:
-                r.realized_profit = balance_after_resp - balance_prior
-
-            r.status = Status.EXECUTED
-
-            ctx.log_route(
-                r, "info", "Executed route successfully: %s", [fmt_route(route)]
-            )
-        except Exception as e:
-            ctx.log_route(r, "error", "Arb failed %s: %s", [fmt_route(route), e])
-
-            r.status = Status.FAILED
-
-        ctx.update_route(r)
-    ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions)).commit_history()
+    for worker in workers:
+        worker.join()
 
     logger.info("Completed arbitrage round")
 
@@ -293,7 +321,7 @@ async def listen_routes_with_depth_dfs(
     pools: dict[str, dict[str, List[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
     ctx: Ctx,
-) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
+) -> AsyncGenerator[list[Leg], None]:
     denom_cache: dict[str, dict[str, str]] = {}
 
     start_pools: list[Union[AuctionProvider, PoolProvider]] = [
@@ -316,7 +344,7 @@ async def listen_routes_with_depth_dfs(
 
     async def next_legs(
         path: list[Leg],
-    ) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
+    ) -> AsyncGenerator[list[Leg], None]:
         nonlocal denom_cache
 
         if len(path) >= 2:
@@ -349,10 +377,7 @@ async def listen_routes_with_depth_dfs(
 
             resp = await eval_route(path, ctx)
 
-            if not resp:
-                return
-
-            yield resp
+            yield path
 
             return
 

@@ -437,7 +437,7 @@ async def quantities_for_route_profit(
         return (0, [])
 
     starting_amount = min(
-        int(Decimal(starting_amount) * Decimal(MAX_TRADE_IN_POOL_FRACTION)),
+        starting_amount,
         (
             int(
                 Decimal(await route[0].backend.remaining_asset_b())
@@ -532,13 +532,15 @@ async def starting_quantity_for_route_profit(
             (leg.backend.asset_b(), await leg.backend.balance_asset_b(), index),
         ]
 
-    with_liquidity: list[tuple[str, int, int]] = await asyncio.gather(
+    with_liquidity: list[list[tuple[str, int, int]]] = await asyncio.gather(
         *[leg_liquidity(leg, i) for (i, leg) in enumerate(route)]
     )
     min_liquidity_pair: list[tuple[str, int, int]] = min(
         with_liquidity, key=lambda liq_pair: (liq_pair[0][1], liq_pair[1][1])
     )
-    min_liquidity = min(min_liquidity_pair)
+    min_liquidity: tuple[str, int, int] = min(
+        min_liquidity_pair, key=lambda liq: liq[1]
+    )
 
     ctx.log_route(
         r,
