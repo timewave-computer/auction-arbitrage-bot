@@ -132,7 +132,7 @@ async def strategy(
         auctions,
         ctx,
     ):
-        ctx.log_route(r, "info", "Route queued", [])
+        ctx.log_route(r, "info", "Route queued: %s", [fmt_route(route)])
 
         if not ctx.state.balance:
             return
