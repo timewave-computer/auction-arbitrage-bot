@@ -76,7 +76,8 @@ async def main() -> None:
 
     if args.log_file:
         logging.basicConfig(
-            filename=args.log_file, level=os.environ.get("LOGLEVEL", "INFO").upper()
+            level=os.environ.get("LOGLEVEL", "INFO").upper(),
+            handlers=[logging.FileHandler(args.log_file), logging.StreamHandler()],
         )
     else:
         logging.basicConfig(
