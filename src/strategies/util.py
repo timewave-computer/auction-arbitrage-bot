@@ -536,7 +536,12 @@ async def starting_quantity_for_route_profit(
         *[leg_liquidity(leg, i) for (i, leg) in enumerate(route)]
     )
     min_liquidity_pair: list[tuple[str, int, int]] = min(
-        with_liquidity, key=lambda liq_pair: (liq_pair[0][1], liq_pair[1][1])
+        with_liquidity,
+        key=lambda liq_pair: (
+            (liq_pair[0][1], liq_pair[0][1])
+            if len(liq_pair) == 1
+            else (liq_pair[0][1], liq_pair[1][1])
+        ),
     )
     min_liquidity: tuple[str, int, int] = min(
         min_liquidity_pair, key=lambda liq: liq[1]

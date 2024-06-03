@@ -36,6 +36,7 @@ from src.util import (
     MAX_SKIP_CONCURRENT_CALLS,
     DISCOVERY_CONCURRENCY_FACTOR,
     denom_info,
+    denom_info_on_chain,
     int_to_decimal,
     try_multiple_clients,
     DenomChainInfo,
@@ -303,6 +304,15 @@ async def strategy(
 
         return ctx
 
+    ctx.log_route(
+        r,
+        "info",
+        "Route is profitable with theoretical profit of %d",
+        [
+            profit,
+        ],
+    )
+
     starting_amt = await starting_quantity_for_route_profit(balance_resp, route, r, ctx)
 
     profit, quantities = await quantities_for_route_profit(
@@ -544,5 +554,74 @@ async def route_bellman_ford(
         asset_b = cycles[0][i + 1]
 
         legs.append(pair_leg[(asset_a, asset_b)])
+
+    # If this trade doesn't start and end with USDC
+    # construct it to do so
+    if legs[0].in_asset() != src or legs[-1].out_asset() != src:
+        in_denom = await denom_info_on_chain(
+            "neutron-1", src, legs[0].backend.chain_id, ctx.http_session
+        )
+
+        if not in_denom:
+            return None
+
+        out_denom = await denom_info_on_chain(
+            "neutron-1", src, legs[-1].backend.chain_id, ctx.http_session
+        )
+
+        if not out_denom:
+            return None
+
+        in_legs = pools.get(in_denom.denom, {}).get(legs[0].in_asset(), [])
+        in_auction = auctions.get(in_denom.denom, {}).get(legs[0].in_asset(), None)
+
+        if in_auction:
+            in_legs.append(in_auction)
+
+        out_legs = pools.get(legs[-1].out_asset(), {}).get(out_denom.denom, [])
+        out_auction = auctions.get(legs[-1].out_asset(), {}).get(out_denom.denom, None)
+
+        if out_auction:
+            out_legs.append(out_auction)
+
+        if len(in_legs) == 0 or len(out_legs) == 0:
+            return None
+
+        in_leg = in_legs[0]
+        out_leg = out_legs[0]
+
+        legs = (
+            [
+                Leg(
+                    (
+                        in_leg.asset_a
+                        if in_leg.asset_a() == in_denom.denom
+                        else in_leg.asset_b
+                    ),
+                    (
+                        in_leg.asset_b
+                        if in_leg.asset_a() == in_denom.denom
+                        else in_leg.asset_a
+                    ),
+                    in_leg,
+                )
+            ]
+            + legs
+            + [
+                Leg(
+                    (
+                        out_leg.asset_b
+                        if out_leg.asset_a() == out_denom.denom
+                        else out_leg.asset_a
+                    ),
+                    (
+                        out_leg.asset_a
+                        if out_leg.asset_a() == out_denom.denom
+                        else out_leg.asset_b
+                    ),
+                    out_leg,
+                )
+            ]
+        )
 
     return legs

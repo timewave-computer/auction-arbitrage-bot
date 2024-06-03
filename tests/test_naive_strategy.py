@@ -4,7 +4,7 @@ Tests the naive strategy.
 
 from src.strategies.naive import (
     fmt_route_leg,
-    get_routes_with_depth_limit_bfs,
+    listen_routes_with_depth_dfs,
     route_base_denom_profit_prices,
 )
 from src.scheduler import Scheduler
@@ -13,6 +13,11 @@ from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
 from src.contracts.auction import AuctionDirectory
 from src.util import deployments
 from tests.test_scheduler import ctx, strategy
+import pytest
+import asyncio
+
+
+pytest_plugins = ("pytest_asyncio",)
 
 
 def test_fmt_route_leg() -> None:
@@ -41,7 +46,8 @@ def test_fmt_route_leg() -> None:
     assert fmt_route_leg(auction) == "valence"
 
 
-def test_get_routes_with_depth_limit_bfs() -> None:
+@pytest.mark.asyncio
+async def test_get_routes_with_depth_limit_dfs() -> None:
     """
     Tests the route graph explorer in a minimal and maximal case:
     - depth: 5, limit: 50
@@ -53,8 +59,8 @@ def test_get_routes_with_depth_limit_bfs() -> None:
     osmosis = OsmosisPoolDirectory()
     astro = NeutronAstroportPoolDirectory(deployments())
 
-    osmo_pools = osmosis.pools()
-    astro_pools = astro.pools()
+    await osmo_pools = osmosis.pools()
+    await astro_pools = astro.pools()
 
     for osmo_base in osmo_pools.values():
         for osmo_pool in osmo_base.values():
@@ -67,19 +73,12 @@ def test_get_routes_with_depth_limit_bfs() -> None:
     providers = sched.providers
     auctions = sched.auctions
 
-    routes_max = get_routes_with_depth_limit_bfs(
-        5,
-        50,
-        "ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81",
-        providers,
-        auctions,
-    )
-    routes_min = get_routes_with_depth_limit_bfs(
+    routes = listen_routes_with_depth_dfs(
         3,
-        5,
         "ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81",
         providers,
         auctions,
+        sched.ctx,
     )
 
     assert len(routes_max) > 0

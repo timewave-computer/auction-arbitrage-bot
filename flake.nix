@@ -21,6 +21,7 @@
             schedule
             python-dotenv
             aiostream
+            pytest
             (skipCheckTests aiohttp)
             (skipCheckTests aiodns)
           ]);

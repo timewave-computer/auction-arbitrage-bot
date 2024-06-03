@@ -35,22 +35,62 @@ def ctx() -> Ctx:
     Gets a default context for test schedulers.
     """
 
+    endpoints: dict[str, dict[str, list[str]]] = {
+        "neutron": {
+            "http": ["https://neutron-rest.publicnode.com"],
+            "grpc": ["grpc+https://neutron-grpc.publicnode.com:443"],
+        },
+        "osmosis": {
+            "http": ["https://lcd.osmosis.zone"],
+            "grpc": ["grpc+https://osmosis-grpc.publicnode.com:443"],
+        },
+    }
+
     return Ctx(
-        LedgerClient(NEUTRON_NETWORK_CONFIG),
-        LocalWallet.from_mnemonic(TEST_WALLET_MNEMONIC),
+        {
+            "neutron": [
+                LedgerClient(NEUTRON_NETWORK_CONFIG),
+                *[
+                    LedgerClient(custom_neutron_network_config(endpoint))
+                    for endpoint in endpoints["neutron"]["grpc"]
+                ],
+            ],
+            "osmosis": [
+                *[
+                    LedgerClient(
+                        NetworkConfig(
+                            chain_id="osmosis-1",
+                            url=endpoint,
+                            fee_minimum_gas_price=0.0053,
+                            fee_denomination="uosmo",
+                            staking_denomination="uosmo",
+                        )
+                    )
+                    for endpoint in endpoints["osmosis"]["grpc"]
+                ],
+            ],
+        },
+        endpoints,
+        LocalWallet.from_mnemonic(TEST_WALLET_MNEMONIC, prefix="neutron"),
         {
             "pool_file": None,
             "poll_interval": 120,
-            "discovery_interval": 1000,
-            "hops": 5,
-            "num_routes_considered": 20,
-            "base_denom": "ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81",
-            "profit_margin": 10,
-            "wallet_mnemonic": TEST_WALLET_MNEMONIC,
-            "cmd": None,
+            "discovery_interval": 600,
+            "hops": int(args.hops),
+            "pools": int(args.pools) if args.pools else None,
+            "require_leg_types": args.require_leg_types,
+            "base_denom": args.base_denom,
+            "profit_margin": int(args.profit_margin),
+            "wallet_mnemonic": os.environ.get("WALLET_MNEMONIC"),
+            "cmd": args.cmd,
+            "net_config": args.net_config,
+            "log_file": args.log_file,
+            "history_file": args.history_file,
         },
         None,
         False,
+        session,
+        [],
     )
 
 

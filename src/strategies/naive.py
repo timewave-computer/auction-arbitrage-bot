@@ -125,70 +125,7 @@ async def strategy(
         "Finding profitable routes",
     )
 
-    # Prevent more than 5 routes from being executed at once
-    sem = asyncio.Semaphore(EVALUATION_CONCURRENCY_FACTOR)
-
-    def handle_route(route: list[Leg], ctx: Ctx):
-        async def eval_exec_arb(route: list[Leg], ctx: Ctx):
-            async with sem:
-                resp = await eval_route(route, ctx)
-
-                if not resp:
-                    return
-
-                (r, route) = resp
-
-                logger.info("Route queued: %s", fmt_route(route))
-
-                if not ctx.state.balance:
-                    return
-
-                ctx.log_route(
-                    r,
-                    "info",
-                    "Executing route with profit of %d",
-                    [profit],
-                )
-
-                try:
-                    balance_prior = ctx.state.balance
-
-                    await exec_arb(profit, quantities, route, ctx)
-
-                    balance_after_resp = try_multiple_clients(
-                        ctx.clients["neutron"],
-                        lambda client: client.query_bank_balance(
-                            Address(ctx.wallet.public_key(), prefix="neutron"),
-                            ctx.cli_args["base_denom"],
-                        ),
-                    )
-
-                    if balance_after_resp:
-                        r.realized_profit = balance_after_resp - balance_prior
-
-                    r.status = Status.EXECUTED
-
-                    ctx.log_route(
-                        r, "info", "Executed route successfully: %s", [fmt_route(route)]
-                    )
-                except Exception as e:
-                    ctx.log_route(
-                        r, "error", "Arb failed %s: %s", [fmt_route(route), e]
-                    )
-
-                    r.status = Status.FAILED
-
-                ctx.update_route(r)
-
-                ctx = ctx.with_state(
-                    ctx.state.poll(ctx, pools, auctions)
-                ).commit_history()
-
-        asyncio.run(eval_exec_arb(route, ctx))
-
-    workers = []
-
-    async for route in listen_routes_with_depth_dfs(
+    async for r, route in listen_routes_with_depth_dfs(
         ctx.cli_args["hops"],
         ctx.cli_args["base_denom"],
         set(ctx.cli_args["require_leg_types"]),
@@ -196,11 +133,45 @@ async def strategy(
         auctions,
         ctx,
     ):
-        workers.append(threading.Thread(target=handle_route, args=[route, ctx]))
-        workers[-1].start()
+        ctx.log_route(r, "info", "Route queued", [])
 
-    for worker in workers:
-        worker.join()
+        if not ctx.state.balance:
+            return
+
+        ctx.log_route(
+            r,
+            "info",
+            "Executing route with profit of %d",
+            [r.expected_profit],
+        )
+
+        try:
+            balance_prior = ctx.state.balance
+
+            await exec_arb(r, r.expected_profit, r.quantities, route, ctx)
+
+            balance_after_resp = try_multiple_clients(
+                ctx.clients["neutron"],
+                lambda client: client.query_bank_balance(
+                    Address(ctx.wallet.public_key(), prefix="neutron"),
+                    ctx.cli_args["base_denom"],
+                ),
+            )
+
+            if balance_after_resp:
+                r.realized_profit = balance_after_resp - balance_prior
+
+            r.status = Status.EXECUTED
+
+            ctx.log_route(r, "info", "Executed route successfully", [])
+        except Exception as e:
+            ctx.log_route(r, "error", "Arb failed %s: %s", [fmt_route(route), e])
+
+            r.status = Status.FAILED
+
+        ctx.update_route(r)
+
+        ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions)).commit_history()
 
     logger.info("Completed arbitrage round")
 
@@ -274,7 +245,7 @@ async def eval_route(
     r.expected_profit = profit
     r.quantities = quantities
 
-    logger.debug("Route %s has execution plan: %s", fmt_route(route), quantities)
+    logger.debug("Route has execution plan: %s", r.quantities)
 
     if profit < ctx.cli_args["profit_margin"]:
         ctx.log_route(
@@ -321,7 +292,7 @@ async def listen_routes_with_depth_dfs(
     pools: dict[str, dict[str, List[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
     ctx: Ctx,
-) -> AsyncGenerator[list[Leg], None]:
+) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
     denom_cache: dict[str, dict[str, str]] = {}
 
     start_pools: list[Union[AuctionProvider, PoolProvider]] = [
@@ -340,11 +311,9 @@ async def listen_routes_with_depth_dfs(
 
     random.shuffle(start_legs)
 
-    sem = asyncio.Semaphore(DISCOVERY_CONCURRENCY_FACTOR)
-
     async def next_legs(
         path: list[Leg],
-    ) -> AsyncGenerator[list[Leg], None]:
+    ) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
         nonlocal denom_cache
 
         if len(path) >= 2:
@@ -377,7 +346,10 @@ async def listen_routes_with_depth_dfs(
 
             resp = await eval_route(path, ctx)
 
-            yield path
+            if not resp:
+                return
+
+            yield resp
 
             return
 
@@ -477,29 +449,9 @@ async def listen_routes_with_depth_dfs(
             }
         )
 
-        async def leg_liquidity(leg: Leg) -> tuple[Leg, tuple[int, int]]:
-            if leg not in ctx.state.liquidity_cache:
-                async with sem:
-                    if isinstance(leg.backend, AuctionProvider):
-                        bal = await leg.backend.remaining_asset_b()
+        random.shuffle(next_pools)
 
-                        ctx.state.liquidity_cache[leg] = (bal, bal)
-                    else:
-                        ctx.state.liquidity_cache[leg] = (
-                            await leg.backend.balance_asset_a(),
-                            await leg.backend.balance_asset_b(),
-                        )
-
-            return (leg, ctx.state.liquidity_cache[leg])
-
-        with_liquidity: list[tuple[Leg, tuple[int, int]]] = await asyncio.gather(
-            *[leg_liquidity(leg) for leg in next_pools]
-        )
-        with_liquidity.sort(key=lambda tup: tup[1], reverse=True)
-
-        sorted_next_pools = (tup[0] for tup in with_liquidity)
-
-        routes = stream.merge(*[next_legs(path + [pool]) for pool in sorted_next_pools])
+        routes = stream.merge(*[next_legs(path + [pool]) for pool in next_pools])
 
         async with routes.stream() as streamer:
             async for route in streamer:
