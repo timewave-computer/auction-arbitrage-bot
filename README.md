@@ -71,7 +71,7 @@ make proto
 
 ## Usage
 
-The auction arbitrage bot can be run with only one required flag: `wallet_mnemonic`. This flag specifies where to look for initial funds for arbitrage. All available flags are:
+The auction arbitrage bot can be run with only one required environment variable: `WALLET_MNEMONIC`. This environment variable specifies where to look for initial funds for arbitrage. All available flags are:
 
 * `-f` (`--pool_file`): Specifies which pools to use for the Neutron Astroport and Osmosis pool providers, and which routes to use for the Scheduler. Can also be used to cache requests required to obtain pool information.
 * `-p` (`--poll_interval`): Specifies how frequently the arbitrage strategy should be run (in seconds). The default value is `120`.

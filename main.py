@@ -171,6 +171,11 @@ async def main() -> None:
                 "net_config": args.net_config,
                 "log_file": args.log_file,
                 "history_file": args.history_file,
+                "skip_api_key": (
+                    os.environ.get("SKIP_API_KEY")
+                    if "SKIP_API_KEY" in os.environ
+                    else None
+                ),
             },
             None,
             False,

@@ -38,7 +38,6 @@ from src.strategies.util import (
 )
 from src.util import (
     DenomChainInfo,
-    denom_info_on_chain,
     denom_info,
     ContractInfo,
     deployments,
@@ -367,7 +366,10 @@ async def listen_routes_with_depth_dfs(
         if not end in denom_cache:
             try:
                 denom_infos = await denom_info(
-                    prev_pool.backend.chain_id, end, ctx.http_session
+                    prev_pool.backend.chain_id,
+                    end,
+                    ctx.http_session,
+                    api_key=ctx.cli_args["skip_api_key"],
                 )
 
                 denom_cache[end] = {

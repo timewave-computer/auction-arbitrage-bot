@@ -261,15 +261,23 @@ class DenomChainInfo:
 
 
 async def denom_info(
-    src_chain: str, src_denom: str, session: aiohttp.ClientSession
+    src_chain: str,
+    src_denom: str,
+    session: aiohttp.ClientSession,
+    api_key: Optional[str] = None,
 ) -> list[DenomChainInfo]:
     """
     Gets a denom's denom and channel on/to other chains.
     """
 
+    head = {"accept": "application/json", "content-type": "application/json"}
+
+    if api_key:
+        head["authorization"] = api_key
+
     async with session.post(
         "https://api.skip.money/v1/fungible/assets_from_source",
-        headers={"accept": "application/json", "content-type": "application/json"},
+        headers=head,
         json={
             "allow_multi_tx": False,
             "include_cw20_assets": True,
@@ -311,9 +319,14 @@ async def denom_info_on_chain(
     Gets a neutron denom's denom and channel on/to another chain.
     """
 
+    head = {"accept": "application/json", "content-type": "application/json"}
+
+    if api_key:
+        head["authorization"] = api_key
+
     async with session.post(
         "https://api.skip.money/v1/fungible/assets_from_source",
-        headers={"accept": "application/json", "content-type": "application/json"},
+        headers=head,
         json={
             "allow_multi_tx": False,
             "include_cw20_assets": True,
