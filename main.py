@@ -245,13 +245,17 @@ async def main() -> None:
             else:
                 for order in ctx.order_history:
                     logger.info(
-                        "%s (%s) expected ROI: %d, realized P/L: %d, status: %s",
+                        "%s (%s) expected ROI: %d, realized P/L: %d, status: %s, is_osmo: %s, is_valence: %s\n",
                         order,
                         order.time_created,
                         order.expected_profit,
                         order.realized_profit if order.realized_profit else 0,
                         order.status,
+                        any([leg.kind == "osmosis" for leg in order.route]),
+                        any([leg.kind == "valence" for leg in order.route]),
                     )
+
+                    logger.info("Execution trace:")
 
                     for log in order.logs:
                         logger.info("%s", log)
