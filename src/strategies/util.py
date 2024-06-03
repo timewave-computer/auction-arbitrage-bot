@@ -161,7 +161,8 @@ async def exec_arb(
         if prev_leg and prev_leg.backend.chain_id != leg.backend.chain_id:
             ctx.log_route(
                 route_ent,
-                "info" "Transfering %s %s from %s -> %s",
+                "info",
+                "Transfering %s %s from %s -> %s",
                 [
                     to_swap,
                     prev_leg.out_asset(),
