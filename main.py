@@ -255,7 +255,7 @@ async def main() -> None:
             else:
                 for order in ctx.order_history:
                     logger.info(
-                        "%s (%s) expected ROI: %d, realized P/L: %d, status: %s, is_osmo: %s, is_valence: %s\n",
+                        "%s (%s) expected ROI: %d, realized P/L: %d, status: %s, is_osmo: %s, is_valence: %s",
                         order,
                         order.time_created,
                         order.expected_profit,
