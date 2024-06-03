@@ -22,6 +22,7 @@
             python-dotenv
             aiostream
             pytest
+            pytest-asyncio
             (skipCheckTests aiohttp)
             (skipCheckTests aiodns)
           ]);

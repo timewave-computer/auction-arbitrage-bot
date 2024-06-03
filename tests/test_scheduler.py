@@ -11,6 +11,10 @@ from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
 from src.contracts.pool.provider import PoolProvider
 from src.contracts.auction import AuctionProvider
+import aiohttp
+import pytest
+
+pytest_plugins = ("pytest_asyncio",)
 
 # Note: this account has no funds and is not used for anything
 TEST_WALLET_MNEMONIC = (
@@ -18,7 +22,7 @@ TEST_WALLET_MNEMONIC = (
 )
 
 
-def strategy(
+async def strategy(
     strat_ctx: Ctx,
     _pools: dict[str, dict[str, List[PoolProvider]]],
     _auctions: dict[str, dict[str, AuctionProvider]],
@@ -30,7 +34,7 @@ def strategy(
     return strat_ctx
 
 
-def ctx() -> Ctx:
+def ctx(session: aiohttp.ClientSession) -> Ctx:
     """
     Gets a default context for test schedulers.
     """
@@ -94,64 +98,85 @@ def ctx() -> Ctx:
     )
 
 
-def test_init() -> None:
+@pytest.mark.asyncio
+async def test_init() -> None:
     """
     Test that a scheduler can be instantiated.
     """
 
-    sched = Scheduler(ctx(), strategy)
-    assert sched is not None
+    async with aiohttp.ClientSession(
+        connector=aiohttp.TCPConnector(
+            force_close=True, limit_per_host=DISCOVERY_CONCURRENCY_FACTOR
+        ),
+        timeout=aiohttp.ClientTimeout(total=30),
+    ) as session:
+        sched = Scheduler(ctx(session), strategy)
+        assert sched is not None
 
 
-def test_register_provider() -> None:
+@pytest.mark.asyncio
+async def test_register_provider() -> None:
     """
     Test that a provider can be registered to a scheduler.
     """
 
-    osmosis = OsmosisPoolDirectory()
-    pool = list(list(osmosis.pools().values())[0].values())[0]
+    async with aiohttp.ClientSession(
+        connector=aiohttp.TCPConnector(
+            force_close=True, limit_per_host=DISCOVERY_CONCURRENCY_FACTOR
+        ),
+        timeout=aiohttp.ClientTimeout(total=30),
+    ) as session:
+        osmosis = OsmosisPoolDirectory()
+        pool = list(list(osmosis.pools().values())[0].values())[0]
 
-    sched = Scheduler(ctx(), strategy)
+        sched = Scheduler(ctx(session), strategy)
 
-    directory = OsmosisPoolDirectory()
-    pools = directory.pools()
+        directory = OsmosisPoolDirectory()
+        pools = directory.pools()
 
-    for base in pools.values():
-        for pool in base.values():
-            sched.register_provider(pool)
+        for base in pools.values():
+            for pool in base.values():
+                sched.register_provider(pool)
 
-    assert len(sched.providers) > 0
+        assert len(sched.providers) > 0
 
 
-def test_poll() -> None:
+@pytest.mark.asyncio
+async def test_poll() -> None:
     """
     Test that a strategy function can be run.
     """
 
-    osmosis = OsmosisPoolDirectory()
-    astroport = NeutronAstroportPoolDirectory(deployments())
+    async with aiohttp.ClientSession(
+        connector=aiohttp.TCPConnector(
+            force_close=True, limit_per_host=DISCOVERY_CONCURRENCY_FACTOR
+        ),
+        timeout=aiohttp.ClientTimeout(total=30),
+    ) as session:
+        osmosis = OsmosisPoolDirectory()
+        astroport = NeutronAstroportPoolDirectory(deployments())
 
-    def simple_strategy(
-        strat_ctx: Ctx,
-        pools: dict[str, dict[str, List[PoolProvider]]],
-        auctions: dict[str, dict[str, AuctionProvider]],
-    ) -> Ctx:
-        assert len(pools) > 0
-        assert len(auctions) > 0
+        def simple_strategy(
+            strat_ctx: Ctx,
+            pools: dict[str, dict[str, List[PoolProvider]]],
+            auctions: dict[str, dict[str, AuctionProvider]],
+        ) -> Ctx:
+            assert len(pools) > 0
+            assert len(auctions) > 0
 
-        return strat_ctx
+            return strat_ctx
 
-    sched = Scheduler(ctx(), simple_strategy)
+        sched = Scheduler(ctx(session), simple_strategy)
 
-    osmos_pools = osmosis.pools()
-    astro_pools = astroport.pools()
+        osmos_pools = osmosis.pools()
+        astro_pools = astroport.pools()
 
-    for base in osmos_pools.values():
-        for pool in base.values():
-            sched.register_provider(pool)
+        for base in osmos_pools.values():
+            for pool in base.values():
+                sched.register_provider(pool)
 
-    for astro_base in astro_pools.values():
-        for astro_pool in astro_base.values():
-            sched.register_provider(astro_pool)
+        for astro_base in astro_pools.values():
+            for astro_pool in astro_base.values():
+                sched.register_provider(astro_pool)
 
-    sched.poll()
+        sched.poll()
