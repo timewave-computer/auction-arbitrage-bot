@@ -247,6 +247,11 @@ async def main() -> None:
                     sys.exit(1)
 
                 logger.info("%s", ctx.order_history[order_id].fmt_pretty())
+
+                logger.info("Execution trace:")
+
+                for log in ctx.order_history[order_id].logs:
+                    logger.info("%s", log)
             else:
                 for order in ctx.order_history:
                     logger.info(
@@ -259,11 +264,6 @@ async def main() -> None:
                         any([leg.kind == "osmosis" for leg in order.route]),
                         any([leg.kind == "valence" for leg in order.route]),
                     )
-
-                    logger.info("Execution trace:")
-
-                    for log in order.logs:
-                        logger.info("%s", log)
 
                 # Print a profit summary
                 logger.info(

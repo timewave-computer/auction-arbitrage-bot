@@ -125,7 +125,7 @@ class Ctx:
         Writes a log to the standard logger and to the log file of a route.
         """
 
-        route.logs.append(f"{log_level.upper()} {fmt_string.format(*args)}")
+        route.logs.append(f"{log_level.upper()} {fmt_string % (*args)}")
 
         if route.uid >= len(self.order_history) or route.uid < 0:
             return
