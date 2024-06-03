@@ -316,11 +316,11 @@ async def listen_routes_with_depth_dfs(
     ) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
         nonlocal denom_cache
 
-        if len(path) >= 2:
-            assert (
-                path[-1].in_asset() == path[-2].out_asset()
-                or path[-1].in_asset() in denom_cache[path[-2].out_asset()].values()
-            )
+        if len(path) >= 2 and (
+            path[-1].in_asset() == path[-2].out_asset()
+            or path[-1].in_asset() in denom_cache[path[-2].out_asset()].values()
+        ):
+            return
 
         # Only find `limit` pools
         # with a depth less than `depth
