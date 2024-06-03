@@ -220,8 +220,9 @@ async def eval_route(
         ],
     )
 
-    starting_amt = await starting_quantity_for_route_profit(
-        ctx.state.balance, route, r, ctx
+    starting_amt = min(
+        await starting_quantity_for_route_profit(ctx.state.balance, route, r, ctx),
+        ctx.state.balance,
     )
 
     ctx.log_route(
