@@ -313,7 +313,11 @@ async def denom_info(
 
 
 async def denom_info_on_chain(
-    src_chain: str, src_denom: str, dest_chain: str, session: aiohttp.ClientSession
+    src_chain: str,
+    src_denom: str,
+    dest_chain: str,
+    session: aiohttp.ClientSession,
+    api_key: Optional[str] = None,
 ) -> Optional[DenomChainInfo]:
     """
     Gets a neutron denom's denom and channel on/to another chain.
