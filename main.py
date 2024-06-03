@@ -276,14 +276,16 @@ async def main() -> None:
                             order.realized_profit
                             for order in ctx.order_history
                             if order.realized_profit
-                        ]
+                        ],
+                        default=0,
                     ),
                     max(
                         [
                             order.realized_profit
                             for order in ctx.order_history
                             if order.realized_profit
-                        ]
+                        ],
+                        default=0,
                     ),
                     sum(
                         [
@@ -326,14 +328,16 @@ async def main() -> None:
                             order.realized_profit
                             for order in atomic_orders
                             if order.realized_profit
-                        ]
+                        ],
+                        default=0,
                     ),
                     max(
                         [
                             order.realized_profit
                             for order in atomic_orders
                             if order.realized_profit
-                        ]
+                        ],
+                        default=0,
                     ),
                     sum(
                         [
@@ -358,14 +362,16 @@ async def main() -> None:
                             order.realized_profit
                             for order in atomic_orders
                             if order.realized_profit
-                        ]
+                        ],
+                        default=0,
                     ),
                     max(
                         [
                             order.realized_profit
                             for order in atomic_orders
                             if order.realized_profit
-                        ]
+                        ],
+                        default=0,
                     ),
                     sum(
                         [
