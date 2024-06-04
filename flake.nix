@@ -41,6 +41,7 @@
             black
             grpc
             grpc_cli
+            ruff
           ];
 
           packages = [ pythonWithPackages ];
