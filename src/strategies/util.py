@@ -36,9 +36,9 @@ import aiohttp
 import asyncio
 import grpc
 from cosmos.base.v1beta1 import coin_pb2
-from cosmpy.crypto.address import Address  # type: ignore
-from cosmpy.aerial.tx import Transaction, SigningCfg  # type: ignore
-from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
+from cosmpy.crypto.address import Address
+from cosmpy.aerial.tx import Transaction, SigningCfg
+from cosmpy.aerial.tx_helpers import SubmittedTx
 from ibc.applications.transfer.v1 import tx_pb2
 
 logger = logging.getLogger(__name__)
@@ -88,7 +88,7 @@ async def exec_arb(
     profit: int,
     quantities: list[int],
     route: list[Leg],
-    ctx: Ctx,
+    ctx: Ctx[Any],
 ) -> None:
     """
     Executes a list of arbitrage trades composed of multiple hops.
@@ -96,8 +96,6 @@ async def exec_arb(
     Takes a list of arbitrage trades, and a list of prices for each hop
     in each trade.
     """
-
-    swap_balance = ctx.state.balance
 
     logger.debug("Route %s has execution plan: %s", fmt_route(route), quantities)
 
@@ -288,7 +286,9 @@ async def exec_arb(
         prev_leg = leg
 
 
-async def recover_funds(r: Route, curr_leg: Leg, route: list[Leg], ctx: Ctx) -> None:
+async def recover_funds(
+    r: Route, curr_leg: Leg, route: list[Leg], ctx: Ctx[Any]
+) -> None:
     """
     Returns back to USDC if a leg fails by backtracking.
     """
@@ -337,7 +337,7 @@ async def transfer(
     denom: str,
     prev_leg: Leg,
     leg: Leg,
-    ctx: Ctx,
+    ctx: Ctx[Any],
     swap_balance: int,
 ) -> None:
     """
@@ -477,7 +477,7 @@ async def quantities_for_route_profit(
     starting_amount: int,
     route: list[Leg],
     r: Route,
-    ctx: Ctx,
+    ctx: Ctx[Any],
 ) -> tuple[int, list[int]]:
     """
     Calculates what quantities should be used to obtain
@@ -558,7 +558,7 @@ async def starting_quantity_for_route_profit(
     starting_amount: int,
     route: list[Leg],
     r: Route,
-    ctx: Ctx,
+    ctx: Ctx[Any],
 ) -> int:
     """
     Calculates what quantities should be used to obtain

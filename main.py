@@ -11,8 +11,9 @@ import sys
 from os import path
 import os
 import schedule
-from cosmpy.aerial.client import LedgerClient, NetworkConfig  # type: ignore
-from cosmpy.aerial.wallet import LocalWallet  # type: ignore
+from typing import Any
+from cosmpy.aerial.client import LedgerClient, NetworkConfig
+from cosmpy.aerial.wallet import LocalWallet
 from src.scheduler import Scheduler, Ctx
 from src.util import (
     deployments,
@@ -129,7 +130,7 @@ async def main() -> None:
         ),
         timeout=aiohttp.ClientTimeout(total=30),
     ) as session:
-        ctx = Ctx(
+        ctx: Ctx[Any] = Ctx(
             {
                 "neutron": [
                     LedgerClient(NEUTRON_NETWORK_CONFIG),

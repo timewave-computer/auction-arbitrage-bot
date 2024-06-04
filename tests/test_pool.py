@@ -2,6 +2,7 @@
 Tests that the osmosis and astroport pools work as expected.
 """
 
+import asyncio
 from src.contracts.pool.astroport import (
     NeutronAstroportPoolDirectory,
     NeutronAstroportPoolProvider,
@@ -168,18 +169,9 @@ async def test_astroport_provider() -> None:
             )
         )
 
-        # At least one pool must have some assets to swap
-        assert any(
-            map(
-                lambda base: any(
-                    map(
-                        lambda pool: pool.simulate_swap_asset_a(1000) >= 0,
-                        base.values(),
-                    )
-                ),
-                pools.values(),
-            )
-        )
+        await list(list(pools.values())[0].values())[0].simulate_swap_asset_a(1000)
+
+        assert False
 
 
 @pytest.mark.asyncio
@@ -213,22 +205,7 @@ async def test_osmosis_provider() -> None:
         )
 
         # At least one pool must have some assets to swap
-        pool_swap = []
-
-        for base in pools.values():
-            for 
-
-        assert any(
-            map(
-                lambda base: any(
-                    map(
-                        lambda pool: pool.simulate_swap_asset_a(1000) >= 0,
-                        base.values(),
-                    )
-                ),
-                pools.values(),
-            )
-        )
+        await list(list(pools.values())[0].values())[0].simulate_swap_asset_a(1000)
 
 
 @pytest.mark.asyncio

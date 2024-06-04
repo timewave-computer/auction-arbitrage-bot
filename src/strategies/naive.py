@@ -53,10 +53,10 @@ from ibc.applications.transfer.v1 import tx_pb2
 from ibc.core.channel.v1 import query_pb2
 from ibc.core.channel.v1 import query_pb2_grpc
 from cosmos.base.v1beta1 import coin_pb2
-from cosmpy.crypto.address import Address  # type: ignore
-from cosmpy.aerial.tx import Transaction, SigningCfg  # type: ignore
-from cosmpy.aerial.client.utils import prepare_and_broadcast_basic_transaction  # type: ignore
-from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
+from cosmpy.crypto.address import Address
+from cosmpy.aerial.tx import Transaction, SigningCfg
+from cosmpy.aerial.client.utils import prepare_and_broadcast_basic_transaction
+from cosmpy.aerial.tx_helpers import SubmittedTx
 import grpc
 import schedule
 from schedule import Scheduler
@@ -78,7 +78,7 @@ class State:
 
     def poll(
         self,
-        ctx: Ctx,
+        ctx: Ctx[Self],
         pools: dict[str, dict[str, List[PoolProvider]]],
         auctions: dict[str, dict[str, AuctionProvider]],
     ) -> Self:
@@ -104,18 +104,21 @@ class State:
 
 
 async def strategy(
-    ctx: Ctx,
+    ctx: Ctx[State],
     pools: dict[str, dict[str, List[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
-) -> Ctx:
+) -> Ctx[State]:
     """
     Finds new arbitrage opportunities using the context, pools, and auctions.
     """
 
-    if not ctx.state:
-        ctx.state = State(None, {})
+    state = ctx.state
 
-    ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions))
+    if not state:
+        ctx.state = State(None, {})
+        state = ctx.state
+
+    ctx = ctx.with_state(state.poll(ctx, pools, auctions))
 
     if ctx.cli_args["cmd"] == "dump":
         return ctx.cancel()
@@ -135,7 +138,7 @@ async def strategy(
     ):
         ctx.log_route(r, "info", "Route queued: %s", [fmt_route(route)])
 
-        if not ctx.state.balance:
+        if not state.balance:
             return ctx
 
         ctx.log_route(
@@ -146,7 +149,7 @@ async def strategy(
         )
 
         try:
-            balance_prior = ctx.state.balance
+            balance_prior = state.balance
 
             await exec_arb(r, r.expected_profit, r.quantities, route, ctx)
 
@@ -172,7 +175,11 @@ async def strategy(
             try:
                 await recover_funds(
                     r,
-                    [leg_repr for leg_repr in r.route if not leg_repr.executed][0],
+                    [
+                        leg
+                        for (leg_repr, leg) in zip(r.route, route)
+                        if not leg_repr.executed
+                    ][0],
                     route,
                     ctx,
                 )
@@ -185,7 +192,7 @@ async def strategy(
 
         ctx.update_route(r)
 
-        ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions)).commit_history()
+        ctx = ctx.with_state(state.poll(ctx, pools, auctions)).commit_history()
 
     logger.info("Completed arbitrage round")
 
@@ -194,13 +201,18 @@ async def strategy(
 
 async def eval_route(
     route: list[Leg],
-    ctx: Ctx,
+    ctx: Ctx[State],
 ) -> Optional[tuple[Route, list[Leg]]]:
     r = ctx.queue_route(route, 0, 0, [])
 
     ctx.log_route(r, "info", "Evaluating route for profitability", [])
 
-    if not ctx.state.balance:
+    state = ctx.state
+
+    if not state:
+        return None
+
+    if not state.balance:
         logger.error(
             "Failed to fetch bot wallet balance for account %s",
             str(Address(ctx.wallet.public_key(), prefix="neutron")),
@@ -211,7 +223,7 @@ async def eval_route(
     # First pass heuristic (is it even possible for this route to be
     # profitable)
     profit = await route_base_denom_profit(
-        ctx.state.balance,
+        state.balance,
         route,
     )
 
@@ -236,8 +248,8 @@ async def eval_route(
     )
 
     starting_amt = min(
-        await starting_quantity_for_route_profit(ctx.state.balance, route, r, ctx),
-        ctx.state.balance,
+        await starting_quantity_for_route_profit(state.balance, route, r, ctx),
+        state.balance,
     )
 
     ctx.log_route(
@@ -306,7 +318,7 @@ async def listen_routes_with_depth_dfs(
     required_leg_types: set[str],
     pools: dict[str, dict[str, List[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
-    ctx: Ctx,
+    ctx: Ctx[State],
 ) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
     denom_cache: dict[str, dict[str, str]] = {}
 

@@ -6,8 +6,8 @@ import json
 from decimal import Decimal
 from typing import Any, Optional, cast, Self
 from abc import ABC, abstractmethod
-from cosmpy.aerial.wallet import LocalWallet  # type: ignore
-from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
+from cosmpy.aerial.wallet import LocalWallet
+from cosmpy.aerial.tx_helpers import SubmittedTx
 
 
 def cached_pools(

@@ -11,10 +11,10 @@ from dataclasses import dataclass
 import urllib3
 import aiohttp
 import grpc
-from cosmpy.aerial.client import NetworkConfig, LedgerClient  # type: ignore
-from cosmpy.aerial.contract import LedgerContract  # type: ignore
-from cosmpy.aerial.wallet import LocalWallet  # type: ignore
-from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
+from cosmpy.aerial.client import NetworkConfig, LedgerClient
+from cosmpy.aerial.contract import LedgerContract
+from cosmpy.aerial.wallet import LocalWallet
+from cosmpy.aerial.tx_helpers import SubmittedTx
 from cosmwasm.wasm.v1 import query_pb2, query_pb2_grpc
 
 
@@ -76,7 +76,7 @@ def custom_neutron_network_config(url: str) -> NetworkConfig:
 
 async def try_multiple_rest_endpoints(
     endpoints: list[str], route: str, session: aiohttp.ClientSession
-) -> Optional[dict[str, Any]]:
+) -> Optional[Any]:
     """
     Returns the response from the first queried endpoint that responds successfully.
     """
@@ -150,7 +150,7 @@ async def try_query_multiple(
     query: Any,
     session: aiohttp.ClientSession,
     chans: list[grpc.aio.Channel],
-) -> Optional[dict[str, Any]]:
+) -> Optional[Any]:
     """
     Attempts to query the first LedgerContract in the list, falling back to
     further providers.
@@ -167,7 +167,7 @@ async def try_query_multiple(
                     continue
 
                 try:
-                    return cast(dict[str, Any], await resp.json())
+                    return await resp.json()
                 except (RuntimeError, ValueError, grpc.aio._call.AioRpcError):
                     continue
 
@@ -176,16 +176,16 @@ async def try_query_multiple(
     for chan in chans:
         try:
             stub = query_pb2_grpc.QueryStub(chan)
-            resp = await stub.SmartContractState(
+            resp_grpc = await stub.SmartContractState(
                 query_pb2.QuerySmartContractStateRequest(
                     address=providers[0].address, query_data=ser_query
                 )
             )
 
-            if not resp:
+            if not resp_grpc:
                 continue
 
-            return cast(dict[str, Any], json.loads(resp.data))
+            return json.loads(resp_grpc.data)
         except (RuntimeError, ValueError, grpc.aio._call.AioRpcError):
             continue
 

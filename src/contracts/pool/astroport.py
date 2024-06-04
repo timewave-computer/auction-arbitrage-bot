@@ -8,10 +8,10 @@ from decimal import Decimal
 from functools import cached_property
 from typing import Any, cast, Optional, List
 from dataclasses import dataclass
-from cosmpy.aerial.contract import LedgerContract  # type: ignore
-from cosmpy.aerial.wallet import LocalWallet  # type: ignore
-from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
-from cosmpy.aerial.client import LedgerClient, NetworkConfig  # type: ignore
+from cosmpy.aerial.contract import LedgerContract
+from cosmpy.aerial.wallet import LocalWallet
+from cosmpy.aerial.tx_helpers import SubmittedTx
+from cosmpy.aerial.client import LedgerClient, NetworkConfig
 from grpc._channel import _InactiveRpcError
 from src.contracts.pool.provider import PoolProvider, cached_pools
 from src.util import (

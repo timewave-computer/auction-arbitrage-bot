@@ -2,9 +2,10 @@
 Tests that the scheduler works as expected.
 """
 
+from dataclasses import dataclass
 from typing import List
-from cosmpy.aerial.client import LedgerClient, NetworkConfig  # type: ignore
-from cosmpy.aerial.wallet import LocalWallet  # type: ignore
+from cosmpy.aerial.client import LedgerClient, NetworkConfig
+from cosmpy.aerial.wallet import LocalWallet
 from src.scheduler import Scheduler, Ctx
 from src.util import (
     deployments,
@@ -28,11 +29,16 @@ TEST_WALLET_MNEMONIC = (
 )
 
 
+@dataclass
+class State:
+    balance: int
+
+
 async def strategy(
-    strat_ctx: Ctx,
+    strat_ctx: Ctx[State],
     _pools: dict[str, dict[str, List[PoolProvider]]],
     _auctions: dict[str, dict[str, AuctionProvider]],
-) -> Ctx:
+) -> Ctx[State]:
     """
     Noop strategy.
     """
@@ -40,7 +46,7 @@ async def strategy(
     return strat_ctx
 
 
-def ctx(session: aiohttp.ClientSession) -> Ctx:
+def ctx(session: aiohttp.ClientSession) -> Ctx[State]:
     """
     Gets a default context for test schedulers.
     """
@@ -102,7 +108,7 @@ def ctx(session: aiohttp.ClientSession) -> Ctx:
         False,
         session,
         [],
-    )
+    ).with_state(State(1000))
 
 
 @pytest.mark.asyncio
@@ -173,10 +179,10 @@ async def test_poll() -> None:
         )
 
         async def simple_strategy(
-            strat_ctx: Ctx,
+            strat_ctx: Ctx[State],
             pools: dict[str, dict[str, List[PoolProvider]]],
             auctions: dict[str, dict[str, AuctionProvider]],
-        ) -> Ctx:
+        ) -> Ctx[State]:
             assert len(pools) > 0
             assert len(auctions) > 0
 

@@ -6,10 +6,10 @@ import logging
 from datetime import datetime
 import json
 import asyncio
-from typing import Callable, List, Any, Self, Optional, Awaitable, Any
+from typing import Callable, List, Any, Self, Optional, Awaitable, Any, TypeVar, Generic
 from dataclasses import dataclass
-from cosmpy.aerial.client import LedgerClient  # type: ignore
-from cosmpy.aerial.wallet import LocalWallet  # type: ignore
+from cosmpy.aerial.client import LedgerClient
+from cosmpy.aerial.wallet import LocalWallet
 from src.contracts.auction import AuctionDirectory, AuctionProvider
 from src.contracts.route import Route, load_route, LegRepr, Status, Leg
 from src.contracts.pool.provider import PoolProvider
@@ -19,9 +19,11 @@ import grpc
 
 logger = logging.getLogger(__name__)
 
+TState = TypeVar("TState")
+
 
 @dataclass
-class Ctx:
+class Ctx(Generic[TState]):
     """
     Information about the scheduling environment including:
     - User configuration via flags
@@ -32,7 +34,7 @@ class Ctx:
     endpoints: dict[str, dict[str, list[str]]]
     wallet: LocalWallet
     cli_args: dict[str, Any]
-    state: Optional[Any]
+    state: Optional[TState]
     terminated: bool
     http_session: aiohttp.ClientSession
     order_history: list[Route]
@@ -148,21 +150,21 @@ class Ctx:
             logger.debug(fmt_string, str(route), *args)
 
 
-class Scheduler:
+class Scheduler(Generic[TState]):
     """
     A registry of pricing providers for different assets,
     which can be polled alongside a strategy function which
     may interact with registered providers.
     """
 
-    ctx: Ctx
+    ctx: Ctx[TState]
     strategy: Callable[
         [
-            Ctx,
+            Ctx[TState],
             dict[str, dict[str, List[PoolProvider]]],
             dict[str, dict[str, AuctionProvider]],
         ],
-        Awaitable[Ctx],
+        Awaitable[Ctx[TState]],
     ]
     providers: dict[str, dict[str, List[PoolProvider]]]
     auction_manager: AuctionDirectory
@@ -170,14 +172,14 @@ class Scheduler:
 
     def __init__(
         self,
-        ctx: Ctx,
+        ctx: Ctx[TState],
         strategy: Callable[
             [
-                Ctx,
+                Ctx[TState],
                 dict[str, dict[str, List[PoolProvider]]],
                 dict[str, dict[str, AuctionProvider]],
             ],
-            Awaitable[Ctx],
+            Awaitable[Ctx[TState]],
         ],
     ) -> None:
         """

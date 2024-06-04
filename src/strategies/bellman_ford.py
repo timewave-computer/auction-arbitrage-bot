@@ -41,7 +41,7 @@ from src.util import (
     try_multiple_clients,
     DenomChainInfo,
 )
-from cosmpy.crypto.address import Address  # type: ignore
+from cosmpy.crypto.address import Address
 
 
 logger = logging.getLogger(__name__)
@@ -82,7 +82,7 @@ class State:
 
     async def poll(
         self,
-        ctx: Ctx,
+        ctx: Ctx[Self],
         pools: dict[str, dict[str, list[PoolProvider]]],
         auctions: dict[str, dict[str, AuctionProvider]],
     ) -> Self:
@@ -240,18 +240,25 @@ async def pair_provider_edge(
 
 
 async def strategy(
-    ctx: Ctx,
+    ctx: Ctx[State],
     pools: dict[str, dict[str, list[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
-) -> Ctx:
+) -> Ctx[State]:
     """
     Finds new arbitrage opportunities using the context, pools, and auctions.
     """
 
-    if not ctx.state:
-        ctx.state = State({}, {}, {})
+    state = ctx.state
 
-    ctx = ctx.with_state(await ctx.state.poll(ctx, pools, auctions))
+    if not state:
+        ctx.state = State({}, {}, {})
+        state = ctx.state
+
+    ctx = ctx.with_state(await state.poll(ctx, pools, auctions))
+    state = ctx.state
+
+    if not state:
+        return ctx
 
     if ctx.cli_args["cmd"] == "dump":
         return ctx.cancel()
@@ -322,7 +329,7 @@ async def strategy(
         ctx,
     )
 
-    r.expeted_profit = profit
+    r.expected_profit = profit
     r.quantities = quantities
 
     if profit < ctx.cli_args["profit_margin"]:
@@ -337,7 +344,7 @@ async def strategy(
     logger.info("Executing route with profit of %d: %s", profit, fmt_route(route))
 
     try:
-        await exec_arb(route, profit, quantities, route, ctx)
+        await exec_arb(r, profit, quantities, route, ctx)
 
         r.status = Status.EXECUTED
 
@@ -349,89 +356,11 @@ async def strategy(
     finally:
         ctx.update_route(r)
 
-        ctx = ctx.with_state(ctx.state.poll(ctx, pools, auctions)).commit_history()
+        ctx = ctx.with_state(state.poll(ctx, pools, auctions)).commit_history()
 
     logger.info("Completed arbitrage round")
 
     return ctx
-
-
-async def providers_for(a: str) -> Iterator[Leg]:
-    """
-    Gets all legs that start at src.
-    """
-
-    if not a in ctx.state.denom_cache:
-        async with sem:
-            denom_infos = await denom_info(
-                (
-                    "neutron-1"
-                    if not a in ctx.state.chain_cache
-                    else ctx.state.chain_cache[a]
-                ),
-                src,
-                ctx.http_session,
-            )
-
-        all_denom_infos = denom_infos + [
-            DenomChainInfo(
-                denom=src,
-                port=None,
-                channel=None,
-                chain_id=(
-                    "neutron-1"
-                    if not a in ctx.state.chain_cache
-                    else ctx.state.chain_cache[a]
-                ),
-            )
-        ]
-
-        ctx.state.denom_cache[pair] = {
-            info.chain_id: info.denom for info in all_denom_infos if info.chain_id
-        }
-
-        for info in all_denom_infos:
-            if not info.chain_id:
-                continue
-
-            ctx.state.chain_cache[info.denom] = info.chain_id
-
-    providers: set[Union[AuctionProvider, PoolProvider]] = {
-        x
-        for x in (
-            *(pool for pool_set in pools.get(a, {}).values() for pool in pool_set),
-            *(
-                pool
-                for a_denom in ctx.state.denom_cache.get(a, {}).values()
-                for pool_set in pools.get(a_denom, {}).values()
-                for pool in pool_set
-            ),
-            *auctions.get(a, {}).values(),
-            *(
-                auction
-                for a_denom in ctx.state.denom_cache.get(a, {}).values()
-                for auction in auctions.get(a_denom, {}).values()
-            ),
-        )
-        if x
-    }
-
-    return (
-        Leg(
-            (
-                prov.asset_a
-                if prov.asset_a() == a or prov.asset_a() in ctx.state.denom_cache.get(a)
-                else prov.asset_b
-            ),
-            (
-                prov.asset_b
-                if prov.asset_a() == a or prov.asset_a() in ctx.state.denom_cache.get(a)
-                else prov.asset_a
-            ),
-            prov,
-        )
-        for prov in providers
-    )
 
 
 async def route_bellman_ford(
@@ -439,7 +368,7 @@ async def route_bellman_ford(
     pools: dict[str, dict[str, list[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
     required_leg_types: set[str],
-    ctx: Ctx,
+    ctx: Ctx[State],
 ) -> Optional[list[Leg]]:
     """
     Searches for profitable arbitrage routes by finding negative cycles in the graph.
@@ -463,7 +392,7 @@ async def route_bellman_ford(
     }
 
     if ctx.cli_args["pools"]:
-        vertices = set(random.sample(sorted(vertices), ctx.cli_args["pools"] - 1))
+        vertices = set(random.sample(list(vertices), ctx.cli_args["pools"] - 1))
 
     # How far a given denom is from the `src` denom
     distances: dict[str, Decimal] = {}
@@ -484,14 +413,14 @@ async def route_bellman_ford(
                     (
                         distances[edge.backend.in_asset()]
                         if distances[edge.backend.in_asset()] != Decimal("Inf")
-                        else 0
+                        else Decimal(0)
                     )
                     + edge.weight
                 ) < distances[edge.backend.out_asset()]:
                     distances[edge.backend.out_asset()] = (
                         distances[edge.backend.in_asset()]
                         if distances[edge.backend.in_asset()] != Decimal("Inf")
-                        else 0
+                        else Decimal(0)
                     )
                     pred[edge.backend.out_asset()] = edge.backend.in_asset()
                     pair_leg[(edge.backend.in_asset(), edge.backend.out_asset())] = (
@@ -572,13 +501,17 @@ async def route_bellman_ford(
         if not out_denom:
             return None
 
-        in_legs = pools.get(in_denom.denom, {}).get(legs[0].in_asset(), [])
+        in_legs: list[Union[PoolProvider, AuctionProvider]] = list(
+            pools.get(in_denom.denom, {}).get(legs[0].in_asset(), [])
+        )
         in_auction = auctions.get(in_denom.denom, {}).get(legs[0].in_asset(), None)
 
         if in_auction:
             in_legs.append(in_auction)
 
-        out_legs = pools.get(legs[-1].out_asset(), {}).get(out_denom.denom, [])
+        out_legs: list[Union[PoolProvider, AuctionProvider]] = list(
+            pools.get(legs[-1].out_asset(), {}).get(out_denom.denom, [])
+        )
         out_auction = auctions.get(legs[-1].out_asset(), {}).get(out_denom.denom, None)
 
         if out_auction:

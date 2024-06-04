@@ -7,10 +7,10 @@ import json
 from decimal import Decimal
 from typing import Any, List, Optional
 from functools import cached_property
-from cosmpy.aerial.contract import LedgerContract  # type: ignore
-from cosmpy.aerial.wallet import LocalWallet  # type: ignore
-from cosmpy.aerial.client import LedgerClient, NetworkConfig  # type: ignore
-from cosmpy.aerial.tx_helpers import SubmittedTx  # type: ignore
+from cosmpy.aerial.contract import LedgerContract
+from cosmpy.aerial.wallet import LocalWallet
+from cosmpy.aerial.client import LedgerClient, NetworkConfig
+from cosmpy.aerial.tx_helpers import SubmittedTx
 from src.util import (
     custom_neutron_network_config,
     WithContract,
@@ -97,7 +97,7 @@ class AuctionProvider(WithContract):
         """
         rate = await self.exchange_rate()
 
-        return Decimal(amount) // Decimal(rate)
+        return int(Decimal(amount) // Decimal(rate))
 
     async def reverse_simulate_swap_asset_a(self, amount: int) -> int:
         """

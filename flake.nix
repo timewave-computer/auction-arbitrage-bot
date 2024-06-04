@@ -23,6 +23,9 @@
             aiostream
             pytest
             pytest-asyncio
+            types-protobuf
+            types-pytz
+            mypy
             (skipCheckTests aiohttp)
             (skipCheckTests aiodns)
           ]);
@@ -34,7 +37,6 @@
             protoc-gen-go
             protoc-gen-go-grpc
             mypy-protobuf
-            mypy
             black
             grpc
             grpc_cli
