@@ -10,7 +10,6 @@ import logging
 import sys
 from os import path
 import os
-import schedule
 from typing import Any
 from cosmpy.aerial.client import LedgerClient, NetworkConfig
 from cosmpy.aerial.wallet import LocalWallet

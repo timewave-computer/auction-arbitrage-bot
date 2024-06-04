@@ -2,19 +2,13 @@
 Tests the naive strategy.
 """
 
-from src.strategies.naive import (
-    listen_routes_with_depth_dfs,
-)
 from src.strategies.util import fmt_route_leg
-from src.scheduler import Scheduler
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.route import Leg
 from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
 from src.contracts.auction import AuctionDirectory
 from src.util import deployments, DISCOVERY_CONCURRENCY_FACTOR
-from tests.test_scheduler import ctx, strategy
 import pytest
-import asyncio
 import aiohttp
 import grpc
 

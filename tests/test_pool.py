@@ -2,7 +2,6 @@
 Tests that the osmosis and astroport pools work as expected.
 """
 
-import asyncio
 from src.contracts.pool.astroport import (
     NeutronAstroportPoolDirectory,
     NeutronAstroportPoolProvider,
