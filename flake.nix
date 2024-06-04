@@ -25,6 +25,7 @@
             pytest-asyncio
             types-protobuf
             types-pytz
+            types-setuptools
             mypy
             (skipCheckTests aiohttp)
             (skipCheckTests aiodns)
