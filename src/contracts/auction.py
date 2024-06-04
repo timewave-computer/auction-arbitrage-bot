@@ -9,7 +9,7 @@ from typing import Any, List, Optional
 from functools import cached_property
 from cosmpy.aerial.contract import LedgerContract
 from cosmpy.aerial.wallet import LocalWallet
-from cosmpy.aerial.client import LedgerClient, NetworkConfig
+from cosmpy.aerial.client import LedgerClient
 from cosmpy.aerial.tx_helpers import SubmittedTx
 from src.util import (
     custom_neutron_network_config,

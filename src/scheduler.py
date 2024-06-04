@@ -5,8 +5,7 @@ Implements a strategy runner with an arbitrary provider set in an event-loop sty
 import logging
 from datetime import datetime
 import json
-import asyncio
-from typing import Callable, List, Any, Self, Optional, Awaitable, Any, TypeVar, Generic
+from typing import Callable, List, Self, Optional, Awaitable, Any, TypeVar, Generic
 from dataclasses import dataclass
 from cosmpy.aerial.client import LedgerClient
 from cosmpy.aerial.wallet import LocalWallet

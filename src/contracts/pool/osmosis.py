@@ -8,7 +8,6 @@ import urllib3
 from cosmpy.aerial.wallet import LocalWallet
 from cosmpy.aerial.tx import Transaction, SigningCfg
 from cosmpy.aerial.client import NetworkConfig, LedgerClient
-from cosmpy.aerial.client.utils import prepare_and_broadcast_basic_transaction
 from cosmpy.crypto.address import Address
 from cosmpy.aerial.tx_helpers import SubmittedTx
 from osmosis.poolmanager.v1beta1 import tx_pb2, swap_route_pb2

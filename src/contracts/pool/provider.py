@@ -3,8 +3,7 @@ Defines an interface for all providers of pricing information to fulfill.
 """
 
 import json
-from decimal import Decimal
-from typing import Any, Optional, cast, Self
+from typing import Any, Optional, cast
 from abc import ABC, abstractmethod
 from cosmpy.aerial.wallet import LocalWallet
 from cosmpy.aerial.tx_helpers import SubmittedTx

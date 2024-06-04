@@ -1,8 +1,7 @@
 import json
-from datetime import datetime
 from enum import Enum
 from dataclasses import dataclass
-from typing import Union, Callable, Optional, Self
+from typing import Union, Callable, Optional
 from src.contracts.auction import AuctionProvider
 from src.contracts.pool.provider import PoolProvider
 

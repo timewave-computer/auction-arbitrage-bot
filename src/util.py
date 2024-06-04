@@ -8,7 +8,6 @@ from decimal import Decimal
 from typing import Any, cast, Optional, Callable, TypeVar
 from functools import cached_property
 from dataclasses import dataclass
-import urllib3
 import aiohttp
 import grpc
 from cosmpy.aerial.client import NetworkConfig, LedgerClient

@@ -3,33 +3,18 @@ Implements an arbitrage strategy with an arbitrary number
 of hops using all available providers.
 """
 
-import multiprocessing
-import multiprocessing.dummy as dummy
 import asyncio
 import random
-import threading
-from queue import Queue
-from decimal import Decimal
-import json
-from typing import List, Union, Optional, Self, Any, Callable, Iterator, AsyncGenerator
-from datetime import datetime, timedelta
-import time
-from collections import deque
+from typing import List, Union, Optional, Self, AsyncGenerator
 from dataclasses import dataclass
 import logging
 from src.contracts.route import Leg, Status, Route
 from src.contracts.pool.provider import PoolProvider
-from src.contracts.pool.osmosis import OsmosisPoolProvider
-from src.contracts.pool.astroport import (
-    NeutronAstroportPoolProvider,
-    asset_info_to_token,
-)
 from src.contracts.auction import AuctionProvider
 from src.scheduler import Ctx
 from src.strategies.util import (
     quantities_for_route_profit,
     route_base_denom_profit,
-    transfer,
     exec_arb,
     fmt_route,
     fmt_route_debug,
@@ -40,27 +25,9 @@ from src.strategies.util import (
 from src.util import (
     DenomChainInfo,
     denom_info,
-    ContractInfo,
-    deployments,
     try_multiple_clients,
-    try_multiple_clients_fatal,
-    IBC_TRANSFER_TIMEOUT_SEC,
-    IBC_TRANSFER_POLL_INTERVAL_SEC,
-    DISCOVERY_CONCURRENCY_FACTOR,
-    EVALUATION_CONCURRENCY_FACTOR,
 )
-from ibc.applications.transfer.v1 import tx_pb2
-from ibc.core.channel.v1 import query_pb2
-from ibc.core.channel.v1 import query_pb2_grpc
-from cosmos.base.v1beta1 import coin_pb2
 from cosmpy.crypto.address import Address
-from cosmpy.aerial.tx import Transaction, SigningCfg
-from cosmpy.aerial.client.utils import prepare_and_broadcast_basic_transaction
-from cosmpy.aerial.tx_helpers import SubmittedTx
-import grpc
-import schedule
-from schedule import Scheduler
-import aiohttp
 from aiostream import stream
 
 logger = logging.getLogger(__name__)
@@ -391,7 +358,7 @@ async def listen_routes_with_depth_dfs(
         # no more work to do
         end = prev_pool.out_asset()
 
-        if not end in denom_cache:
+        if end not in denom_cache:
             try:
                 denom_infos = await denom_info(
                     prev_pool.backend.chain_id,

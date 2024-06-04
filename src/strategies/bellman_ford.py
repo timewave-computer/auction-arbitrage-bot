@@ -2,27 +2,14 @@
 Implements an arbitrage strategy based on bellman ford.
 """
 
-from collections import deque
 import random
-from queue import Queue
-import json
-from functools import reduce
 import logging
-import itertools
-import math
 from decimal import Decimal
 import asyncio
-from asyncio import Semaphore
-import multiprocessing
-from datetime import datetime
-import threading
 from dataclasses import dataclass
-from typing import Union, Iterator, Optional, Any, Self
+from typing import Union, Iterator, Optional, Self
 from src.contracts.pool.provider import PoolProvider
-from src.contracts.pool.astroport import NeutronAstroportPoolProvider
-from src.contracts.pool.osmosis import OsmosisPoolProvider
 from src.contracts.auction import AuctionProvider
-from src.contracts.pool.provider import PoolProvider
 from src.contracts.route import Leg, Status
 from src.scheduler import Ctx
 from src.strategies.util import (
@@ -33,13 +20,10 @@ from src.strategies.util import (
     starting_quantity_for_route_profit,
 )
 from src.util import (
-    MAX_SKIP_CONCURRENT_CALLS,
     DISCOVERY_CONCURRENCY_FACTOR,
-    denom_info,
     denom_info_on_chain,
     int_to_decimal,
     try_multiple_clients,
-    DenomChainInfo,
 )
 from cosmpy.crypto.address import Address
 
@@ -449,7 +433,7 @@ async def route_bellman_ford(
 
             curr = edge.backend.in_asset()
 
-            while not curr in visited:
+            while curr not in visited:
                 visited.add(curr)
                 curr = pred[curr]
 

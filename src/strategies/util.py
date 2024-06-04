@@ -2,7 +2,6 @@
 Defines common utilities shared across arbitrage strategies.
 """
 
-from math import floor
 import operator
 from functools import reduce
 from decimal import Decimal
@@ -19,7 +18,6 @@ from src.contracts.pool.astroport import (
 
 from src.util import (
     int_to_decimal,
-    decimal_to_int,
     IBC_TRANSFER_TIMEOUT_SEC,
     IBC_TRANSFER_POLL_INTERVAL_SEC,
     try_multiple_rest_endpoints,
@@ -31,10 +29,7 @@ from src.util import (
     DENOM_QUANTITY_ABORT_ARB,
 )
 from src.scheduler import Ctx
-import urllib3
-import aiohttp
 import asyncio
-import grpc
 from cosmos.base.v1beta1 import coin_pb2
 from cosmpy.crypto.address import Address
 from cosmpy.aerial.tx import Transaction, SigningCfg
@@ -132,16 +127,6 @@ async def exec_arb(
         )
 
         tx: Optional[SubmittedTx] = None
-
-        prev_asset_info: Optional[DenomChainInfo] = None
-
-        if prev_leg:
-            prev_asset_info = await denom_info_on_chain(
-                prev_leg.backend.chain_id,
-                prev_leg.out_asset(),
-                leg.backend.chain_id,
-                ctx.http_session,
-            )
 
         ctx.log_route(
             route_ent,

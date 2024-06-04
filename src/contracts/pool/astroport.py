@@ -4,22 +4,19 @@ Implemens contract wrappers for Astroport, providing pricing information for
 Astroport pools.
 """
 
-from decimal import Decimal
 from functools import cached_property
 from typing import Any, cast, Optional, List
 from dataclasses import dataclass
 from cosmpy.aerial.contract import LedgerContract
 from cosmpy.aerial.wallet import LocalWallet
 from cosmpy.aerial.tx_helpers import SubmittedTx
-from cosmpy.aerial.client import LedgerClient, NetworkConfig
+from cosmpy.aerial.client import LedgerClient
 from grpc._channel import _InactiveRpcError
 from src.contracts.pool.provider import PoolProvider, cached_pools
 from src.util import (
-    NEUTRON_NETWORK_CONFIG,
     WithContract,
     ContractInfo,
     try_query_multiple,
-    try_multiple_clients,
     try_exec_multiple_fatal,
     custom_neutron_network_config,
 )
