@@ -139,14 +139,17 @@ async def strategy(
 
             r.status = Status.FAILED
 
+            terminal_leg_repr = next(
+                (leg_repr for leg_repr in r.route if not leg_repr.executed)
+            )
+            terminal_leg = next(
+                (leg for leg in route if str(leg) == str(terminal_leg_repr))
+            )
+
             try:
                 await recover_funds(
                     r,
-                    [
-                        leg
-                        for (leg_repr, leg) in zip(r.route, route)
-                        if not leg_repr.executed
-                    ][0],
+                    terminal_leg,
                     route,
                     ctx,
                 )

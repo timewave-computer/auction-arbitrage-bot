@@ -114,6 +114,19 @@ async def exec_arb(
     )
 
     for leg, to_swap in zip(route, quantities):
+        balance_resp = try_multiple_clients(
+            ctx.clients[leg.backend.chain_id.split("-")[0]],
+            lambda client: client.query_bank_balance(
+                Address(ctx.wallet.public_key(), prefix=leg.backend.chain_prefix),
+                leg.in_asset(),
+            ),
+        )
+
+        if not balance_resp:
+            raise ValueError("Couldn't get balance.")
+
+        to_swap = min(to_swap, balance_resp)
+
         ctx.log_route(
             route_ent,
             "info",
