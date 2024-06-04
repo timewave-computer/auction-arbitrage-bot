@@ -77,7 +77,7 @@ The auction arbitrage bot can be run with only one required environment variable
 * `-p` (`--poll_interval`): Specifies how frequently the arbitrage strategy should be run (in seconds). The default value is `120`.
 * `-d` (`--discovery_interval`): Specifies how frequently new arbitrage routes should be discovered (in seconds). The default value is `600`.
 * `-nh` (`--hops`): Specifies the number of "hops" in a single arbitrage trade. The default value is `3`. Note that increasing this value increases the time for the discovery algorithm to run.
-* `-r` (`--require_leg_types`): Specifies the required arbitrage pool types to require trades include. Possible values include: valence osmosis astroport. Multiple leg types may be required, separated by spaces.
+* `-r` (`--require_leg_types`): Specifies the required arbitrage pool types to require trades include. Possible values include: auction osmosis astroport. Multiple leg types may be required, separated by spaces.
 * `-b` (`--base_denom`): Specifies the denom in which profits are denominated. The default value is the Neutron Noble USDC denom (`ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81`)
 * `-pm` (`--profit_margin`): Specifies the quantity of the base denom that must be obtained from an arbitrage opportunity to consider it. The default value is `1000`.
 * `-l` (`--log_file`): Specifies a file to write daemon logs to. If left unspecified, stdout will be used. Stdout and a log file cannot be used simultaneously.

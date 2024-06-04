@@ -82,14 +82,20 @@ async def try_multiple_rest_endpoints(
     """
 
     for endpoint in endpoints:
-        async with session.get(
-            f"{endpoint}{route}",
-            headers={"accept": "application/json", "content-type": "application/json"},
-        ) as resp:
-            if resp.status != 200:
-                continue
+        try:
+            async with session.get(
+                f"{endpoint}{route}",
+                headers={
+                    "accept": "application/json",
+                    "content-type": "application/json",
+                },
+            ) as resp:
+                if resp.status != 200:
+                    continue
 
-            return await resp.json()
+                return await resp.json()
+        except aiohttp.client_exceptions.ClientOSError:
+            continue
 
     return None
 

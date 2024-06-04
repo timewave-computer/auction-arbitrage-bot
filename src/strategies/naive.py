@@ -35,6 +35,7 @@ from src.strategies.util import (
     fmt_route_debug,
     fmt_route_leg,
     starting_quantity_for_route_profit,
+    recover_funds,
 )
 from src.util import (
     DenomChainInfo,
@@ -135,7 +136,7 @@ async def strategy(
         ctx.log_route(r, "info", "Route queued: %s", [fmt_route(route)])
 
         if not ctx.state.balance:
-            return
+            return ctx
 
         ctx.log_route(
             r,
@@ -165,6 +166,20 @@ async def strategy(
             ctx.log_route(r, "info", "Executed route successfully", [])
         except Exception as e:
             ctx.log_route(r, "error", "Arb failed %s: %s", [fmt_route(route), e])
+
+            r.status = Status.FAILED
+
+            try:
+                await recover_funds(
+                    r,
+                    [leg_repr for leg_repr in r.route if not leg_repr.executed][0],
+                    route,
+                    ctx,
+                )
+
+                r.status = Status.RECOVERED
+            except ValueError as e:
+                ctx.log_route(r, "error", "Arb recovery failed: %s", [e])
 
             r.status = Status.FAILED
 

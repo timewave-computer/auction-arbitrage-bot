@@ -93,7 +93,7 @@ class Ctx:
         r = Route(
             len(self.order_history),
             [
-                LegRepr(leg.in_asset(), leg.out_asset(), leg.backend.kind)
+                LegRepr(leg.in_asset(), leg.out_asset(), leg.backend.kind, False)
                 for leg in route
             ],
             theoretical_profit,

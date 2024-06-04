@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 def fmt_route_leg(leg: Leg) -> str:
     """
-    Returns the nature of the route leg (i.e., "osmosis," "astroport," or, "valence.")
+    Returns the nature of the route leg (i.e., "osmosis," "astroport," or, "auction.")
     """
 
     if isinstance(leg.backend, OsmosisPoolProvider):
@@ -56,7 +56,7 @@ def fmt_route_leg(leg: Leg) -> str:
         return "astroport"
 
     if isinstance(leg.backend, AuctionProvider):
-        return "valence"
+        return "auction"
 
     return leg.backend.kind
 
@@ -184,7 +184,8 @@ async def exec_arb(
             except Exception as e:
                 ctx.log_route(
                     route_ent,
-                    "error" "Failed to transfer funds from %s -> %s: %s",
+                    "error",
+                    "Failed to transfer funds from %s -> %s: %s",
                     [
                         prev_leg.backend.chain_id,
                         leg.backend.chain_id,
@@ -280,7 +281,55 @@ async def exec_arb(
                 ],
             )
 
+        next(
+            (leg_repr for leg_repr in route_ent.route if str(leg_repr) == str(leg))
+        ).executed = True
+
         prev_leg = leg
+
+
+async def recover_funds(r: Route, curr_leg: Leg, route: list[Leg], ctx: Ctx) -> None:
+    """
+    Returns back to USDC if a leg fails by backtracking.
+    """
+
+    ctx.log_route(
+        r,
+        "info",
+        "Recovering funds in denom %s from current denom %s on chain %s",
+        [ctx.cli_args["base_denom"], curr_leg.in_asset(), curr_leg.backend.chain_id],
+    )
+
+    route = route[: route.index(curr_leg) - 1]
+    backtracked = list(
+        reversed([Leg(leg.out_asset, leg.in_asset, leg.backend) for leg in route])
+    )
+
+    balance_resp = try_multiple_clients(
+        ctx.clients[curr_leg.backend.chain_id.split("-")[0]],
+        lambda client: client.query_bank_balance(
+            Address(ctx.wallet.public_key(), prefix="neutron"),
+            ctx.cli_args["base_denom"],
+        ),
+    )
+
+    if not balance_resp:
+        raise ValueError("Couldn't get balance.")
+
+    resp = await quantities_for_route_profit(balance_resp, backtracked, r, ctx)
+
+    if not resp:
+        raise ValueError("Couldn't get execution plan.")
+
+    profit, quantities = resp
+
+    r = ctx.queue_route(
+        backtracked, -r.theoretical_profit, -r.expected_profit, quantities
+    )
+
+    ctx.log_route(r, "info", "Executing recovery", [])
+
+    await exec_arb(r, profit, quantities, backtracked, ctx)
 
 
 async def transfer(
@@ -372,7 +421,8 @@ async def transfer(
 
     ctx.log_route(
         route,
-        "info" "Submitted IBC transfer from src %s to %s: %s",
+        "info",
+        "Submitted IBC transfer from src %s to %s: %s",
         [
             prev_leg.backend.chain_id,
             leg.backend.chain_id,

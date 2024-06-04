@@ -14,6 +14,7 @@ class Status(Enum):
     IN_PROGRESS = "IN_PROGRESS"
     EXECUTED = "EXECUTED"
     FAILED = "FAILED"
+    RECOVERED = "RECOVERED"
 
 
 @dataclass
@@ -38,6 +39,7 @@ class LegRepr:
     in_asset: str
     out_asset: str
     kind: str
+    executed: bool
 
     def __str__(self) -> str:
         return f"{self.kind}: {self.in_asset} -> {self.out_asset}"
@@ -115,4 +117,6 @@ def load_route(s: str) -> Route:
 def load_leg_repr(s: str) -> LegRepr:
     loaded = json.loads(s)
 
-    return LegRepr(loaded["in_asset"], loaded["out_asset"], loaded["kind"])
+    return LegRepr(
+        loaded["in_asset"], loaded["out_asset"], loaded["kind"], loaded["executed"]
+    )

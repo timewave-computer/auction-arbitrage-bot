@@ -262,7 +262,7 @@ async def main() -> None:
                         order.realized_profit if order.realized_profit else 0,
                         order.status,
                         any([leg.kind == "osmosis" for leg in order.route]),
-                        any([leg.kind == "valence" for leg in order.route]),
+                        any([leg.kind == "auction" for leg in order.route]),
                     )
 
                 # Print a profit summary
