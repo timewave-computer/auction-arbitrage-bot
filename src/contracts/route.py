@@ -83,6 +83,7 @@ class Route:
                             "in_asset": leg.in_asset,
                             "out_asset": leg.out_asset,
                             "kind": leg.kind,
+                            "executed": leg.executed,
                         }
                     )
                     for leg in self.route
