@@ -170,8 +170,6 @@ async def test_astroport_provider() -> None:
 
         await list(list(pools.values())[0].values())[0].simulate_swap_asset_a(1000)
 
-        assert False
-
 
 @pytest.mark.asyncio
 async def test_osmosis_provider() -> None:
