@@ -101,16 +101,6 @@ async def exec_arb(
             f"Insufficient execution planning for route {fmt_route(route)}; canceling"
         )
 
-    # Able to factor in fees if our base denom is neutron
-    if ctx.cli_args["base_denom"] == "untrn":
-        profit -= sum([leg.backend.swap_fee for leg in route])
-
-        for i, leg in enumerate(route[:-1]):
-            next_leg = route[i + 1]
-
-            if leg.backend.chain_id != next_leg.backend.chain_id:
-                profit -= IBC_TRANSFER_GAS
-
     if profit < ctx.cli_args["profit_margin"]:
         ctx.log_route(
             route_ent, "error", "Insufficient realized profit for route; canceling", []
@@ -231,7 +221,13 @@ async def exec_arb(
         # Ensure that there is at least 5k of the base chain denom
         # at all times
         if leg.in_asset() == leg.backend.chain_fee_denom:
-            to_swap -= leg.backend.swap_fee
+            to_swap -= sum([leg.backend.swap_fee for leg in route])
+
+            for i, leg in enumerate(route[:-1]):
+                next_leg = route[i + 1]
+
+                if leg.backend.chain_id != next_leg.backend.chain_id:
+                    to_swap -= IBC_TRANSFER_GAS
 
         if to_swap < 0:
             ctx.log_route(
