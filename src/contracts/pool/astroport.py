@@ -23,7 +23,7 @@ from src.util import (
 import aiohttp
 import grpc
 
-MAX_SPREAD = "0.5"
+MAX_SPREAD = "0.05"
 
 
 @dataclass
