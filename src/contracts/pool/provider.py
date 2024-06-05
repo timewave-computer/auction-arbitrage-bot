@@ -44,6 +44,8 @@ class PoolProvider(ABC):
 
     endpoints: list[str]
 
+    swap_fee: int
+
     kind: str
 
     @abstractmethod

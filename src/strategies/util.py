@@ -38,6 +38,9 @@ from ibc.applications.transfer.v1 import tx_pb2
 logger = logging.getLogger(__name__)
 
 
+IBC_TRANSFER_GAS = 10000
+
+
 def fmt_route_leg(leg: Leg) -> str:
     """
     Returns the nature of the route leg (i.e., "osmosis," "astroport," or, "auction.")
@@ -98,10 +101,22 @@ async def exec_arb(
             f"Insufficient execution planning for route {fmt_route(route)}; canceling"
         )
 
+    # Able to factor in fees if our base denom is neutron
+    if ctx.cli_args["base_denom"] == "untrn":
+        profit -= sum([leg.backend.swap_fee for leg in route])
+
+        for i, leg in enumerate(route[:-1]):
+            next_leg = route[i + 1]
+
+            if leg.backend.chain_id != next_leg.backend.chain_id:
+                profit -= IBC_TRANSFER_GAS
+
     if profit < ctx.cli_args["profit_margin"]:
-        raise ValueError(
-            f"Insufficient realized profit for route {fmt_route(route)}; canceling"
+        ctx.log_route(
+            route_ent, "error", "Insufficient realized profit for route; canceling", []
         )
+
+        return
 
     prev_leg: Optional[Leg] = None
 
@@ -216,7 +231,7 @@ async def exec_arb(
         # Ensure that there is at least 5k of the base chain denom
         # at all times
         if leg.in_asset() == leg.backend.chain_fee_denom:
-            to_swap -= 500000
+            to_swap -= leg.backend.swap_fee
 
         if to_swap < 0:
             ctx.log_route(
