@@ -216,7 +216,7 @@ async def exec_arb(
         # Ensure that there is at least 5k of the base chain denom
         # at all times
         if leg.in_asset() == leg.backend.chain_fee_denom:
-            to_swap -= 5000
+            to_swap -= 500000
 
         # If the arb leg is on astroport, simply execute the swap
         # on asset A, producing asset B
