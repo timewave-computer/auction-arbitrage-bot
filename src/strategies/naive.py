@@ -21,6 +21,7 @@ from src.strategies.util import (
     fmt_route_leg,
     starting_quantity_for_route_profit,
     recover_funds,
+    IBC_TRANSFER_GAS,
 )
 from src.util import (
     DenomChainInfo,
@@ -217,9 +218,22 @@ async def eval_route(
         ],
     )
 
+    gas_base_denom = 0
+
+    # Ensure that there is at least 5k of the base chain denom
+    # at all times
+    if ctx.cli_args["base_denom"] == "untrn":
+        gas_base_denom += sum([leg.backend.swap_fee for leg in route])
+
+        for i, leg in enumerate(route[:-1]):
+            next_leg = route[i + 1]
+
+            if leg.backend.chain_id != next_leg.backend.chain_id:
+                gas_base_denom += IBC_TRANSFER_GAS
+
     starting_amt = min(
         await starting_quantity_for_route_profit(state.balance, route, r, ctx),
-        state.balance,
+        state.balance - gas_base_denom,
     )
 
     ctx.log_route(
@@ -244,7 +258,7 @@ async def eval_route(
 
     logger.debug("Route has execution plan: %s", r.quantities)
 
-    if profit < ctx.cli_args["profit_margin"]:
+    if profit - gas_base_denom < ctx.cli_args["profit_margin"]:
         ctx.log_route(
             r,
             "info",
