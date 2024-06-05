@@ -321,7 +321,7 @@ async def recover_funds(
     )
 
     if not balance_resp:
-        raise ValueError("Couldn't get balance.")
+        raise ValueError(f"Couldn't get balance for asset {curr_leg.in_asset()}.")
 
     resp = await quantities_for_route_profit(balance_resp, backtracked, r, ctx)
 

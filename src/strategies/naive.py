@@ -435,6 +435,7 @@ async def listen_routes_with_depth_dfs(
                     )
                     for denom in denom_cache[end].values()
                     for auction in auctions.get(denom, {}).values()
+                    if auction.chain_id != prev_pool.backend.chain_id
                 ),
                 *(
                     Leg(
@@ -453,6 +454,7 @@ async def listen_routes_with_depth_dfs(
                     for denom in denom_cache[end].values()
                     for pool_set in pools.get(denom, {}).values()
                     for pool in pool_set
+                    if pool.chain_id != prev_pool.backend.chain_id
                 ),
             }
         )
