@@ -305,8 +305,8 @@ async def recover_funds(
     balance_resp = try_multiple_clients(
         ctx.clients[curr_leg.backend.chain_id.split("-")[0]],
         lambda client: client.query_bank_balance(
-            Address(ctx.wallet.public_key(), prefix="neutron"),
-            ctx.cli_args["base_denom"],
+            Address(ctx.wallet.public_key(), prefix=curr_leg.backend.chain_prefix),
+            curr_leg.in_asset(),
         ),
     )
 
