@@ -411,7 +411,7 @@ async def listen_routes_with_depth_dfs(
                 ),
                 *(
                     Leg(
-                        (pool.asset_a if pool.asset_a() == end else pool.asset_b),
+                        pool.asset_a if pool.asset_a() == end else pool.asset_b,
                         pool.asset_a if pool.asset_a() != end else pool.asset_b,
                         pool,
                     )
@@ -423,12 +423,12 @@ async def listen_routes_with_depth_dfs(
                     Leg(
                         (
                             auction.asset_a
-                            if auction.asset_a() == denom
+                            if auction.asset_a() == src or auction.asset_a() == denom
                             else auction.asset_b
                         ),
                         (
                             auction.asset_a
-                            if auction.asset_a() != denom
+                            if auction.asset_a() != src and auction.asset_a() != denom
                             else auction.asset_b
                         ),
                         auction,
@@ -438,8 +438,16 @@ async def listen_routes_with_depth_dfs(
                 ),
                 *(
                     Leg(
-                        (pool.asset_a if pool.asset_a() == denom else pool.asset_b),
-                        (pool.asset_a if pool.asset_a() != denom else pool.asset_b),
+                        (
+                            pool.asset_a
+                            if pool.asset_a() == src or pool.asset_a() == denom
+                            else pool.asset_b
+                        ),
+                        (
+                            pool.asset_a
+                            if pool.asset_a() != src and pool.asset_a() != denom
+                            else pool.asset_b
+                        ),
                         pool,
                     )
                     for denom in denom_cache[end].values()
