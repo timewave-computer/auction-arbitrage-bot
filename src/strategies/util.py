@@ -218,6 +218,9 @@ async def exec_arb(
         if leg.in_asset() == leg.backend.chain_fee_denom:
             to_swap -= 500000
 
+        if to_swap < 0:
+            raise valueError("Cannot swap a negative quantity.")
+
         # If the arb leg is on astroport, simply execute the swap
         # on asset A, producing asset B
         if isinstance(leg.backend, PoolProvider):
