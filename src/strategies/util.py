@@ -219,7 +219,14 @@ async def exec_arb(
             to_swap -= 500000
 
         if to_swap < 0:
-            raise ValueError("Cannot swap a negative quantity.")
+            ctx.log_route(
+                route_ent,
+                "info",
+                "Arb is not profitable including gas costs; aborting",
+                [],
+            )
+
+            return
 
         # If the arb leg is on astroport, simply execute the swap
         # on asset A, producing asset B
