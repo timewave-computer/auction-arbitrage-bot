@@ -489,17 +489,8 @@ async def quantities_for_route_profit(
     if len(route) <= 1:
         return (0, [])
 
-    starting_amount = min(
-        starting_amount,
-        (
-            int(
-                Decimal(await route[0].backend.remaining_asset_b())
-                / Decimal(await route[0].backend.exchange_rate())
-            )
-            if isinstance(route[0].backend, AuctionProvider)
-            else await route[0].backend.balance_asset_a()
-        ),
-    )
+    if route[0].out_asset().endswith("F81"):
+        breakpoint()
 
     quantities: list[int] = [starting_amount]
 
@@ -520,6 +511,8 @@ async def quantities_for_route_profit(
 
         for leg in route:
             if quantities[-1] == 0:
+                quantities = [starting_amount]
+
                 break
 
             prev_amt = quantities[-1]
@@ -554,99 +547,6 @@ async def quantities_for_route_profit(
         ctx.log_route(r, "info", "Route is profitable: %s", [fmt_route(route)])
 
     return (quantities[-1] - quantities[0], quantities)
-
-
-async def starting_quantity_for_route_profit(
-    starting_amount: int,
-    route: list[Leg],
-    r: Route,
-    ctx: Ctx[Any],
-) -> int:
-    """
-    Calculates what quantities should be used to obtain
-    a net profit of `profit` by traversing the route.
-
-    Investment quantities are calculated using the
-    min liqiudity pool in the route.
-    """
-
-    if len(route) == 0:
-        return 0
-
-    async def leg_liquidity(leg: Leg, index: int) -> list[tuple[str, int, int]]:
-        if isinstance(leg.backend, AuctionProvider):
-            bal = await leg.backend.remaining_asset_b()
-            return [
-                (leg.backend.asset_b(), bal, index),
-            ]
-
-        return [
-            (leg.backend.asset_a(), await leg.backend.balance_asset_a(), index),
-            (leg.backend.asset_b(), await leg.backend.balance_asset_b(), index),
-        ]
-
-    with_liquidity: list[list[tuple[str, int, int]]] = await asyncio.gather(
-        *[leg_liquidity(leg, i) for (i, leg) in enumerate(route)]
-    )
-    min_liquidity_pair: list[tuple[str, int, int]] = min(
-        with_liquidity,
-        key=lambda liq_pair: (
-            (liq_pair[0][1], liq_pair[0][1])
-            if len(liq_pair) == 1
-            else (liq_pair[0][1], liq_pair[1][1])
-        ),
-    )
-    min_liquidity: tuple[str, int, int] = min(
-        min_liquidity_pair, key=lambda liq: liq[1]
-    )
-
-    ctx.log_route(
-        r,
-        "info",
-        "Least liquid route is: %s (%d, %d)",
-        [min_liquidity[0], min_liquidity[1], min_liquidity[2]],
-    )
-
-    # "Back-prop" the lowest liqiudity so that all trades are in-line
-    # with lowest liqiudity
-    prev_backprop = []
-
-    for i in range(min_liquidity[2], -1, -1):
-        leg = route[i]
-
-        if i == min_liquidity[2]:
-            if min_liquidity[0] == leg.in_asset():
-                prev_backprop.append(int(MAX_TRADE_IN_POOL_FRACTION * min_liquidity[1]))
-                continue
-
-            if leg.in_asset == leg.backend.asset_a:
-                prev_backprop.append(
-                    await leg.backend.reverse_simulate_swap_asset_b(
-                        int(MAX_TRADE_IN_POOL_FRACTION * min_liquidity[1])
-                    )
-                )
-                continue
-
-            prev_backprop.append(
-                await leg.backend.reverse_simulate_swap_asset_a(
-                    int(MAX_TRADE_IN_POOL_FRACTION * min_liquidity[1])
-                )
-            )
-            continue
-
-        if leg.in_asset == leg.backend.asset_a:
-            prev_backprop.append(
-                await leg.backend.reverse_simulate_swap_asset_b(prev_backprop[-1])
-            )
-            continue
-
-        prev_backprop.append(
-            await leg.backend.reverse_simulate_swap_asset_a(prev_backprop[-1])
-        )
-
-    quantities = list(reversed(prev_backprop))
-
-    return min(quantities[0], starting_amount)
 
 
 async def route_base_denom_profit(

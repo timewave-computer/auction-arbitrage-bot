@@ -19,7 +19,6 @@ from src.strategies.util import (
     fmt_route,
     fmt_route_debug,
     fmt_route_leg,
-    starting_quantity_for_route_profit,
     recover_funds,
     IBC_TRANSFER_GAS,
 )
@@ -231,10 +230,7 @@ async def eval_route(
             if leg.backend.chain_id != next_leg.backend.chain_id:
                 gas_base_denom += IBC_TRANSFER_GAS
 
-    starting_amt = min(
-        await starting_quantity_for_route_profit(state.balance, route, r, ctx),
-        state.balance - gas_base_denom,
-    )
+    starting_amt = state.balance - gas_base_denom
 
     ctx.log_route(
         r,
