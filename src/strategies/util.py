@@ -489,9 +489,6 @@ async def quantities_for_route_profit(
     if len(route) <= 1:
         return (0, [])
 
-    if route[0].out_asset().endswith("F81"):
-        breakpoint()
-
     quantities: list[int] = [starting_amount]
 
     while quantities[-1] - quantities[0] <= 0:
