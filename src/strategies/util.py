@@ -687,7 +687,7 @@ async def route_base_denom_profit(
 
         exchange_rates.append(Decimal(balance_asset_a) / Decimal(balance_asset_b))
 
-    return starting_amount - int(reduce(operator.mul, exchange_rates, starting_amount))
+    return int(reduce(operator.mul, exchange_rates, starting_amount)) - starting_amount
 
 
 def pools_to_ser(

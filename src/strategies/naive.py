@@ -320,8 +320,6 @@ async def listen_routes_with_depth_dfs(
         for pool in start_pools
     ]
 
-    random.shuffle(start_legs)
-
     async def next_legs(
         path: list[Leg],
     ) -> AsyncGenerator[tuple[Route, list[Leg]], None]:

@@ -90,8 +90,6 @@ class AuctionProvider(WithContract):
             price_delta_per_block * (current_block_height - start_block)
         )
 
-        print(current_price)
-
         return decimal_to_int(current_price)
 
     async def reverse_simulate_swap_asset_b(self, amount: int) -> int:
