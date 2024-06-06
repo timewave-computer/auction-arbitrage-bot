@@ -90,6 +90,8 @@ class AuctionProvider(WithContract):
             price_delta_per_block * (current_block_height - start_block)
         )
 
+        print(current_price)
+
         return decimal_to_int(current_price)
 
     async def reverse_simulate_swap_asset_b(self, amount: int) -> int:
@@ -262,7 +264,7 @@ class AuctionDirectory:
 
         for auction in auction_infos:
             pair, addr = auction
-            asset_b, asset_a = pair
+            asset_a, asset_b = pair
 
             provider = AuctionProvider(
                 self.endpoints,
