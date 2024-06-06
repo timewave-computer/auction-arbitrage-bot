@@ -24,7 +24,6 @@ from src.util import (
     try_multiple_clients_fatal,
     try_multiple_clients,
     denom_info_on_chain,
-    MAX_TRADE_IN_POOL_FRACTION,
     DENOM_QUANTITY_ABORT_ARB,
 )
 from src.scheduler import Ctx
