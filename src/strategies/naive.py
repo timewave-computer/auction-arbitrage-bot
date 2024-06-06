@@ -466,7 +466,7 @@ async def listen_routes_with_depth_dfs(
                 ),
             }
         )
-        next_pools = [x for x in all_next_pools if x not in path]
+        next_pools = [x for x in next_pools if x not in path]
 
         if len(next_pools) == 0:
             return
