@@ -262,7 +262,7 @@ class AuctionDirectory:
 
         for auction in auction_infos:
             pair, addr = auction
-            asset_a, asset_b = pair
+            asset_b, asset_a = pair
 
             provider = AuctionProvider(
                 self.endpoints,
