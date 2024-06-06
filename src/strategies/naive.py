@@ -402,7 +402,7 @@ async def listen_routes_with_depth_dfs(
 
         # A pool is a candidate to be a next pool if it has a denom
         # contained in denom_cache[end] or one of its denoms *is* end
-        next_pools: list[Leg] = list(
+        all_next_pools: list[Leg] = list(
             {
                 # Atomic pools
                 *(
@@ -470,6 +470,12 @@ async def listen_routes_with_depth_dfs(
                 ),
             }
         )
+        next_pools = [
+            x for x in all_next_pools if x.out_asset() != prev_pool.in_asset()
+        ]
+
+        if len(next_pools) == 0:
+            return
 
         random.shuffle(next_pools)
 
