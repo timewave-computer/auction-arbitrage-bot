@@ -38,7 +38,7 @@ from ibc.applications.transfer.v1 import tx_pb2
 logger = logging.getLogger(__name__)
 
 
-IBC_TRANSFER_GAS = 10000
+IBC_TRANSFER_GAS = 1000
 
 
 def fmt_route_leg(leg: Leg) -> str:

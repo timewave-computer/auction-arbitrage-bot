@@ -48,7 +48,7 @@ class AuctionProvider(WithContract):
         self.endpoints = endpoints["http"]
         self.session = session
         self.grpc_channels = grpc_channels
-        self.swap_fee = 50000
+        self.swap_fee = 500000
 
     async def exchange_rate(self) -> int:
         """
@@ -123,7 +123,11 @@ class AuctionProvider(WithContract):
 
     def swap_asset_a(self, wallet: LocalWallet, amount: int) -> SubmittedTx:
         return try_exec_multiple_fatal(
-            self.contracts, wallet, {"bid": {}}, funds=f"{amount}{self.asset_a_denom}"
+            self.contracts,
+            wallet,
+            {"bid": {}},
+            funds=f"{amount}{self.asset_a_denom}",
+            gas_limit=500000,
         )
 
     async def remaining_asset_b(self) -> int:
