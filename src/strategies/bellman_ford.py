@@ -17,7 +17,6 @@ from src.strategies.util import (
     exec_arb,
     route_base_denom_profit,
     quantities_for_route_profit,
-    starting_quantity_for_route_profit,
 )
 from src.util import (
     DISCOVERY_CONCURRENCY_FACTOR,
