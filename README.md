@@ -25,7 +25,7 @@ curl -L https://nixos.org/nix/install | sh -s -- --daemon
 After installing Nix, enter the abritrage bot dev environment by executing
 
 ```sh
-nix develop
+nix develop --extra-experimental-features nix-command --extra-experimental-features flakes
 ```
 
 in the repository root. Proceed to [Usage](#usage) to use the arbitrage bot.
