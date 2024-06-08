@@ -93,7 +93,10 @@ async def try_multiple_rest_endpoints(
                     continue
 
                 return await resp.json()
-        except aiohttp.client_exceptions.ClientOSError:
+        except (
+            aiohttp.client_exceptions.ClientOSError,
+            aiohttp.client_exceptions.ServerDisconnectedError,
+        ):
             continue
 
     return None
