@@ -2,6 +2,7 @@
 Implements utilities for implementing arbitrage bots.
 """
 
+import asyncio
 from base64 import standard_b64encode
 import json
 from decimal import Decimal
@@ -96,6 +97,7 @@ async def try_multiple_rest_endpoints(
         except (
             aiohttp.client_exceptions.ClientOSError,
             aiohttp.client_exceptions.ServerDisconnectedError,
+            asyncio.TimeoutError,
         ):
             continue
 
