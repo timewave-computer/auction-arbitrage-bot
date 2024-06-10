@@ -525,7 +525,7 @@ async def quantities_for_route_profit(
                         int(
                             int_to_decimal(await leg.backend.exchange_rate()) * prev_amt
                         ),
-                        leg.backend.remaining_asset_b(),
+                        await leg.backend.remaining_asset_b(),
                     )
                 )
 
