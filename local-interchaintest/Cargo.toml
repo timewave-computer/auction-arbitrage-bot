@@ -1,0 +1,9 @@
+[package]
+name = "local-interchaintest"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cosmwasm-std = "1.5.5"
+localic-std = { git = "https://github.com/strangelove-ventures/interchaintest.git", version = "0.0.1" }
+local-ictest-e2e = { git = "https://github.com/timewave-computer/covenants", branch = "benskey/local-interchain" }
