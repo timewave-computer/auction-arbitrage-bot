@@ -46,13 +46,15 @@
             grpc_cli
             ruff
             rust-bin.stable.latest.default
+            pkg-config
           ];
+
+          buildInputs = with pkgs; [ openssl ];
 
           packages = [ pythonWithPackages ];
 
           shellHook = ''
             export PYTHONPATH=src:build/gen
-            make proto
           '';
         };
       });
