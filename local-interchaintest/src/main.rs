@@ -1,6 +1,6 @@
 use local_ictest_e2e::{
     utils::{
-        file_system,
+        file_system, ibc,
         test_context::{
             find_pairwise_ccv_channel_ids, find_pairwise_transfer_channel_ids, TestContext,
         },
@@ -23,6 +23,9 @@ fn main() {
 
     // Deploy all required neutron contracts
     setup::deploy_neutron_contracts(&mut test_ctx).expect("failed to deploy contracts");
+
+    // Instantiate all astroport contracts
+    setup::create_token_factory(&mut test_ctx).expect("failed to create astroport factory");
 }
 
 fn setup_context(configured_chains: ChainsVec) -> Result<TestContext, Error> {
@@ -66,11 +69,11 @@ fn setup_context(configured_chains: ChainsVec) -> Result<TestContext, Error> {
             .map_err(|_| Error::ChannelLookup)?;
 
     connection_ids.insert(
-        (NEUTRON_CHAIN.to_string(), GAIA_CHAIN.to_string()),
+        (NEUTRON_CHAIN.to_owned(), GAIA_CHAIN.to_owned()),
         ntrn_to_gaia_consumer_channel.connection_id,
     );
     connection_ids.insert(
-        (GAIA_CHAIN.to_string(), NEUTRON_CHAIN.to_string()),
+        (GAIA_CHAIN.to_owned(), NEUTRON_CHAIN.to_owned()),
         gaia_to_ntrn_provider_channel.connection_id,
     );
 
@@ -78,42 +81,81 @@ fn setup_context(configured_chains: ChainsVec) -> Result<TestContext, Error> {
         find_pairwise_transfer_channel_ids(&ntrn_channels, &osmo_channels)
             .map_err(|_| Error::ChannelLookup)?;
 
+    let (ntrn_to_gaia_transfer_channel, gaia_to_ntrn_transfer_channel) =
+        find_pairwise_transfer_channel_ids(&ntrn_channels, &gaia_channels)
+            .map_err(|_| Error::ChannelLookup)?;
+
     connection_ids.insert(
-        (NEUTRON_CHAIN.to_string(), OSMOSIS_CHAIN.to_string()),
+        (NEUTRON_CHAIN.to_owned(), OSMOSIS_CHAIN.to_owned()),
         ntrn_to_osmosis_transfer_channel.connection_id,
     );
     connection_ids.insert(
-        (OSMOSIS_CHAIN.to_string(), NEUTRON_CHAIN.to_string()),
+        (OSMOSIS_CHAIN.to_owned(), NEUTRON_CHAIN.to_owned()),
         osmosis_to_ntrn_transfer_channel.connection_id,
+    );
+
+    connection_ids.insert(
+        (NEUTRON_CHAIN.to_owned(), GAIA_CHAIN.to_owned()),
+        ntrn_to_gaia_transfer_channel.connection_id,
+    );
+    connection_ids.insert(
+        (GAIA_CHAIN.to_owned(), NEUTRON_CHAIN.to_owned()),
+        gaia_to_ntrn_transfer_channel.connection_id,
     );
 
     let mut transfer_channel_ids = HashMap::new();
     transfer_channel_ids.insert(
-        (NEUTRON_CHAIN.to_string(), OSMOSIS_CHAIN.to_string()),
-        ntrn_to_osmosis_transfer_channel.channel_id.to_string(),
+        (NEUTRON_CHAIN.to_owned(), OSMOSIS_CHAIN.to_owned()),
+        ntrn_to_osmosis_transfer_channel.channel_id.to_owned(),
     );
     transfer_channel_ids.insert(
-        (OSMOSIS_CHAIN.to_string(), NEUTRON_CHAIN.to_string()),
-        osmosis_to_ntrn_transfer_channel.channel_id.to_string(),
+        (OSMOSIS_CHAIN.to_owned(), NEUTRON_CHAIN.to_owned()),
+        osmosis_to_ntrn_transfer_channel.channel_id.to_owned(),
+    );
+
+    transfer_channel_ids.insert(
+        (NEUTRON_CHAIN.to_owned(), GAIA_CHAIN.to_owned()),
+        ntrn_to_gaia_transfer_channel.channel_id.to_owned(),
+    );
+    transfer_channel_ids.insert(
+        (GAIA_CHAIN.to_owned(), NEUTRON_CHAIN.to_owned()),
+        gaia_to_ntrn_transfer_channel.channel_id.to_owned(),
     );
 
     let mut ccv_channel_ids = HashMap::new();
     ccv_channel_ids.insert(
-        (GAIA_CHAIN.to_string(), NEUTRON_CHAIN.to_string()),
+        (GAIA_CHAIN.to_owned(), NEUTRON_CHAIN.to_owned()),
         gaia_to_ntrn_provider_channel.channel_id,
     );
     ccv_channel_ids.insert(
-        (NEUTRON_CHAIN.to_string(), GAIA_CHAIN.to_string()),
+        (NEUTRON_CHAIN.to_owned(), GAIA_CHAIN.to_owned()),
         ntrn_to_gaia_consumer_channel.channel_id,
     );
 
     let mut ibc_denoms = HashMap::new();
 
-    Ok(TestContext {
+    ibc_denoms.insert(
+        (NEUTRON_CHAIN.to_owned(), OSMOSIS_CHAIN.to_owned()),
+        ibc::get_ibc_denom("untrn", &ntrn_to_osmosis_transfer_channel.channel_id),
+    );
+    ibc_denoms.insert(
+        (OSMOSIS_CHAIN.to_owned(), NEUTRON_CHAIN.to_owned()),
+        ibc::get_ibc_denom("uosmo", &osmosis_to_ntrn_transfer_channel.channel_id),
+    );
+    ibc_denoms.insert(
+        (NEUTRON_CHAIN.to_owned(), GAIA_CHAIN.to_owned()),
+        ibc::get_ibc_denom("untrn", &ntrn_to_osmosis_transfer_channel.channel_id),
+    );
+    ibc_denoms.insert(
+        (GAIA_CHAIN.to_owned(), NEUTRON_CHAIN.to_owned()),
+        ibc::get_ibc_denom("uatom", &gaia_to_ntrn_transfer_channel.channel_id),
+    );
+
+    Ok(TestContext::new(
         chains,
         transfer_channel_ids,
         ccv_channel_ids,
         connection_ids,
         ibc_denoms,
-    })
+    ))
 }
