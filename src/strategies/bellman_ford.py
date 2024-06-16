@@ -23,6 +23,7 @@ from src.util import (
     denom_info_on_chain,
     int_to_decimal,
     try_multiple_clients,
+    denom_info,
 )
 from cosmpy.crypto.address import Address
 
@@ -151,7 +152,7 @@ async def pair_provider_edge(
     src: str, pair: str, provider: Union[PoolProvider, AuctionProvider]
 ) -> tuple[str, Optional[Edge]]:
     """
-    Calculates edge weights for all pairs connected to a base pair.
+    Calculates edge weights for a specific pair connected to a base.
     """
 
     logger.debug("Getting weight for edge %s -> %s", src, pair)
@@ -389,27 +390,46 @@ async def route_bellman_ford(
     for _ in range(len(vertices)):
         for edge_a, edge_b in ctx.state.weights.values():
 
-            def relax_edge(edge: Edge) -> None:
+            async def relax_edge(edge: Edge) -> None:
+                in_asset_info = await denom_info_on_chain(
+                    edge.backend.backend.chain_id,
+                    edge.backend.in_asset(),
+                    "neutron-1",
+                    ctx.http_session,
+                    api_key=ctx.cli_args["skip_api_key"],
+                )
+                out_asset_info = await denom_info_on_chain(
+                    edge.backend.backend.chain_id,
+                    edge.backend.out_asset(),
+                    "neutron-1",
+                    ctx.http_session,
+                    api_key=ctx.cli_args["skip_api_key"],
+                )
+
+                if not in_asset_info or not out_asset_info:
+                    return
+
+                in_asset = in_asset_info.denom
+                out_asset = out_asset_info.denom
+
                 if (
                     (
-                        distances[edge.backend.in_asset()]
-                        if distances[edge.backend.in_asset()] != Decimal("Inf")
+                        distances[in_asset]
+                        if distances[in_asset] != Decimal("Inf")
                         else Decimal(0)
                     )
                     + edge.weight
-                ) < distances[edge.backend.out_asset()]:
-                    distances[edge.backend.out_asset()] = (
-                        distances[edge.backend.in_asset()]
-                        if distances[edge.backend.in_asset()] != Decimal("Inf")
+                ) < distances[out_asset]:
+                    distances[out_asset] = (
+                        distances[in_asset]
+                        if distances[in_asset] != Decimal("Inf")
                         else Decimal(0)
                     )
-                    pred[edge.backend.out_asset()] = edge.backend.in_asset()
-                    pair_leg[(edge.backend.in_asset(), edge.backend.out_asset())] = (
-                        edge.backend
-                    )
+                    pred[out_asset] = in_asset
+                    pair_leg[in_asset, out_asset] = edge.backend
 
-            relax_edge(edge_a)
-            relax_edge(edge_b)
+            await relax_edge(edge_a)
+            await relax_edge(edge_b)
 
     cycles = []
 

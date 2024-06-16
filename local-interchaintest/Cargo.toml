@@ -7,3 +7,4 @@ edition = "2021"
 cosmwasm-std = "1.5.5"
 localic-std = { git = "https://github.com/strangelove-ventures/interchaintest.git", version = "0.0.1" }
 local-ictest-e2e = { git = "https://github.com/timewave-computer/covenants", branch = "benskey/local-interchain" }
+reqwest = "0.12.4"
