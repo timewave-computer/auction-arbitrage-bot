@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 cosmwasm-std = "1.5.5"
 localic-std = { git = "https://github.com/strangelove-ventures/interchaintest.git", branch = "main" }
-local-ictest-e2e = { git = "https://github.com/timewave-computer/covenants", branch = "benskey/local-interchain" }
-reqwest = { version = "0.11.27", features = ["blocking"] }
+local-ictest-e2e = { git = "https://github.com/dowlandaiello/covenants", branch = "benskey/local-interchain" }
+reqwest = { version = "0.11.27", features = ["blocking", "json"] }
 thiserror = "1.0.61"
+serde_json = "1.0.117"
+serde = "1.0.203"

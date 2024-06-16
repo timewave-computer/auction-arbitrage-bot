@@ -1,5 +1,6 @@
 use super::setup::SetupError;
 use localic_std::errors::LocalError;
+use reqwest::Error as ReqwestError;
 use thiserror::Error;
 
 /// The top-level testing error.
@@ -13,4 +14,6 @@ pub enum Error {
     LocalIc(#[from] LocalError),
     #[error("failed to lookup channel")]
     ChannelLookup,
+    #[error("an HTTP request failed")]
+    Http(#[from] ReqwestError),
 }

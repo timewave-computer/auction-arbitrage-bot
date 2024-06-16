@@ -867,7 +867,7 @@ checksum = "643cb0b8d4fcc284004d5fd0d67ccf61dfffadb7f75e1e71bc420f4688a3a704"
 [[package]]
 name = "local-ictest-e2e"
 version = "0.1.0"
-source = "git+https://github.com/timewave-computer/covenants?branch=benskey/local-interchain#567ab7e382845eff739f9fdc422c419567b76804"
+source = "git+https://github.com/dowlandaiello/covenants?branch=benskey/local-interchain#70145624230c69bac8e8ecdafb4a03ba883681e3"
 dependencies = [
  "cosmwasm-schema",
  "cosmwasm-std",
@@ -887,6 +887,8 @@ dependencies = [
  "local-ictest-e2e",
  "localic-std",
  "reqwest",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 
