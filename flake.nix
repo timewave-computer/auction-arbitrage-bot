@@ -4,13 +4,16 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    cosmos-nix.url = "github:informalsystems/cosmos.nix";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, cosmos-nix }:
+  outputs = { self, nixpkgs, flake-utils, rust-overlay }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = import nixpkgs { inherit system; overlays = [ cosmos-nix.overlays.cosmosNixPackages ]; };
+        pkgs = import nixpkgs { inherit system; overlays = [ rust-overlay.overlays.default ]; };
         packageOverrides = pkgs.callPackage ./python-packages.nix { };
         skipCheckTests = drv:
           drv.overridePythonAttrs (old: { doCheck = false; });
@@ -42,6 +45,7 @@
             grpc
             grpc_cli
             ruff
+            rust-bin.stable.latest.default
           ];
 
           packages = [ pythonWithPackages ];
