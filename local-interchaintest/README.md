@@ -25,5 +25,5 @@ make install
 Start `local-ic`:
 
 ```bash
-local-ic start neutron_osmosis
+local-ic start neutron_osmosis --api-port 42069
 ```
