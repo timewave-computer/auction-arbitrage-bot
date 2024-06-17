@@ -17,6 +17,7 @@ fn main() {
     let client = Client::new();
     polling::poll_for_start(&client, API_URL, 300).expect("failed to poll client");
 
+    // Copy the account we're using into the container
     let configured_chains =
         file_system::read_json_file(CHAIN_CONFIG_PATH).expect("failed to read chain config file");
     let mut test_ctx = setup_context(configured_chains).expect("failed to construct test context");
@@ -25,7 +26,7 @@ fn main() {
     setup::deploy_neutron_contracts(&mut test_ctx).expect("failed to deploy contracts");
 
     // Instantiate all astroport contracts
-    setup::create_token_factory(&mut test_ctx).expect("failed to create astroport factory");
+    setup::create_factory(&mut test_ctx).expect("failed to create astroport factory");
 }
 
 fn setup_context(configured_chains: ChainsVec) -> Result<TestContext, Error> {

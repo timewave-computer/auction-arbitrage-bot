@@ -1,4 +1,4 @@
-use super::{ARTIFACTS_PATH, OSMOSIS_CHAIN};
+use super::ARTIFACTS_PATH;
 use local_ictest_e2e::{
     utils::{file_system, test_context::TestContext},
     ACC_0_KEY, GAIA_CHAIN, NEUTRON_CHAIN, WASM_EXTENSION,
@@ -50,7 +50,44 @@ pub fn deploy_neutron_contracts(test_ctx: &mut TestContext) -> Result<(), SetupE
 }
 
 /// Instantiates the astroport factory.
-pub fn create_token_factory(test_ctx: &mut TestContext) -> Result<String, SetupError> {
+pub fn create_factory(test_ctx: &mut TestContext) -> Result<String, SetupError> {
+    let neutron = test_ctx.get_chain(NEUTRON_CHAIN);
+
+    let acc_0_addr = neutron.admin_addr;
+    let code_id =
+        neutron
+            .contract_codes
+            .get("astroport_factory")
+            .ok_or(SetupError::MissingContract(String::from(
+                "astroport_factory",
+            )))?;
+
+    let mut contract_a = CosmWasm::new_from_existing(
+        &neutron.rb,
+        format!("{ARTIFACTS_PATH}/astroport_factory.wasm"),
+        code_id,
+        None,
+    );
+    let ca = contract_a.instantiate(
+        ACC_0_KEY,
+        serde_json::json!({
+            "pair_configs": [],
+            "token_code_id": 0,
+            "owner": {acc_0_addr},
+            "whitelist_code_id": 0}),
+        "astroport_factory",
+        None,
+        "",
+    );
+
+    Ok(ca)
+}
+
+pub fn create_pool(
+    test_ctx: &mut TestContext,
+    denom_a: impl AsRef<str>,
+    denom_b: impl AsRef<str>,
+) -> Result<String, SetupError> {
     let neutron = test_ctx.get_chain(NEUTRON_CHAIN);
 
     let code_id =
@@ -60,63 +97,58 @@ pub fn create_token_factory(test_ctx: &mut TestContext) -> Result<String, SetupE
             .ok_or(SetupError::MissingContract(String::from(
                 "astroport_factory",
             )))?;
-    let instantiate_acc = test_ctx.get_admin_addr().src(NEUTRON_CHAIN).get();
-    let instantiate_args = format!(
-        r#"{{ "pair_configs": [], "token_code_id": 0, "owner": "{instantiate_acc}", "whitelist_code_id": 0, "coin_registry_address": ""}}"#
+
+    let mut contract_a = CosmWasm::new_from_existing(
+        &neutron.rb,
+        format!("{ARTIFACTS_PATH}/astroport_factory.wasm"),
+        code_id,
+        None,
     );
 
-    println!("{}", instantiate_args);
-    println!(
-        "neutrond tx wasm instantiate {code_id} '{instantiate_args}' --from acc0 --output=json"
-    );
-
-    let resp = neutron.rb.exec(
-        &format!(
-            "neutrond tx wasm instantiate {code_id} '{instantiate_args}' --from acc0 --output=json"
-        ),
-        true,
-    );
-
-    println!("{:?}", resp);
-
-    Ok(String::new())
-}
-
-pub fn create_pool(
-    test_ctx: &mut TestContext,
-    factory_addr: impl AsRef<str>,
-    denom_a: impl AsRef<str>,
-    denom_b: impl AsRef<str>,
-) -> Result<String, SetupError> {
-    let neutron = test_ctx.get_chain(NEUTRON_CHAIN);
-
-    let factory_addr_str = factory_addr.as_ref();
+    let factory_addr_str =
+        contract_a
+            .contract_addr
+            .ok_or(SetupError::MissingContract(String::from(
+                "astroport_factory",
+            )))?;
     let denom_a_str = denom_a.as_ref();
     let denom_b_str = denom_b.as_ref();
 
-    let send_args =
-        format!("{{ 'create_pair': {{'asset_infos': [{{'native_token': {{'denom': {denom_a_str}}}}}, {{'native_token': {{'denom': {denom_b_str}}}}}]}}}}");
+    let res = contract_a.execute(
+        ACC_0_KEY,
+        serde_json::json!({
+        "create_pair": {
+        "pair_type": {
+            "xyk": {}
+        },
+        "asset_infos": [
+        {
+            "native_token": {
+                "denom": denom_a_str
+            }
+        },
+        {
+            "native_token": {
+                "denom": denom_b_str
+            }
+        }]}}),
+        "",
+    )?;
 
-    let _ = neutron.rb.exec(
-        &format!("neutrond tx wasm execute {factory_addr_str} {send_args}"),
-        true,
-    );
+    println!("{:?}", res);
 
     Ok(String::new())
 }
 
 /// Creates pools with random prices.
 /// Includes at least one pool that may be arbitraged.
-pub fn create_pools(
-    test_ctx: &mut TestContext,
-    factory_addr: impl AsRef<str>,
-) -> Result<(), SetupError> {
+pub fn create_pools(test_ctx: &mut TestContext) -> Result<(), SetupError> {
     let atom_denom = test_ctx
         .get_ibc_denoms()
         .src(GAIA_CHAIN)
         .dest(NEUTRON_CHAIN)
         .get();
-    create_pool(test_ctx, factory_addr, "untrn", atom_denom)?;
+    create_pool(test_ctx, "untrn", atom_denom)?;
 
     Ok(())
 }
