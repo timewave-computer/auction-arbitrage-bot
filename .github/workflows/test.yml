@@ -6,35 +6,15 @@ jobs:
   test:
     name: python test
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12"]
-
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Run unit tests
-        run: python -m pytest tests
-      - name: Check src mypy
-        run: mypy src --install-types --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs --strict
-      - name: Check tests mypy
-        run: mypy tests --install-types --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs --strict
-      - name: Check main mypy
-        run: mypy main.py --install-types --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs --strict
-      - name: Check linter
-        run: ruff check src
-      - name: Check linter tests
-        run: ruff check tests
-      - name: Check linter main
-        run: ruff check main.py
-      - name: Check linter (pylint)
-        run: python -m pylint src
-      - name: Check linter tests (pylint)
-        run: python -m pylint tests
-      - name: Check linter main (pylint)
-        run: python -m pylint main.py
+      - name: Install nix
+        uses: cachix/install-nix-action@v27
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Compile protobuf
+        run: nix develop --command make proto
+      - name: Lint
+        run: nix develop --command make lint
+      - name: Run tests
+        run: nix develop --command make test
+        

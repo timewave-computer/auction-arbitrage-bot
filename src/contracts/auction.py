@@ -6,16 +6,22 @@ for the auction.
 import json
 from decimal import Decimal
 from typing import Any, List, Optional
-from cosmpy.aerial.contract import LedgerContract  # type: ignore
-from cosmpy.aerial.client import LedgerClient, NetworkConfig  # type: ignore
+from functools import cached_property
+from cosmpy.aerial.contract import LedgerContract
+from cosmpy.aerial.wallet import LocalWallet
+from cosmpy.aerial.client import LedgerClient
+from cosmpy.aerial.tx_helpers import SubmittedTx
 from src.util import (
-    NEUTRON_NETWORK_CONFIG,
+    custom_neutron_network_config,
     WithContract,
     ContractInfo,
     decimal_to_int,
     try_query_multiple,
     try_multiple_clients,
+    try_exec_multiple_fatal,
 )
+import aiohttp
+import grpc
 
 
 class AuctionProvider(WithContract):
@@ -25,20 +31,33 @@ class AuctionProvider(WithContract):
 
     def __init__(
         self,
+        endpoints: dict[str, list[str]],
         contract_info: ContractInfo,
         asset_a: str,
         asset_b: str,
+        session: aiohttp.ClientSession,
+        grpc_channels: list[grpc.aio.Channel],
     ):
         WithContract.__init__(self, contract_info)
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b
+        self.chain_id = contract_info.clients[0].query_chain_id()
+        self.chain_prefix = "neutron"
+        self.chain_fee_denom = "untrn"
+        self.kind = "auction"
+        self.endpoints = endpoints["http"]
+        self.session = session
+        self.grpc_channels = grpc_channels
+        self.swap_fee = 500000
 
-    def exchange_rate(self) -> int:
+    async def exchange_rate(self) -> int:
         """
         Gets the number of asset_b required to purchase a single asset_a.
         """
 
-        auction_info = try_query_multiple(self.contracts, "get_auction")
+        auction_info = await try_query_multiple(
+            self.contracts, "get_auction", self.session, self.grpc_channels
+        )
 
         if not auction_info:
             return 0
@@ -71,33 +90,70 @@ class AuctionProvider(WithContract):
             price_delta_per_block * (current_block_height - start_block)
         )
 
-        return decimal_to_int(current_price)
+        return decimal_to_int(Decimal(1) / current_price)
+
+    async def reverse_simulate_swap_asset_b(self, amount: int) -> int:
+        """
+        Gets the amount of asset a required to return a specified amount of asset b.
+        """
+        rate = await self.exchange_rate()
+
+        return int(Decimal(amount) // Decimal(rate))
+
+    async def reverse_simulate_swap_asset_a(self, amount: int) -> int:
+        """
+        Gets the amount of asset b required to return a specified amount of asset a.
+        """
+
+        return 0
 
     def asset_a(self) -> str:
         """
-        Gets the asset being sold in the pool.
+        Gets the asset being used to purchase in the pool.
         """
 
         return self.asset_a_denom
 
     def asset_b(self) -> str:
         """
-        Gets the asset being used to purchase in the pool.
+        Gets the asset being bought in the pool.
         """
 
         return self.asset_b_denom
 
-    def remaining_asset_a(self) -> int:
+    def swap_asset_a(self, wallet: LocalWallet, amount: int) -> SubmittedTx:
+        return try_exec_multiple_fatal(
+            self.contracts,
+            wallet,
+            {"bid": {}},
+            funds=f"{amount}{self.asset_a_denom}",
+            gas_limit=500000,
+        )
+
+    async def remaining_asset_b(self) -> int:
         """
         Gets the amount of the asking asset left in the auction.
         """
 
-        res = try_query_multiple(self.contracts, "get_auction")
+        res = await try_query_multiple(
+            self.contracts, "get_auction", self.session, self.grpc_channels
+        )
 
         if not res:
             return 0
 
         return int(res["available_amount"])
+
+    def dump(self) -> dict[str, Any]:
+        """
+        Gets a JSON representation of the auction.
+        """
+
+        return {
+            "asset_a": self.asset_a(),
+            "asset_b": self.asset_b(),
+            "address": self.contract_info.address,
+        }
 
     def __hash__(self) -> int:
         return hash(self.contract_info.address)
@@ -115,15 +171,23 @@ class AuctionDirectory:
     def __init__(
         self,
         deployments: dict[str, Any],
+        session: aiohttp.ClientSession,
+        grpc_channels: list[grpc.aio.Channel],
         poolfile_path: Optional[str] = None,
-        network_configs: Optional[list[NetworkConfig]] = None,
+        endpoints: Optional[dict[str, list[str]]] = None,
     ) -> None:
-        self.clients = [
-            LedgerClient(NEUTRON_NETWORK_CONFIG),
-            *(network_configs if network_configs else []),
-        ]
+        self.endpoints = (
+            endpoints
+            if endpoints
+            else {
+                "http": ["https://neutron-rest.publicnode.com"],
+                "grpc": ["grpc+https://neutron-grpc.publicnode.com:443"],
+            }
+        )
         self.deployment_info = deployments["auctions"]["neutron"]
         self.cached_auctions = None
+        self.session = session
+        self.grpc_channels = grpc_channels
 
         # The user wants to load auctions from the poolfile
         if poolfile_path is not None:
@@ -159,6 +223,7 @@ class AuctionDirectory:
                 poolfile_entry["asset_b"],
             )
             provider = AuctionProvider(
+                self.endpoints,
                 ContractInfo(
                     self.deployment_info,
                     self.clients,
@@ -167,21 +232,19 @@ class AuctionDirectory:
                 ),
                 asset_a,
                 asset_b,
+                self.session,
+                self.grpc_channels,
             )
 
             # Register the auction
             if asset_a not in auctions:
                 auctions[asset_a] = {}
 
-            if asset_b not in auctions:
-                auctions[asset_b] = {}
-
             auctions[asset_a][asset_b] = provider
-            auctions[asset_b][asset_a] = provider
 
         return auctions
 
-    def auctions(self) -> dict[str, dict[str, AuctionProvider]]:
+    async def auctions(self) -> dict[str, dict[str, AuctionProvider]]:
         """
         Gets an AuctionProvider for every pair on valence.
         """
@@ -189,8 +252,11 @@ class AuctionDirectory:
         if self.cached_auctions is not None:
             return self.__auctions_cached()
 
-        auction_infos = try_query_multiple(
-            self.directory_contract, {"get_pairs": {"start_after": None, "limit": None}}
+        auction_infos = await try_query_multiple(
+            self.directory_contract,
+            {"get_pairs": {"start_after": None, "limit": None}},
+            self.session,
+            self.grpc_channels,
         )
 
         if not auction_infos:
@@ -200,12 +266,15 @@ class AuctionDirectory:
 
         for auction in auction_infos:
             pair, addr = auction
-            asset_a, asset_b = pair
+            asset_b, asset_a = pair
 
             provider = AuctionProvider(
+                self.endpoints,
                 ContractInfo(self.deployment_info, self.clients, addr, "auction"),
                 asset_a,
                 asset_b,
+                self.session,
+                self.grpc_channels,
             )
 
             if asset_a not in auctions:
@@ -244,3 +313,10 @@ class AuctionDirectory:
                 for auction in base.values()
             }.values()
         )
+
+    @cached_property
+    def clients(self) -> List[LedgerClient]:
+        return [
+            LedgerClient(custom_neutron_network_config(endpoint))
+            for endpoint in self.endpoints["grpc"]
+        ]

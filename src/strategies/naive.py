@@ -3,21 +3,32 @@ Implements an arbitrage strategy with an arbitrary number
 of hops using all available providers.
 """
 
-import json
-from typing import List, Union, Optional, Self, Any
-from datetime import datetime
-from collections import deque
+import asyncio
+import random
+from typing import List, Union, Optional, Self, AsyncGenerator
 from dataclasses import dataclass
 import logging
+from src.contracts.route import Leg, Status, Route
 from src.contracts.pool.provider import PoolProvider
-from src.contracts.pool.osmosis import OsmosisPoolProvider
-from src.contracts.pool.astroport import (
-    NeutronAstroportPoolProvider,
-    asset_info_to_token,
-)
 from src.contracts.auction import AuctionProvider
 from src.scheduler import Ctx
-from src.util import denom_on_chain, ContractInfo, deployments, try_multiple_clients
+from src.strategies.util import (
+    quantities_for_route_profit,
+    route_base_denom_profit,
+    exec_arb,
+    fmt_route,
+    fmt_route_debug,
+    fmt_route_leg,
+    recover_funds,
+    IBC_TRANSFER_GAS,
+)
+from src.util import (
+    DenomChainInfo,
+    denom_info,
+    try_multiple_clients,
+)
+from cosmpy.crypto.address import Address
+from aiostream import stream
 
 logger = logging.getLogger(__name__)
 
@@ -29,375 +40,447 @@ class State:
     the route graph.
     """
 
-    last_discovered: Optional[datetime]
-    routes: Optional[List[List[Union[PoolProvider, AuctionProvider]]]]
+    balance: Optional[int]
+    liquidity_cache: dict[Leg, tuple[int, int]]
 
     def poll(
         self,
-        ctx: Ctx,
+        ctx: Ctx[Self],
         pools: dict[str, dict[str, List[PoolProvider]]],
         auctions: dict[str, dict[str, AuctionProvider]],
     ) -> Self:
         """
         Polls the state for a potential update, leaving the state
-        along, or producing a new state.
+        alone, or producing a new state.
         """
 
-        # No need to update the state
-        if (
-            self.last_discovered is not None
-            and (datetime.now() - self.last_discovered).total_seconds()
-            < ctx.cli_args["discovery_interval"]
-        ):
-            return self
+        self.liquidity_cache = {}
 
-        endpoints = ["https://lcd.osmosis.zone"]
-
-        if ctx.cli_args["net_config"] is not None:
-            with open(ctx.cli_args["net_config"], "r", encoding="utf-8") as f:
-                endpoints = [*endpoints, json.load(f)["osmosis"]]
-
-        # Check for a poolfile to specify routes
-        if ctx.cli_args["pool_file"] is not None:
-            with open(ctx.cli_args["pool_file"], "r", encoding="utf-8") as f:
-                poolfile_cts = json.load(f)
-
-                def poolfile_ent_to_leg(
-                    ent: dict[str, Any]
-                ) -> Union[PoolProvider, AuctionProvider]:
-                    if "osmosis" in ent:
-                        return OsmosisPoolProvider(
-                            endpoints,
-                            ent["osmosis"]["pool_id"],
-                            ent["osmosis"]["asset_a"],
-                            ent["osmosis"]["asset_b"],
-                        )
-
-                    if "neutron_astroport" in ent:
-                        return NeutronAstroportPoolProvider(
-                            ContractInfo(
-                                deployments()["pools"]["astroport"]["neutron"],
-                                ctx.clients,
-                                ent["neutron_astroport"]["address"],
-                                "pair",
-                            ),
-                            asset_info_to_token(ent["neutron_astroport"]["asset_a"]),
-                            asset_info_to_token(ent["neutron_astroport"]["asset_b"]),
-                        )
-
-                    if "auction" in ent:
-                        return AuctionProvider(
-                            ContractInfo(
-                                deployments()["auctions"]["neutron"],
-                                ctx.clients,
-                                ent["auction"]["address"],
-                                "auction",
-                            ),
-                            ent["auction"]["asset_a"],
-                            ent["auction"]["asset_b"],
-                        )
-
-                    raise ValueError("Invalid route leg type.")
-
-                if "routes" in poolfile_cts:
-                    self.routes = [
-                        [poolfile_ent_to_leg(ent) for ent in route]
-                        for route in poolfile_cts["routes"]
-                    ]
-
-        # Store all built routes
-        vertices = sum(
-            (len(pool_set) for base in pools.values() for pool_set in base.values())
-        ) + sum((1 for base in auctions.values() for _ in base.values()))
-
-        # Perform a breadth-first traversal, exploring all possible
-        # routes with increasing hops
-        logger.info(
-            "Building route tree from %s with %d vertices (this may take a while)",
-            ctx.cli_args["base_denom"],
-            vertices,
+        balance_resp = try_multiple_clients(
+            ctx.clients["neutron"],
+            lambda client: client.query_bank_balance(
+                Address(ctx.wallet.public_key(), prefix="neutron"),
+                ctx.cli_args["base_denom"],
+            ),
         )
 
-        if self.routes is None:
-            self.routes: List[List[Union[PoolProvider, AuctionProvider]]] = (
-                get_routes_with_depth_limit_bfs(
-                    ctx.cli_args["max_hops"],
-                    ctx.cli_args["num_routes_considered"],
-                    ctx.cli_args["base_denom"],
-                    pools,
-                    auctions,
-                )
-            )
-
-        logger.info(
-            "Finished building route tree; discovered %d routes",
-            len(self.routes),
-        )
-        self.last_discovered = datetime.now()
-
-        def dump_pool_like(
-            pool_like: Union[PoolProvider, AuctionProvider]
-        ) -> dict[str, Any]:
-            if isinstance(pool_like, AuctionProvider):
-                return {
-                    "auction": {
-                        "asset_a": pool_like.asset_a(),
-                        "asset_b": pool_like.asset_b(),
-                        "address": pool_like.contract_info.address,
-                    }
-                }
-
-            if isinstance(pool_like, NeutronAstroportPoolProvider):
-                return {"neutron_astroport": pool_like.dump()}
-
-            if isinstance(pool_like, OsmosisPoolProvider):
-                return {"osmosis": pool_like.dump()}
-
-            raise ValueError("Invalid route leg type.")
-
-        # The user wants to dump discovered routes, so we can exit now
-        if ctx.cli_args["cmd"] == "dump":
-            with open(ctx.cli_args["pool_file"], "r+", encoding="utf-8") as f:
-                poolfile_cts = json.load(f)
-                poolfile_cts["routes"] = [
-                    [dump_pool_like(pool) for pool in route] for route in self.routes
-                ]
-
-                f.seek(0)
-                json.dump(poolfile_cts, f)
-
-                # Exit the event loop and the program
-                ctx.cancel()
+        if balance_resp:
+            self.balance = balance_resp
 
         return self
 
 
-def strategy(
-    ctx: Ctx,
+async def strategy(
+    ctx: Ctx[State],
     pools: dict[str, dict[str, List[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
-) -> Ctx:
+) -> Ctx[State]:
     """
     Finds new arbitrage opportunities using the context, pools, and auctions.
     """
 
-    if ctx.state is None:
-        ctx.state = State(None, None)
+    state = ctx.state
 
-    state = ctx.state.poll(ctx, pools, auctions)
+    if not state:
+        ctx.state = State(None, {})
+        state = ctx.state
 
-    profitable_routes: List[tuple[List[Union[PoolProvider, AuctionProvider]], int]] = []
+    ctx = ctx.with_state(state.poll(ctx, pools, auctions))
 
-    # Calculate profitability of all routes, and report them
-    # to the user
-    for route in ctx.state.routes:
-        balance_resp = try_multiple_clients(
-            ctx.clients,
-            lambda client: client.query_bank_balance(
-                ctx.cli_args["wallet_address"], ctx.cli_args["base_denom"]
-            ),
-        )
-
-        if not balance_resp:
-            continue
-
-        profit = route_base_denom_profit(
-            ctx.cli_args["base_denom"],
-            balance_resp,
-            route,
-        )
-
-        if profit >= ctx.cli_args["profit_margin"]:
-            profitable_routes.append((route, profit))
+    if ctx.cli_args["cmd"] == "dump":
+        return ctx.cancel()
 
     # Report route stats to user
     logger.info(
-        "Found %d profitable routes, with max profit of %d and min profit of %d",
-        len(profitable_routes),
-        max(profitable_routes, key=lambda route: route[1])[1],
-        min(profitable_routes, key=lambda route: route[1])[1],
+        "Finding profitable routes",
     )
 
-    for i, (route, profit) in enumerate(profitable_routes):
-        logger.info(
-            (
-                "Candidate arbitrage opportunity #%d with "
-                "profit of %d and route with %d hop(s): %s"
-            ),
-            i + 1,
-            profit,
-            len(route),
-            " -> ".join(
-                map(
-                    lambda route_leg: fmt_route_leg(route_leg)
-                    + ": "
-                    + route_leg.asset_a()
-                    + " - "
-                    + route_leg.asset_b(),
-                    route,
-                )
-            ),
+    async for r, route in listen_routes_with_depth_dfs(
+        ctx.cli_args["hops"],
+        ctx.cli_args["base_denom"],
+        set(ctx.cli_args["require_leg_types"]),
+        pools,
+        auctions,
+        ctx,
+    ):
+        ctx.log_route(r, "info", "Route queued: %s", [fmt_route(route)])
+
+        if not state.balance:
+            return ctx
+
+        ctx.log_route(
+            r,
+            "info",
+            "Executing route with profit of %d",
+            [r.expected_profit],
         )
 
-    return ctx.with_state(state)
+        try:
+            balance_prior = state.balance
 
+            await exec_arb(r, r.expected_profit, r.quantities, route, ctx)
 
-def fmt_route_leg(leg: Union[PoolProvider, AuctionProvider]) -> str:
-    """
-    Returns the nature of the route leg (i.e., "osmosis," "astroport," or, "valence.")
-    """
-
-    if isinstance(leg, OsmosisPoolProvider):
-        return "osmosis"
-
-    if isinstance(leg, NeutronAstroportPoolProvider):
-        return "astroport"
-
-    if isinstance(leg, AuctionProvider):
-        return "valence"
-
-    return "unknown pool"
-
-
-def route_base_denom_profit(
-    base_denom: str,
-    starting_amount: int,
-    route: List[Union[PoolProvider, AuctionProvider]],
-) -> int:
-    """
-    Calculates the profit that can be obtained by following the route.
-    """
-
-    prev_asset = base_denom
-    quantity_received = starting_amount
-
-    for leg in route:
-        if quantity_received == 0:
-            break
-
-        if isinstance(leg, PoolProvider):
-            if prev_asset == leg.asset_a():
-                quantity_received = int(leg.simulate_swap_asset_a(quantity_received))
-            else:
-                quantity_received = int(leg.simulate_swap_asset_b(quantity_received))
-        else:
-            if prev_asset == leg.asset_a():
-                quantity_received = leg.exchange_rate() * quantity_received
-
-    return quantity_received - starting_amount
-
-
-def get_routes_with_depth_limit_bfs(
-    depth: int,
-    limit: int,
-    src: str,
-    pools: dict[str, dict[str, List[PoolProvider]]],
-    auctions: dict[str, dict[str, AuctionProvider]],
-) -> List[List[Union[PoolProvider, AuctionProvider]]]:
-    """
-    Finds `limit` routes from `src` back to `src` with a maximum route length
-    of `depth`.
-    """
-
-    to_explore: deque[
-        tuple[
-            Union[PoolProvider, AuctionProvider],
-            tuple[
-                List[Union[PoolProvider, AuctionProvider]],
-                set[Union[PoolProvider, AuctionProvider]],
-            ],
-            str,
-        ]
-    ] = deque(
-        [
-            (pool, ([], set()), src)
-            for pool_set in pools.get(src, {}).values()
-            for pool in pool_set
-        ]
-    )
-    paths: List[List[Union[PoolProvider, AuctionProvider]]] = []
-    denom_cache = {}
-
-    # Perform a breadth-first traversal, exploring all possible
-    # routes from `src` back to itself
-    while len(to_explore) > 0 and len(paths) < limit:
-        pool, path, base_denom = to_explore.pop()
-        pair_denom = pool.asset_a() if pool.asset_a() != base_denom else pool.asset_b()
-
-        if pair_denom not in denom_cache:
-            denom_cache[pair_denom] = denom_on_chain(
-                "neutron-1", pair_denom, "osmosis-1"
-            )
-
-        pair_denom_osmo = denom_cache[pair_denom]
-
-        if len(path[0]) + 1 > depth:
-            continue
-
-        if pair_denom == src and len(path[0]) > 0:
-            path[0].append(pool)
-            path[1].add(pool)
-
-            logger.info(
-                "Closed circuit from %s to %s; registering route",
-                src,
-                pair_denom,
-            )
-            logger.info(
-                "Discovered route with %d hop(s): %s",
-                len(path[0]),
-                " -> ".join(
-                    map(
-                        lambda route_leg: route_leg.asset_a()
-                        + " - "
-                        + route_leg.asset_b(),
-                        path[0],
-                    )
+            balance_after_resp = try_multiple_clients(
+                ctx.clients["neutron"],
+                lambda client: client.query_bank_balance(
+                    Address(ctx.wallet.public_key(), prefix="neutron"),
+                    ctx.cli_args["base_denom"],
                 ),
             )
 
-            paths.append(path[0])
+            if balance_after_resp:
+                r.realized_profit = balance_after_resp - balance_prior
 
-            continue
+            r.status = Status.EXECUTED
 
-        # Check auctions first for exploration
-        if pair_denom in auctions:
-            for candidate_auction in auctions[pair_denom].values():
-                if candidate_auction not in path[1] and pool != candidate_auction:
-                    to_explore.append(
-                        (
-                            candidate_auction,
-                            (path[0] + [pool], path[1] | {pool}),
-                            pair_denom,
-                        )
-                    )
+            ctx.log_route(r, "info", "Executed route successfully", [])
+        except Exception as e:
+            ctx.log_route(r, "error", "Arb failed %s: %s", [fmt_route(route), e])
 
-        for candidate_pool in (
-            pool for pool_set in pools[pair_denom].values() for pool in pool_set
+            r.status = Status.FAILED
+
+            terminal_leg_repr = next(
+                (leg_repr for leg_repr in r.route if not leg_repr.executed)
+            )
+            terminal_leg = next(
+                (leg for leg in route if str(leg) == str(terminal_leg_repr))
+            )
+
+            try:
+                await recover_funds(
+                    r,
+                    terminal_leg,
+                    route,
+                    ctx,
+                )
+
+                r.status = Status.RECOVERED
+            except ValueError as e:
+                ctx.log_route(r, "error", "Arb recovery failed: %s", [e])
+
+            r.status = Status.FAILED
+
+        ctx.update_route(r)
+
+        ctx = ctx.with_state(state.poll(ctx, pools, auctions)).commit_history()
+
+    logger.info("Completed arbitrage round")
+
+    return ctx
+
+
+async def eval_route(
+    route: list[Leg],
+    ctx: Ctx[State],
+) -> Optional[tuple[Route, list[Leg]]]:
+    r = ctx.queue_route(route, 0, 0, [])
+
+    ctx.log_route(r, "info", "Evaluating route for profitability", [])
+
+    state = ctx.state
+
+    if not state:
+        return None
+
+    if not state.balance:
+        logger.error(
+            "Failed to fetch bot wallet balance for account %s",
+            str(Address(ctx.wallet.public_key(), prefix="neutron")),
+        )
+
+        return None
+
+    # First pass heuristic (is it even possible for this route to be
+    # profitable)
+    profit = await route_base_denom_profit(
+        state.balance,
+        route,
+    )
+
+    r.theoretical_profit = profit
+
+    if profit < ctx.cli_args["profit_margin"]:
+        logger.debug(
+            "Route is not theoretically profitable with profit of %d: %s",
+            profit,
+            fmt_route_debug(route),
+        )
+
+        return None
+
+    ctx.log_route(
+        r,
+        "info",
+        "Route has theoretical profit of %d",
+        [
+            profit,
+        ],
+    )
+
+    gas_base_denom = 0
+
+    # Ensure that there is at least 5k of the base chain denom
+    # at all times
+    if ctx.cli_args["base_denom"] == "untrn":
+        gas_base_denom += sum([leg.backend.swap_fee for leg in route])
+
+        for i, leg in enumerate(route[:-1]):
+            next_leg = route[i + 1]
+
+            if leg.backend.chain_id != next_leg.backend.chain_id:
+                gas_base_denom += IBC_TRANSFER_GAS
+
+    starting_amt = state.balance - gas_base_denom
+
+    ctx.log_route(
+        r,
+        "info",
+        "Route has investment ramp of %d",
+        [
+            starting_amt,
+        ],
+    )
+
+    # Second pass: could we reasonably profit from this arb?
+    profit, quantities = await quantities_for_route_profit(
+        starting_amt,
+        route,
+        r,
+        ctx,
+    )
+
+    r.expected_profit = profit
+    r.quantities = quantities
+
+    logger.debug("Route has execution plan: %s", r.quantities)
+
+    if profit - gas_base_denom < ctx.cli_args["profit_margin"]:
+        ctx.log_route(
+            r,
+            "info",
+            "Route is not profitable with profit of %d",
+            [
+                profit,
+            ],
+        )
+
+        return None
+
+    ctx.log_route(
+        r,
+        "info",
+        "Route is profitable with realizable profit of %d",
+        [
+            profit,
+        ],
+    )
+
+    # Queue the route for execution, since it is profitable
+    return (r, route)
+
+
+async def leg_liquidity(leg: Leg) -> tuple[int, int]:
+    if isinstance(leg.backend, AuctionProvider):
+        return (
+            await leg.backend.remaining_asset_b(),
+            await leg.backend.remaining_asset_b(),
+        )
+
+    return (
+        await leg.backend.balance_asset_a(),
+        await leg.backend.balance_asset_b(),
+    )
+
+
+async def listen_routes_with_depth_dfs(
+    depth: int,
+    src: str,
+    required_leg_types: set[str],
+    pools: dict[str, dict[str, List[PoolProvider]]],
+    auctions: dict[str, dict[str, AuctionProvider]],
+    ctx: Ctx[State],
+) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
+    denom_cache: dict[str, dict[str, str]] = {}
+
+    start_pools: list[Union[AuctionProvider, PoolProvider]] = [
+        *auctions.get(src, {}).values(),
+        *(pool for pool_set in pools.get(src, {}).values() for pool in pool_set),
+    ]
+
+    start_legs: list[Leg] = [
+        Leg(
+            pool.asset_a if pool.asset_a() == src else pool.asset_b,
+            pool.asset_b if pool.asset_a() == src else pool.asset_a,
+            pool,
+        )
+        for pool in start_pools
+    ]
+
+    async def next_legs(
+        path: list[Leg],
+    ) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
+        nonlocal denom_cache
+
+        if len(path) >= 2 and not (
+            path[-1].in_asset() == path[-2].out_asset()
+            or path[-1].in_asset() in denom_cache[path[-2].out_asset()].values()
         ):
-            if candidate_pool not in path[1] and candidate_pool != pool:
-                to_explore.append(
-                    (candidate_pool, (path[0] + [pool], path[1] | {pool}), pair_denom)
-                )
+            return
 
-        # Osmosis may not have a matching pool
-        if pair_denom_osmo in pools:
-            for candidate_pool in (
-                (
-                    pool
-                    for pool_set in pools[pair_denom_osmo].values()
-                    for pool in pool_set
-                )
-                if pair_denom_osmo is not None
-                else []
+        # Only find `limit` pools
+        # with a depth less than `depth
+        if len(path) > depth:
+            return
+
+        # We must be finding the next leg
+        # in an already existing path
+        assert len(path) > 0
+
+        prev_pool = path[-1]
+
+        # This leg **must** be connected to the previous
+        # by construction, so therefore, if any
+        # of the denoms match the starting denom, we are
+        # finished, and the circuit is closed
+        if len(path) > 1 and src == prev_pool.out_asset():
+            if (
+                len(required_leg_types - set((fmt_route_leg(leg) for leg in path))) > 0
+                or len(path) < depth
             ):
-                if candidate_pool not in path[1] and pool != candidate_pool:
-                    to_explore.append(
-                        (
-                            candidate_pool,
-                            (path[0] + [pool], path[1] | {pool}),
-                            pair_denom,
-                        )
-                    )
+                return
 
-    return paths
+            resp = await eval_route(path, ctx)
+
+            if not resp:
+                return
+
+            yield resp
+
+            return
+
+        # Find all pools that start where this leg ends
+        # the "ending" point of this leg is defined
+        # as its denom which is not shared by the
+        # leg before it.
+
+        # note: the previous leg's denoms will
+        # be in the denom cache by construction
+        # if this is the first leg, then there is
+        # no more work to do
+        end = prev_pool.out_asset()
+
+        if end not in denom_cache:
+            try:
+                denom_infos = await denom_info(
+                    prev_pool.backend.chain_id,
+                    end,
+                    ctx.http_session,
+                    api_key=ctx.cli_args["skip_api_key"],
+                )
+
+                denom_cache[end] = {
+                    info.chain_id: info.denom
+                    for info in (
+                        denom_infos
+                        + [
+                            DenomChainInfo(
+                                denom=end,
+                                port=None,
+                                channel=None,
+                                chain_id=prev_pool.backend.chain_id,
+                            )
+                        ]
+                    )
+                    if info.chain_id
+                }
+            except asyncio.TimeoutError:
+                return
+
+        # A pool is a candidate to be a next pool if it has a denom
+        # contained in denom_cache[end] or one of its denoms *is* end
+        next_pools: list[Leg] = list(
+            {
+                # Atomic pools
+                *(
+                    Leg(
+                        (
+                            auction.asset_a
+                            if auction.asset_a() == end
+                            else auction.asset_b
+                        ),
+                        (
+                            auction.asset_a
+                            if auction.asset_a() != end
+                            else auction.asset_b
+                        ),
+                        auction,
+                    )
+                    for auction in auctions.get(end, {}).values()
+                ),
+                *(
+                    Leg(
+                        pool.asset_a if pool.asset_a() == end else pool.asset_b,
+                        pool.asset_a if pool.asset_a() != end else pool.asset_b,
+                        pool,
+                    )
+                    for pool_set in pools.get(end, {}).values()
+                    for pool in pool_set
+                ),
+                # IBC pools
+                *(
+                    Leg(
+                        (
+                            auction.asset_a
+                            if auction.asset_a() == src or auction.asset_a() == denom
+                            else auction.asset_b
+                        ),
+                        (
+                            auction.asset_a
+                            if auction.asset_a() != src and auction.asset_a() != denom
+                            else auction.asset_b
+                        ),
+                        auction,
+                    )
+                    for denom in denom_cache[end].values()
+                    for auction in auctions.get(denom, {}).values()
+                    if auction.chain_id != prev_pool.backend.chain_id
+                ),
+                *(
+                    Leg(
+                        (
+                            pool.asset_a
+                            if pool.asset_a() == src or pool.asset_a() == denom
+                            else pool.asset_b
+                        ),
+                        (
+                            pool.asset_a
+                            if pool.asset_a() != src and pool.asset_a() != denom
+                            else pool.asset_b
+                        ),
+                        pool,
+                    )
+                    for denom in denom_cache[end].values()
+                    for pool_set in pools.get(denom, {}).values()
+                    for pool in pool_set
+                    if pool.chain_id != prev_pool.backend.chain_id
+                ),
+            }
+        )
+        next_pools = [x for x in next_pools if x not in path]
+
+        if len(next_pools) == 0:
+            return
+
+        random.shuffle(next_pools)
+
+        routes = stream.merge(*[next_legs(path + [pool]) for pool in next_pools])
+
+        async with routes.stream() as streamer:
+            async for route in streamer:
+                yield route
+
+    routes = stream.merge(*[next_legs([leg]) for leg in start_legs])
+
+    async with routes.stream() as streamer:
+        async for route in streamer:
+            yield route
