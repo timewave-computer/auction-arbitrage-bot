@@ -1,10 +1,10 @@
-use super::ARTIFACTS_PATH;
+use super::{ARTIFACTS_PATH, OSMOSIS_CHAIN};
 use local_ictest_e2e::{
     utils::{file_system, test_context::TestContext},
     ACC_0_KEY, GAIA_CHAIN, NEUTRON_CHAIN, WASM_EXTENSION,
 };
 use localic_std::{errors::LocalError, modules::cosmwasm::CosmWasm};
-use std::{ffi::OsStr, fs, io::Error as IoError};
+use std::{ffi::OsStr, fs, io::Error as IoError, path::PathBuf};
 use thiserror::Error;
 
 /// Errors that may have occurred while deploying contracts.
@@ -18,6 +18,8 @@ pub enum SetupError {
     Io(#[from] IoError),
     #[error("the contract `{0}` is missing")]
     MissingContract(String),
+    #[error("failed to construct JSON")]
+    SerializationError,
 }
 
 /// Deploys all neutron contracts to the test context.
@@ -49,11 +51,179 @@ pub fn deploy_neutron_contracts(test_ctx: &mut TestContext) -> Result<(), SetupE
         })
 }
 
-/// Instantiates the astroport factory.
-pub fn create_factory(test_ctx: &mut TestContext) -> Result<String, SetupError> {
-    let neutron = test_ctx.get_chain(NEUTRON_CHAIN);
+/// Instantiates the auction manager.
+pub fn create_auction_manager(test_ctx: &mut TestContext) -> Result<(), SetupError> {
+    let neutron = test_ctx.get_mut_chain(NEUTRON_CHAIN);
 
-    let acc_0_addr = neutron.admin_addr;
+    let acc_0_addr = neutron.admin_addr.clone();
+
+    let code_id =
+        neutron
+            .contract_codes
+            .get("auctions_manager")
+            .ok_or(SetupError::MissingContract(String::from(
+                "auctions_manager",
+            )))?;
+    let auction_code_id = neutron
+        .contract_codes
+        .get("auction")
+        .ok_or(SetupError::MissingContract(String::from("auction")))?;
+
+    let mut contract_a = CosmWasm::new_from_existing(
+        &neutron.rb,
+        Some(PathBuf::from(format!(
+            "{ARTIFACTS_PATH}/auctions_manager.wasm"
+        ))),
+        Some(*code_id),
+        None,
+    );
+
+    let contract = contract_a.instantiate(
+        ACC_0_KEY,
+        serde_json::json!({
+            "auction_code_id": auction_code_id,
+            "min_auction_amount": [],
+            "server_addr": acc_0_addr,
+        })
+        .to_string()
+        .as_str(),
+        "auction_manager",
+        None,
+        "",
+    )?;
+
+    neutron
+        .contract_addrs
+        .insert("auctions_manager".to_owned(), contract.address);
+
+    Ok(())
+}
+
+/// Instantiates an individual auction.
+pub fn create_auction(
+    test_ctx: &mut TestContext,
+    denom_a: impl AsRef<str>,
+    denom_b: impl AsRef<str>,
+) -> Result<(), SetupError> {
+    let neutron = test_ctx.get_mut_chain(NEUTRON_CHAIN);
+
+    let code_id =
+        neutron
+            .contract_codes
+            .get("auctions_manager")
+            .ok_or(SetupError::MissingContract(String::from(
+                "auctions_manager",
+            )))?;
+    let addr =
+        neutron
+            .contract_addrs
+            .get("auctions_manager")
+            .ok_or(SetupError::MissingContract(String::from(
+                "auctions_manager",
+            )))?;
+
+    let contract_a = CosmWasm::new_from_existing(
+        &neutron.rb,
+        Some(PathBuf::from(format!(
+            "{ARTIFACTS_PATH}/auctions_manager.wasm"
+        ))),
+        Some(*code_id),
+        Some(addr.to_owned()),
+    );
+
+    let _ = contract_a.execute(
+        ACC_0_KEY,
+        serde_json::json!(
+        {
+            "admin": {
+                "new_auction": {
+                    "msg": {
+                        "pair": [denom_a.as_ref(), denom_b.as_ref()],
+                        "auction_strategy": {
+                            "start_price_perc": 5000,
+                            "end_price_perc": 5000
+                        },
+                        "chain_halt_config": {
+                            "cap": "14400",
+                            "block_avg": "3"
+                        },
+                        "price_freshness_strategy": {
+                            "limit": "3",
+                            "multipliers": [["2", "2"], ["1", "1.5"]]
+                        }
+                    }
+                }
+        }})
+        .to_string()
+        .as_str(),
+        "",
+    )?;
+
+    Ok(())
+}
+
+/// Instantiates all testing auctions.
+pub fn create_auctions(test_ctx: &mut TestContext) -> Result<(), SetupError> {
+    let atom_denom = test_ctx
+        .get_ibc_denoms()
+        .src(GAIA_CHAIN)
+        .dest(NEUTRON_CHAIN)
+        .get();
+
+    create_auction(test_ctx, "untrn", &atom_denom)?;
+    create_auction(test_ctx, &atom_denom, "untrn")?;
+
+    Ok(())
+}
+
+/// Instantiates the token registry.
+pub fn create_token_registry(test_ctx: &mut TestContext) -> Result<(), SetupError> {
+    let neutron = test_ctx.get_mut_chain(NEUTRON_CHAIN);
+
+    let acc_0_addr = neutron.admin_addr.clone();
+
+    let code_id = neutron
+        .contract_codes
+        .get("astroport_native_coin_registry")
+        .ok_or(SetupError::MissingContract(String::from(
+            "astroport_native_coin_registry",
+        )))?;
+
+    let mut contract_a = CosmWasm::new_from_existing(
+        &neutron.rb,
+        Some(PathBuf::from(format!(
+            "{ARTIFACTS_PATH}/astroport_native_coin_registry.wasm"
+        ))),
+        Some(*code_id),
+        None,
+    );
+
+    let contract = contract_a.instantiate(
+        ACC_0_KEY,
+        serde_json::json!({
+            "owner": acc_0_addr,
+        })
+        .to_string()
+        .as_str(),
+        "astroport_native_coin_registry",
+        None,
+        "",
+    )?;
+
+    neutron.contract_addrs.insert(
+        "astroport_native_coin_registry".to_owned(),
+        contract.address,
+    );
+
+    Ok(())
+}
+
+/// Instantiates the astroport factory.
+pub fn create_factory(test_ctx: &mut TestContext) -> Result<(), SetupError> {
+    let neutron = test_ctx.get_mut_chain(NEUTRON_CHAIN);
+
+    let acc_0_addr = neutron.admin_addr.clone();
+
     let code_id =
         neutron
             .contract_codes
@@ -61,33 +231,65 @@ pub fn create_factory(test_ctx: &mut TestContext) -> Result<String, SetupError> 
             .ok_or(SetupError::MissingContract(String::from(
                 "astroport_factory",
             )))?;
+    let pair_code_id = neutron
+        .contract_codes
+        .get("astroport_pair")
+        .ok_or(SetupError::MissingContract(String::from("astroport_pair")))?;
+    let native_registry_addr = neutron
+        .contract_addrs
+        .get("astroport_native_coin_registry")
+        .ok_or(SetupError::MissingContract(String::from(
+            "astroport_native_coin_registry",
+        )))?;
 
     let mut contract_a = CosmWasm::new_from_existing(
         &neutron.rb,
-        format!("{ARTIFACTS_PATH}/astroport_factory.wasm"),
-        code_id,
+        Some(PathBuf::from(format!(
+            "{ARTIFACTS_PATH}/astroport_factory.wasm"
+        ))),
+        Some(*code_id),
         None,
     );
-    let ca = contract_a.instantiate(
+
+    let contract = contract_a.instantiate(
         ACC_0_KEY,
         serde_json::json!({
-            "pair_configs": [],
+            "pair_configs": [
+                {
+                    "code_id": pair_code_id,
+                    "pair_type": {
+                         "xyk": {}
+                    },
+                    "total_fee_bps": 100,
+                    "maker_fee_bps": 10,
+                    "is_disabled": false,
+                    "is_generator_disabled": false
+                }
+            ],
             "token_code_id": 0,
-            "owner": {acc_0_addr},
-            "whitelist_code_id": 0}),
+            "owner": acc_0_addr,
+            "whitelist_code_id": 0,
+            "coin_registry_address": native_registry_addr
+        })
+        .to_string()
+        .as_str(),
         "astroport_factory",
         None,
         "",
-    );
+    )?;
 
-    Ok(ca)
+    neutron
+        .contract_addrs
+        .insert("astroport_factory".to_owned(), contract.address);
+
+    Ok(())
 }
 
 pub fn create_pool(
     test_ctx: &mut TestContext,
     denom_a: impl AsRef<str>,
     denom_b: impl AsRef<str>,
-) -> Result<String, SetupError> {
+) -> Result<(), SetupError> {
     let neutron = test_ctx.get_chain(NEUTRON_CHAIN);
 
     let code_id =
@@ -97,24 +299,27 @@ pub fn create_pool(
             .ok_or(SetupError::MissingContract(String::from(
                 "astroport_factory",
             )))?;
-
-    let mut contract_a = CosmWasm::new_from_existing(
-        &neutron.rb,
-        format!("{ARTIFACTS_PATH}/astroport_factory.wasm"),
-        code_id,
-        None,
-    );
-
-    let factory_addr_str =
-        contract_a
-            .contract_addr
+    let contract_addr =
+        neutron
+            .contract_addrs
+            .get("astroport_factory")
             .ok_or(SetupError::MissingContract(String::from(
                 "astroport_factory",
             )))?;
+
+    let contract_a = CosmWasm::new_from_existing(
+        &neutron.rb,
+        Some(PathBuf::from(format!(
+            "{ARTIFACTS_PATH}/astroport_factory.wasm"
+        ))),
+        Some(*code_id),
+        Some(contract_addr.clone()),
+    );
+
     let denom_a_str = denom_a.as_ref();
     let denom_b_str = denom_b.as_ref();
 
-    let res = contract_a.execute(
+    let _ = contract_a.execute(
         ACC_0_KEY,
         serde_json::json!({
         "create_pair": {
@@ -131,13 +336,13 @@ pub fn create_pool(
             "native_token": {
                 "denom": denom_b_str
             }
-        }]}}),
+        }]}})
+        .to_string()
+        .as_str(),
         "",
     )?;
 
-    println!("{:?}", res);
-
-    Ok(String::new())
+    Ok(())
 }
 
 /// Creates pools with random prices.
@@ -150,5 +355,51 @@ pub fn create_pools(test_ctx: &mut TestContext) -> Result<(), SetupError> {
         .get();
     create_pool(test_ctx, "untrn", atom_denom)?;
 
+    Ok(())
+}
+
+/// Creates an osmosis pool with the given denoms.
+pub fn create_osmo_pool(
+    test_ctx: &mut TestContext,
+    denom_a: impl AsRef<str>,
+    denom_b: impl AsRef<str>,
+) -> Result<(), SetupError> {
+    let osmosis = test_ctx.get_chain(OSMOSIS_CHAIN);
+
+    let ntrn_denom = test_ctx
+        .get_ibc_denoms()
+        .src(NEUTRON_CHAIN)
+        .dest(OSMOSIS_CHAIN)
+        .get();
+
+    let poolfile_str = concat!(
+        "{",
+        r#""weights": "1uosmo,1{ntrn_denom}""#,
+        r#""initial-deposit": "0uosmo,0{ntrn_denom}""#,
+        r#""swap-fee": "0.00""#,
+        r#""exit-fee": "0.00""#,
+        r#""future-governor": "168h""#,
+        "}"
+    );
+
+    // Create poolfile
+    let resp = osmosis.rb.bin(
+        format!("echo '{poolfile_str}' > /tmp/pool_file.json").as_str(),
+        true,
+    )?;
+
+    println!("{}", resp);
+
+    //osmosis.rb.tx("poolmanager
+
+    Ok(())
+}
+
+/// Creates all osmosis pools.
+pub fn create_osmo_pools(
+    test_ctx: &mut TestContext,
+    denom_a: impl AsRef<str>,
+    denom_b: impl AsRef<str>,
+) -> Result<(), SetupError> {
     Ok(())
 }
