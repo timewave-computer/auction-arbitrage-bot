@@ -366,40 +366,45 @@ pub fn create_osmo_pool(
 ) -> Result<(), SetupError> {
     let osmosis = test_ctx.get_chain(OSMOSIS_CHAIN);
 
+    let denom_a_str = denom_a.as_ref();
+    let denom_b_str = denom_b.as_ref();
+
+    // Osmosisd requires a JSON file to specify the
+    // configuration of the pool being created
+    let poolfile_str = format!(
+        r#"{{
+        "weights": "1{denom_a_str},1{denom_b_str}"
+        "initial-deposit": "0{denom_a_str},0{denom_b_str}"
+        "swap-fee": "0.00"
+        "exit-fee": "0.00"
+        "future-governor": "168h"
+        "}}"#
+    );
+
+    // Create poolfile
+    let _ = osmosis.rb.bin(
+        format!("echo '{poolfile_str}' > /tmp/pool_file.json").as_str(),
+        true,
+    );
+
+    // Create pool
+    let _ = osmosis.rb.tx(
+        "poolmanager create-pool  --pool-file /tmp/pool_file.json",
+        true,
+    )?;
+
+    Ok(())
+}
+
+/// Creates all osmosis pools.
+pub fn create_osmo_pools(test_ctx: &mut TestContext) -> Result<(), SetupError> {
     let ntrn_denom = test_ctx
         .get_ibc_denoms()
         .src(NEUTRON_CHAIN)
         .dest(OSMOSIS_CHAIN)
         .get();
 
-    let poolfile_str = concat!(
-        "{",
-        r#""weights": "1uosmo,1{ntrn_denom}""#,
-        r#""initial-deposit": "0uosmo,0{ntrn_denom}""#,
-        r#""swap-fee": "0.00""#,
-        r#""exit-fee": "0.00""#,
-        r#""future-governor": "168h""#,
-        "}"
-    );
+    create_osmo_pool(test_ctx, "uosmo", ntrn_denom)?;
 
-    // Create poolfile
-    let resp = osmosis.rb.bin(
-        format!("echo '{poolfile_str}' > /tmp/pool_file.json").as_str(),
-        true,
-    )?;
-
-    println!("{}", resp);
-
-    //osmosis.rb.tx("poolmanager
-
-    Ok(())
-}
-
-/// Creates all osmosis pools.
-pub fn create_osmo_pools(
-    test_ctx: &mut TestContext,
-    denom_a: impl AsRef<str>,
-    denom_b: impl AsRef<str>,
-) -> Result<(), SetupError> {
     Ok(())
 }

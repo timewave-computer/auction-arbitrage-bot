@@ -36,6 +36,8 @@ fn main() {
 
     // Setup all osmosis pools
     setup::create_osmo_pools(&mut test_ctx).expect("failed to create osmosis pools");
+
+    // Fund pools
 }
 
 fn setup_context(configured_chains: ChainsVec) -> Result<TestContext, Error> {
