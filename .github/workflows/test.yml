@@ -33,6 +33,6 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
       
       - name: Install local-ic
-        run: cd local-interchaintest && git clone git@github.com:strangelove-ventures/interchaintest.git && cd interchaintest/local-interchain && make install
+        run: cd local-interchaintest && git clone https://github.com/strangelove-ventures/interchaintest.git && cd interchaintest/local-interchain && make install
       - name: Run local-ic
         run: cd local-interchaintest && local-ic start neutron_osmosis_gaia --api-port 42069	  
