@@ -21,3 +21,6 @@ pub const OSMOSIS_CHAIN_ID: &str = "localosmosis-1";
 
 /// The name of the osmosis chain
 pub const OSMOSIS_CHAIN: &str = "osmosis";
+
+/// Path to the host machine's osmosis pool file
+pub const OSMOSIS_POOLFILE_PATH: &str = "/var/cosmos-chain/localosmosis-1/pool_file.json";

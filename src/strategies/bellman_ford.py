@@ -23,7 +23,6 @@ from src.util import (
     denom_info_on_chain,
     int_to_decimal,
     try_multiple_clients,
-    denom_info,
 )
 from cosmpy.crypto.address import Address
 

@@ -1,10 +1,17 @@
-use super::{ARTIFACTS_PATH, OSMOSIS_CHAIN};
+use super::{ARTIFACTS_PATH, OSMOSIS_CHAIN, OSMOSIS_POOLFILE_PATH};
 use local_ictest_e2e::{
     utils::{file_system, test_context::TestContext},
     ACC_0_KEY, GAIA_CHAIN, NEUTRON_CHAIN, WASM_EXTENSION,
 };
 use localic_std::{errors::LocalError, modules::cosmwasm::CosmWasm};
-use std::{ffi::OsStr, fs, io::Error as IoError, path::PathBuf};
+use std::{
+    ffi::OsStr,
+    fs::{self},
+    io::Error as IoError,
+    path::PathBuf,
+    thread,
+    time::Duration,
+};
 use thiserror::Error;
 
 /// Errors that may have occurred while deploying contracts.
@@ -46,6 +53,8 @@ pub fn deploy_neutron_contracts(test_ctx: &mut TestContext) -> Result<(), SetupE
             neutron_local_chain
                 .contract_codes
                 .insert(id.to_string(), code_id);
+
+            thread::sleep(Duration::from_secs(5));
 
             Ok(())
         })
@@ -372,24 +381,19 @@ pub fn create_osmo_pool(
     // Osmosisd requires a JSON file to specify the
     // configuration of the pool being created
     let poolfile_str = format!(
-        r#"{{
-        "weights": "1{denom_a_str},1{denom_b_str}"
-        "initial-deposit": "0{denom_a_str},0{denom_b_str}"
-        "swap-fee": "0.00"
-        "exit-fee": "0.00"
-        "future-governor": "168h"
-        "}}"#
+        r#"{{\"weights\": \"1{denom_a_str},1{denom_b_str}\",\"initial-deposit\": \"1{denom_a_str},1{denom_b_str}\",\"swap-fee\": \"0.00\",\"exit-fee\": \"0.00\",\"future-governor\": \"168h\"}}"#
     );
 
-    // Create poolfile
-    let _ = osmosis.rb.bin(
-        format!("echo '{poolfile_str}' > /tmp/pool_file.json").as_str(),
+    // Copy the poolfile to the container
+    let _ = osmosis.rb.exec(
+        format!("/bin/sh -c 'echo \"{poolfile_str}\" > {OSMOSIS_POOLFILE_PATH}'").as_str(),
         true,
     );
 
     // Create pool
     let _ = osmosis.rb.tx(
-        "poolmanager create-pool  --pool-file /tmp/pool_file.json",
+        format!("poolmanager create-pool  --pool-file {OSMOSIS_POOLFILE_PATH} --from {ACC_0_KEY}")
+            .as_str(),
         true,
     )?;
 
