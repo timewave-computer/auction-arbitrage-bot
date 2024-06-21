@@ -39,6 +39,8 @@ pub fn deploy_neutron_contracts(test_ctx: &mut TestContext) -> Result<(), SetupE
         .map(|ent| ent.path())
         .map(fs::canonicalize)
         .try_for_each(|maybe_abs_path| {
+            println!("preparing to upload contract {:?}", maybe_abs_path);
+
             let path = maybe_abs_path?;
             let neutron_local_chain = test_ctx.get_mut_chain(NEUTRON_CHAIN);
 
