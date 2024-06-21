@@ -45,6 +45,8 @@ pub fn deploy_neutron_contracts(test_ctx: &mut TestContext) -> Result<(), SetupE
             let neutron_local_chain = test_ctx.get_mut_chain(NEUTRON_CHAIN);
 
             let mut cw = CosmWasm::new(&neutron_local_chain.rb);
+
+            println!("uploading contract {:?}", path);
             let code_id = cw.store(ACC_0_KEY, &path)?;
 
             let id = path
