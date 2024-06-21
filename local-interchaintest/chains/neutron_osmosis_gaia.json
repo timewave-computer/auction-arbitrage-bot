@@ -28,7 +28,7 @@
         "modify": [
           {
             "key": "app_state.gov.params.voting_period",
-            "value": "15s"
+            "value": "3s"
           },
           {
             "key": "app_state.interchainaccounts.host_genesis_state.params.allow_messages",
@@ -176,7 +176,7 @@
         "modify": [
           {
               "key": "app_state.gov.params.voting_period",
-              "value": "15s"
+              "value": "3s"
           },
           {
               "key": "app_state.gov.params.max_deposit_period",
