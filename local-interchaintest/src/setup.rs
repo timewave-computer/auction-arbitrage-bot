@@ -88,6 +88,8 @@ pub fn create_auction_manager(test_ctx: &mut TestContext) -> Result<(), SetupErr
         None,
     );
 
+    println!("instantiating contract {}", code_id);
+
     let contract = contract_a.instantiate(
         ACC_0_KEY,
         serde_json::json!({
@@ -208,6 +210,8 @@ pub fn create_token_registry(test_ctx: &mut TestContext) -> Result<(), SetupErro
         None,
     );
 
+    println!("instantiating contract {}", code_id);
+
     let contract = contract_a.instantiate(
         ACC_0_KEY,
         serde_json::json!({
@@ -260,6 +264,8 @@ pub fn create_factory(test_ctx: &mut TestContext) -> Result<(), SetupError> {
         Some(*code_id),
         None,
     );
+
+    println!("instantiating contract {}", code_id);
 
     let contract = contract_a.instantiate(
         ACC_0_KEY,
