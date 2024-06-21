@@ -39,14 +39,11 @@ pub fn deploy_neutron_contracts(test_ctx: &mut TestContext) -> Result<(), SetupE
         .map(|ent| ent.path())
         .map(fs::canonicalize)
         .try_for_each(|maybe_abs_path| {
-            println!("preparing to upload contract {:?}", maybe_abs_path);
-
             let path = maybe_abs_path?;
             let neutron_local_chain = test_ctx.get_mut_chain(NEUTRON_CHAIN);
 
             let mut cw = CosmWasm::new(&neutron_local_chain.rb);
 
-            println!("uploading contract {:?}", path);
             let code_id = cw.store(ACC_0_KEY, &path)?;
 
             let id = path
@@ -90,6 +87,12 @@ pub fn create_auction_manager(test_ctx: &mut TestContext) -> Result<(), SetupErr
         Some(*code_id),
         None,
     );
+
+    println!("{}", neutron.rb.bin(&format!("tx wasm instantiate {code_id} {} --label=auction_manager --from=acc0 --home /var/cosmos-chain/localneutron-1 --output=json --gas=auto --no-admin --chain-id=localneutron-1 --keyring-backend=test", serde_json::json!({
+            "auction_code_id": auction_code_id,
+            "min_auction_amount": [],
+            "server_addr": acc_0_addr,
+        }).to_string().as_str()), true));
 
     let contract = contract_a.instantiate(
         ACC_0_KEY,
