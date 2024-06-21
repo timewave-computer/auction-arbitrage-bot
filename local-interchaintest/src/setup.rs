@@ -392,9 +392,12 @@ pub fn create_osmo_pool(
     );
 
     // Copy the poolfile to the container
-    let _ = osmosis.rb.exec(
-        format!("/bin/sh -c echo '\"{poolfile_str}\" > {OSMOSIS_POOLFILE_PATH}'").as_str(),
-        true,
+    println!(
+        "{}",
+        osmosis.rb.exec(
+            format!("/bin/sh -c echo '\"{poolfile_str}\" > {OSMOSIS_POOLFILE_PATH}'").as_str(),
+            true,
+        )
     );
 
     println!(
