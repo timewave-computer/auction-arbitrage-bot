@@ -397,6 +397,13 @@ pub fn create_osmo_pool(
         true,
     );
 
+    println!(
+        "{}",
+        osmosis
+            .rb
+            .exec(format!("/bin/cat {OSMOSIS_POOLFILE_PATH}").as_str(), true)
+    );
+
     // Create pool
     let _ = osmosis.rb.tx(
         format!("poolmanager create-pool  --pool-file {OSMOSIS_POOLFILE_PATH} --from {ACC_0_KEY}")
