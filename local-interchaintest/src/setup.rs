@@ -88,12 +88,6 @@ pub fn create_auction_manager(test_ctx: &mut TestContext) -> Result<(), SetupErr
         None,
     );
 
-    println!("{}", neutron.rb.bin(&format!("tx wasm instantiate {code_id} {} --label=auction_manager --from=acc0 --home /var/cosmos-chain/localneutron-1 --output=json --gas=auto --no-admin --chain-id=localneutron-1 --keyring-backend=test", serde_json::json!({
-            "auction_code_id": auction_code_id,
-            "min_auction_amount": [],
-            "server_addr": acc_0_addr,
-        }).to_string().as_str()), true));
-
     let contract = contract_a.instantiate(
         ACC_0_KEY,
         serde_json::json!({

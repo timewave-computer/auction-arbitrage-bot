@@ -18,7 +18,7 @@
       "number_node": 0,
       "ibc_paths": [],
       "debugging": true,
-      "block_time": "2s",
+      "block_time": "1s",
       "host_port_override": {
         "26657": "26658",
         "1317": "1318",
@@ -76,7 +76,7 @@
       "ics_consumer_link": "localcosmos-1",
       "ibc_paths": ["neutron-osmosis"],
       "debugging": true,
-      "block_time": "2s",
+      "block_time": "1s",
       "host_port_override": {
         "26657": "26657",
         "1317": "1317",
@@ -171,7 +171,7 @@
       "number_node": 0,
       "ibc_paths": ["neutron-osmosis"],
       "debugging": true,
-      "block_time": "2s",
+      "block_time": "1s",
       "genesis": {
         "modify": [
           {
