@@ -7,6 +7,7 @@ from typing import Any, Optional, cast
 from abc import ABC, abstractmethod
 from cosmpy.aerial.wallet import LocalWallet
 from cosmpy.aerial.tx_helpers import SubmittedTx
+from google.protobuf.message import Message
 
 
 def cached_pools(
@@ -102,6 +103,28 @@ class PoolProvider(ABC):
         in exchange for asset a.
 
         Throws an exception if the swap fails.
+        """
+
+        raise NotImplementedError
+
+    @abstractmethod
+    def swap_msg_asset_a(
+        self, wallet: LocalWallet, amount: int, min_amount: int
+    ) -> Message:
+        """
+        Creates a protobuf message for executing the swap in this pool
+        without executing the swap.
+        """
+
+        raise NotImplementedError
+
+    @abstractmethod
+    def swap_msg_asset_b(
+        self, wallet: LocalWallet, amount: int, min_amount: int
+    ) -> Message:
+        """
+        Creates a protobuf message for executing the swap in this pool
+        without executing the swap.
         """
 
         raise NotImplementedError
