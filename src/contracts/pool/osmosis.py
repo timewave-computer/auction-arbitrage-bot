@@ -3,7 +3,7 @@ Implements a pool provider for osmosis.
 """
 
 from functools import cached_property
-from typing import Any, Optional, List
+from typing import Any, Optional, List, cast
 import urllib3
 from cosmpy.aerial.wallet import LocalWallet
 from cosmpy.aerial.tx import Transaction, SigningCfg
@@ -108,6 +108,13 @@ class OsmosisPoolProvider(PoolProvider):
         assets: tuple[str, str],
         amount_min_amount: tuple[int, int],
     ) -> SubmittedTx:
+        acc = try_multiple_clients_fatal(
+            self.ledgers,
+            lambda client: client.query_account(
+                str(Address(wallet.public_key(), prefix="osmo"))
+            ),
+        )
+
         # Perform the swap using the Osmosis pool manager
         tx = Transaction()
         tx.add_message(self.__swap_msg(wallet, assets, amount_min_amount))
@@ -136,13 +143,6 @@ class OsmosisPoolProvider(PoolProvider):
         asset_a, asset_b = assets
         amount, min_token_out_amount = amount_min_amount
 
-        acc = try_multiple_clients_fatal(
-            self.ledgers,
-            lambda client: client.query_account(
-                str(Address(wallet.public_key(), prefix="osmo"))
-            ),
-        )
-
         # Perform the swap using the Osmosis pool manager
         msg = tx_pb2.MsgSwapExactAmountIn(  # pylint: disable=maybe-no-member
             sender=str(Address(wallet.public_key(), prefix="osmo")),
@@ -157,7 +157,7 @@ class OsmosisPoolProvider(PoolProvider):
             token_out_min_amount=str(min_token_out_amount),
         )
 
-        return msg
+        return cast(Message, msg)
 
     async def __balance(self, asset: str) -> int:
         res = await try_multiple_rest_endpoints(

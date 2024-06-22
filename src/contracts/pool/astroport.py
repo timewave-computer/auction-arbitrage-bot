@@ -4,6 +4,7 @@ Implemens contract wrappers for Astroport, providing pricing information for
 Astroport pools.
 """
 
+import json
 from functools import cached_property
 from typing import Any, cast, Optional, List
 from dataclasses import dataclass
@@ -22,6 +23,10 @@ from src.util import (
 )
 import aiohttp
 import grpc
+from google.protobuf.message import Message
+from cosmwasm.wasm.v1.tx_pb2 import MsgExecuteContract
+from cosmos.base.v1beta1.coin_pb2 import Coin
+from cosmpy.crypto.address import Address
 
 MAX_SPREAD = "0.05"
 
@@ -181,7 +186,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         return try_exec_multiple_fatal(
             self.contracts,
             wallet,
-            {
+            msg={
                 "swap": {
                     "offer_asset": {
                         "info": token_to_asset_info(asset_a),
@@ -193,6 +198,36 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
             },
             funds=f"{amount}{token_to_addr(asset_a)}",
             gas_limit=3000000,
+        )
+
+    def __swap_msg(
+        self,
+        wallet: LocalWallet,
+        assets: tuple[Token | NativeToken, Token | NativeToken],
+        amount_min_amount: tuple[int, int],
+    ) -> Message:
+        asset_a, asset_b = assets
+        amount, min_amount = amount_min_amount
+
+        return cast(
+            Message,
+            MsgExecuteContract(
+                sender=str(Address(wallet.public_key(), prefix=self.chain_prefix)),
+                contract=self.contract_info.address,
+                msg=json.dumps(
+                    {
+                        "swap": {
+                            "offer_asset": {
+                                "info": token_to_asset_info(asset_a),
+                                "amount": str(amount),
+                            },
+                            "ask_asset_info": token_to_asset_info(asset_b),
+                            "max_spread": MAX_SPREAD,
+                        }
+                    }
+                ),
+                funds=Coin(denom=asset_a, amount=amount),
+            ),
         )
 
     async def __balance(self, asset: Token | NativeToken) -> int:
@@ -228,6 +263,27 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         min_amount: int,
     ) -> SubmittedTx:
         return self.__swap(
+            wallet,
+            (self.asset_b_denom, self.asset_a_denom),
+            (amount, min_amount),
+        )
+
+    def swap_msg_asset_a(
+        self, wallet: LocalWallet, amount: int, min_amount: int
+    ) -> Message:
+        return self.__swap_msg(
+            wallet,
+            (self.asset_a_denom, self.asset_b_denom),
+            (amount, min_amount),
+        )
+
+    def swap_msg_asset_b(
+        self,
+        wallet: LocalWallet,
+        amount: int,
+        min_amount: int,
+    ) -> Message:
+        return self.__swap_msg(
             wallet,
             (self.asset_b_denom, self.asset_a_denom),
             (amount, min_amount),
