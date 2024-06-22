@@ -396,7 +396,7 @@ pub fn create_osmo_pool(
         "{} {}",
         osmosis.rb.chain_id,
         osmosis.rb.exec(
-            format!("/bin/sh -c echo '\"{poolfile_str}\" > {OSMOSIS_POOLFILE_PATH}'").as_str(),
+            format!("/bin/sh -c 'echo \"{poolfile_str}\" > {OSMOSIS_POOLFILE_PATH}'").as_str(),
             true,
         )
     );
