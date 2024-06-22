@@ -38,6 +38,7 @@ fn main() {
     setup::create_osmo_pools(&mut test_ctx).expect("failed to create osmosis pools");
 
     // Fund pools
+    setup::fund_pools(&mut test_ctx).expect("failed to create astroport pools");
 }
 
 fn setup_context(configured_chains: ChainsVec) -> Result<TestContext, Error> {

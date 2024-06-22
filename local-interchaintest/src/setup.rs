@@ -393,7 +393,8 @@ pub fn create_osmo_pool(
 
     // Copy the poolfile to the container
     println!(
-        "{}",
+        "{} {}",
+        osmosis.rb.chain_id,
         osmosis.rb.exec(
             format!("/bin/sh -c echo '\"{poolfile_str}\" > {OSMOSIS_POOLFILE_PATH}'").as_str(),
             true,
@@ -427,5 +428,26 @@ pub fn create_osmo_pools(test_ctx: &mut TestContext) -> Result<(), SetupError> {
 
     create_osmo_pool(test_ctx, "uosmo", ntrn_denom)?;
 
+    Ok(())
+}
+
+pub fn fund_pools(test_ctx: &mut TestContext) -> Result<(), SetupError> {
+    let atom_denom = test_ctx
+        .get_ibc_denoms()
+        .src(GAIA_CHAIN)
+        .dest(NEUTRON_CHAIN)
+        .get();
+    fund_pool(test_ctx, "untrn", atom_denom, 10000, 500)?;
+
+    Ok(())
+}
+
+pub fn fund_pool(
+    test_ctx: &mut TestContext,
+    denom_a: impl AsRef<str>,
+    denom_b: impl AsRef<str>,
+    amt_denom_a: u128,
+    amt_denom_b: u128,
+) -> Result<(), SetupError> {
     Ok(())
 }
