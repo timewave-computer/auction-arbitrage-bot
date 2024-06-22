@@ -18,6 +18,7 @@ from src.util import (
     try_multiple_clients_fatal,
 )
 import aiohttp
+from google.protobuf.message import Message
 
 
 class OsmosisPoolProvider(PoolProvider):
@@ -107,32 +108,9 @@ class OsmosisPoolProvider(PoolProvider):
         assets: tuple[str, str],
         amount_min_amount: tuple[int, int],
     ) -> SubmittedTx:
-        asset_a, asset_b = assets
-        amount, min_token_out_amount = amount_min_amount
-
-        acc = try_multiple_clients_fatal(
-            self.ledgers,
-            lambda client: client.query_account(
-                str(Address(wallet.public_key(), prefix="osmo"))
-            ),
-        )
-
         # Perform the swap using the Osmosis pool manager
         tx = Transaction()
-        tx.add_message(
-            tx_pb2.MsgSwapExactAmountIn(  # pylint: disable=maybe-no-member
-                sender=str(Address(wallet.public_key(), prefix="osmo")),
-                routes=[
-                    swap_route_pb2.SwapAmountInRoute(  # pylint: disable=maybe-no-member
-                        pool_id=self.pool_id, token_out_denom=asset_b
-                    )
-                ],
-                token_in=coin_pb2.Coin(  # pylint: disable=maybe-no-member
-                    denom=asset_a, amount=str(amount)
-                ),
-                token_out_min_amount=str(min_token_out_amount),
-            )
-        )
+        tx.add_message(self.__swap_msg(wallet, assets, amount_min_amount))
 
         gas_limit = 3000000
         gas = try_multiple_clients_fatal(
@@ -148,6 +126,38 @@ class OsmosisPoolProvider(PoolProvider):
             self.ledgers,
             lambda client: client.broadcast_tx(tx),
         )
+
+    def __swap_msg(
+        self,
+        wallet: LocalWallet,
+        assets: tuple[str, str],
+        amount_min_amount: tuple[int, int],
+    ) -> Message:
+        asset_a, asset_b = assets
+        amount, min_token_out_amount = amount_min_amount
+
+        acc = try_multiple_clients_fatal(
+            self.ledgers,
+            lambda client: client.query_account(
+                str(Address(wallet.public_key(), prefix="osmo"))
+            ),
+        )
+
+        # Perform the swap using the Osmosis pool manager
+        msg = tx_pb2.MsgSwapExactAmountIn(  # pylint: disable=maybe-no-member
+            sender=str(Address(wallet.public_key(), prefix="osmo")),
+            routes=[
+                swap_route_pb2.SwapAmountInRoute(  # pylint: disable=maybe-no-member
+                    pool_id=self.pool_id, token_out_denom=asset_b
+                )
+            ],
+            token_in=coin_pb2.Coin(  # pylint: disable=maybe-no-member
+                denom=asset_a, amount=str(amount)
+            ),
+            token_out_min_amount=str(min_token_out_amount),
+        )
+
+        return msg
 
     async def __balance(self, asset: str) -> int:
         res = await try_multiple_rest_endpoints(
@@ -212,6 +222,30 @@ class OsmosisPoolProvider(PoolProvider):
         min_amount: int,
     ) -> SubmittedTx:
         return self.__swap(
+            wallet,
+            (self.asset_b_denom, self.asset_a_denom),
+            (amount, min_amount),
+        )
+
+    def swap_msg_asset_a(
+        self,
+        wallet: LocalWallet,
+        amount: int,
+        min_amount: int,
+    ) -> Message:  # pylint: disable=duplicate-code
+        return self.__swap_msg(
+            wallet,
+            (self.asset_a_denom, self.asset_b_denom),
+            (amount, min_amount),
+        )
+
+    def swap_msg_asset_b(
+        self,
+        wallet: LocalWallet,
+        amount: int,
+        min_amount: int,
+    ) -> Message:
+        return self.__swap_msg(
             wallet,
             (self.asset_b_denom, self.asset_a_denom),
             (amount, min_amount),
