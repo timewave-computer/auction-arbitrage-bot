@@ -226,7 +226,11 @@ async def eval_route(
     if ctx.cli_args["base_denom"] == "untrn":
         gas_base_denom += sum(
             (
-                sum((leg.backend.swap_fee for leg in legs)) * GAS_DISCOUNT_BATCHED
+                (
+                    sum((leg.backend.swap_fee for leg in legs)) * GAS_DISCOUNT_BATCHED
+                    if len(legs) > 1
+                    else sum((leg.backend.swap_fee for leg in legs))
+                )
                 for legs in groupby(route, key=lambda elem: elem.backend.chain_id)
             )
         )
