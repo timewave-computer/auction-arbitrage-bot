@@ -411,7 +411,7 @@ async def main() -> None:
             while True:
                 try:
                     await sched.poll()
-                except e:
+                except Exception as e:
                     logger.error("Polling strategy failed: %s", e)
 
         def daemon() -> None:
