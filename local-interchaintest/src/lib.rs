@@ -4,6 +4,9 @@ pub mod setup;
 /// Utilities for managing test contexts.
 pub mod util;
 
+/// Test environment scaffolding.
+pub mod fixtures;
+
 /// Top-level testing error.
 pub mod error;
 

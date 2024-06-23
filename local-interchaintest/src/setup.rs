@@ -1,39 +1,21 @@
 use super::{
-    ARTIFACTS_PATH, OSMOSIS_CHAIN, OSMOSIS_DOCKER_CONTAINER_ID, OSMOSIS_POOLFILE_PATH,
-    REMOTE_OSMOSIS_POOLFILE_PATH,
+    error::SetupError, fixtures, ARTIFACTS_PATH, OSMOSIS_CHAIN, OSMOSIS_DOCKER_CONTAINER_ID,
+    OSMOSIS_POOLFILE_PATH, REMOTE_OSMOSIS_POOLFILE_PATH,
 };
 use local_ictest_e2e::{
     utils::{file_system, test_context::TestContext},
     ACC_0_KEY, GAIA_CHAIN, NEUTRON_CHAIN, WASM_EXTENSION,
 };
-use localic_std::{errors::LocalError, modules::cosmwasm::CosmWasm};
+use localic_std::modules::cosmwasm::CosmWasm;
 use std::{
     ffi::OsStr,
     fs::{self, OpenOptions},
-    io::{Error as IoError, Write},
+    io::Write,
     path::PathBuf,
     process::Command,
     thread,
     time::Duration,
 };
-use thiserror::Error;
-
-/// Errors that may have occurred while deploying contracts.
-#[derive(Error, Debug)]
-pub enum SetupError {
-    #[error("failed to format file path")]
-    PathFmt,
-    #[error("local interchain failure")]
-    LocalInterchain(#[from] LocalError),
-    #[error("IO failure")]
-    Io(#[from] IoError),
-    #[error("the contract `{0}` is missing")]
-    MissingContract(String),
-    #[error("failed to construct JSON")]
-    Serialization,
-    #[error("failed to query container with cmd `{0}`")]
-    ContainerCmd(String),
-}
 
 /// Deploys all neutron contracts to the test context.
 pub fn deploy_neutron_contracts(test_ctx: &mut TestContext) -> Result<(), SetupError> {
@@ -69,32 +51,18 @@ pub fn deploy_neutron_contracts(test_ctx: &mut TestContext) -> Result<(), SetupE
 
 /// Instantiates the auction manager.
 pub fn create_auction_manager(test_ctx: &mut TestContext) -> Result<(), SetupError> {
+    let mut contract_a = fixtures::use_contract(test_ctx, "auction_manager")?;
+
     let neutron = test_ctx.get_mut_chain(NEUTRON_CHAIN);
 
     let acc_0_addr = neutron.admin_addr.clone();
 
-    let code_id =
-        neutron
-            .contract_codes
-            .get("auctions_manager")
-            .ok_or(SetupError::MissingContract(String::from(
-                "auctions_manager",
-            )))?;
     let auction_code_id = neutron
         .contract_codes
         .get("auction")
         .ok_or(SetupError::MissingContract(String::from("auction")))?;
 
-    let mut contract_a = CosmWasm::new_from_existing(
-        &neutron.rb,
-        Some(PathBuf::from(format!(
-            "{ARTIFACTS_PATH}/auctions_manager.wasm"
-        ))),
-        Some(*code_id),
-        None,
-    );
-
-    println!("instantiating contract {}", code_id);
+    println!("instantiating contract {:?}", contract_a.code_id);
 
     let contract = contract_a.instantiate(
         ACC_0_KEY,
@@ -123,33 +91,10 @@ pub fn create_auction(
     denom_a: impl AsRef<str>,
     denom_b: impl AsRef<str>,
 ) -> Result<(), SetupError> {
-    let neutron = test_ctx.get_mut_chain(NEUTRON_CHAIN);
+    // The auctions manager for this deployment
+    let contract_a = fixtures::use_auctions_manager(test_ctx)?;
 
-    let code_id =
-        neutron
-            .contract_codes
-            .get("auctions_manager")
-            .ok_or(SetupError::MissingContract(String::from(
-                "auctions_manager",
-            )))?;
-    let addr =
-        neutron
-            .contract_addrs
-            .get("auctions_manager")
-            .ok_or(SetupError::MissingContract(String::from(
-                "auctions_manager",
-            )))?;
-
-    let contract_a = CosmWasm::new_from_existing(
-        &neutron.rb,
-        Some(PathBuf::from(format!(
-            "{ARTIFACTS_PATH}/auctions_manager.wasm"
-        ))),
-        Some(*code_id),
-        Some(addr.to_owned()),
-    );
-
-    println!("executing tx to contract {}", code_id);
+    println!("executing tx to contract {:?}", contract_a.contract_addr);
 
     let _ = contract_a.execute(
         ACC_0_KEY,
@@ -202,23 +147,9 @@ pub fn create_token_registry(test_ctx: &mut TestContext) -> Result<(), SetupErro
 
     let acc_0_addr = neutron.admin_addr.clone();
 
-    let code_id = neutron
-        .contract_codes
-        .get("astroport_native_coin_registry")
-        .ok_or(SetupError::MissingContract(String::from(
-            "astroport_native_coin_registry",
-        )))?;
+    let mut contract_a = fixtures::use_contract(test_ctx, "astroport_native_coin_registry")?;
 
-    let mut contract_a = CosmWasm::new_from_existing(
-        &neutron.rb,
-        Some(PathBuf::from(format!(
-            "{ARTIFACTS_PATH}/astroport_native_coin_registry.wasm"
-        ))),
-        Some(*code_id),
-        None,
-    );
-
-    println!("instantiating contract {}", code_id);
+    println!("instantiating contract {:?}", contract_a.code_id);
 
     let contract = contract_a.instantiate(
         ACC_0_KEY,
@@ -246,13 +177,6 @@ pub fn create_factory(test_ctx: &mut TestContext) -> Result<(), SetupError> {
 
     let acc_0_addr = neutron.admin_addr.clone();
 
-    let code_id =
-        neutron
-            .contract_codes
-            .get("astroport_factory")
-            .ok_or(SetupError::MissingContract(String::from(
-                "astroport_factory",
-            )))?;
     let pair_code_id = neutron
         .contract_codes
         .get("astroport_pair")
@@ -264,16 +188,9 @@ pub fn create_factory(test_ctx: &mut TestContext) -> Result<(), SetupError> {
             "astroport_native_coin_registry",
         )))?;
 
-    let mut contract_a = CosmWasm::new_from_existing(
-        &neutron.rb,
-        Some(PathBuf::from(format!(
-            "{ARTIFACTS_PATH}/astroport_factory.wasm"
-        ))),
-        Some(*code_id),
-        None,
-    );
+    let mut contract_a = fixtures::use_contract(test_ctx, "astroport_factory")?;
 
-    println!("instantiating contract {}", code_id);
+    println!("instantiating contract {:?}", contract_a.code_id);
 
     let contract = contract_a.instantiate(
         ACC_0_KEY,
@@ -314,36 +231,13 @@ pub fn create_pool(
     denom_a: impl AsRef<str>,
     denom_b: impl AsRef<str>,
 ) -> Result<(), SetupError> {
-    let neutron = test_ctx.get_chain(NEUTRON_CHAIN);
-
-    let code_id =
-        neutron
-            .contract_codes
-            .get("astroport_factory")
-            .ok_or(SetupError::MissingContract(String::from(
-                "astroport_factory",
-            )))?;
-    let contract_addr =
-        neutron
-            .contract_addrs
-            .get("astroport_factory")
-            .ok_or(SetupError::MissingContract(String::from(
-                "astroport_factory",
-            )))?;
-
-    let contract_a = CosmWasm::new_from_existing(
-        &neutron.rb,
-        Some(PathBuf::from(format!(
-            "{ARTIFACTS_PATH}/astroport_factory.wasm"
-        ))),
-        Some(*code_id),
-        Some(contract_addr.clone()),
-    );
+    // Factory contract instance
+    let contract_a = fixtures::use_astroport_factory(test_ctx)?;
 
     let denom_a_str = denom_a.as_ref();
     let denom_b_str = denom_b.as_ref();
 
-    println!("executing tx to contract {}", code_id);
+    println!("executing tx to contract {:?}", contract_a.contract_addr);
 
     let _ = contract_a.execute(
         ACC_0_KEY,
@@ -471,5 +365,8 @@ pub fn fund_pool(
     amt_denom_a: u128,
     amt_denom_b: u128,
 ) -> Result<(), SetupError> {
+    // Get the pool contract from the
+    // pool factory
+
     Ok(())
 }
