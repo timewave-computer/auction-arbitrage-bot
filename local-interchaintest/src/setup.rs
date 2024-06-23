@@ -143,6 +143,8 @@ pub fn create_auction(
         Some(addr.to_owned()),
     );
 
+    println!("executing tx to contract {}", code_id);
+
     let _ = contract_a.execute(
         ACC_0_KEY,
         serde_json::json!(
@@ -335,6 +337,8 @@ pub fn create_pool(
     let denom_a_str = denom_a.as_ref();
     let denom_b_str = denom_b.as_ref();
 
+    println!("executing tx to contract {}", code_id);
+
     let _ = contract_a.execute(
         ACC_0_KEY,
         serde_json::json!({
@@ -388,29 +392,23 @@ pub fn create_osmo_pool(
     // Osmosisd requires a JSON file to specify the
     // configuration of the pool being created
     let poolfile_str = format!(
-        r#"{{\"weights\": \"1{denom_a_str},1{denom_b_str}\",\"initial-deposit\": \"1{denom_a_str},1{denom_b_str}\",\"swap-fee\": \"0.00\",\"exit-fee\": \"0.00\",\"future-governor\": \"168h\"}}"#
+        r#"{{"weights": "1{denom_a_str},1{denom_b_str}","initial-deposit": "1{denom_a_str},1{denom_b_str}","swap-fee": "0.00","exit-fee": "0.00","future-governor": "168h"}}"#
     );
 
     // Copy the poolfile to the container
     println!(
-        "{} {}",
+        "{} {} {}",
         osmosis.rb.chain_id,
+        format!("/bin/sh -c 'echo \"{poolfile_str}\" > {OSMOSIS_POOLFILE_PATH}'"),
         osmosis.rb.exec(
             format!("/bin/sh -c 'echo \"{poolfile_str}\" > {OSMOSIS_POOLFILE_PATH}'").as_str(),
             true,
         )
     );
 
-    println!(
-        "{}",
-        osmosis
-            .rb
-            .exec(format!("/bin/cat {OSMOSIS_POOLFILE_PATH}").as_str(), true)
-    );
-
     // Create pool
     let _ = osmosis.rb.tx(
-        format!("poolmanager create-pool  --pool-file {OSMOSIS_POOLFILE_PATH} --from {ACC_0_KEY}")
+        format!("poolmanager create-pool  --pool-file {OSMOSIS_POOLFILE_PATH} --from {ACC_0_KEY} --fees 500uosmo")
             .as_str(),
         true,
     )?;

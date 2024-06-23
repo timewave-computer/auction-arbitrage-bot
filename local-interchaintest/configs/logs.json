@@ -1,5 +1,5 @@
 {
-  "start_time": 1718908618,
+  "start_time": 1719156334,
   "chains": [
     {
       "chain_id": "localcosmos-1",
@@ -7,7 +7,7 @@
       "rpc_address": "http://0.0.0.0:26658",
       "rest_address": "http://0.0.0.0:1318",
       "grpc_address": "0.0.0.0:9091",
-      "p2p_address": "0.0.0.0:44863",
+      "p2p_address": "0.0.0.0:46809",
       "ibc_paths": []
     },
     {
@@ -16,7 +16,7 @@
       "rpc_address": "http://0.0.0.0:26657",
       "rest_address": "http://0.0.0.0:1317",
       "grpc_address": "0.0.0.0:9090",
-      "p2p_address": "0.0.0.0:44937",
+      "p2p_address": "0.0.0.0:38663",
       "ibc_paths": [
         "neutron-osmosis"
       ]
@@ -24,10 +24,10 @@
     {
       "chain_id": "localosmosis-1",
       "chain_name": "localosmosis-1",
-      "rpc_address": "http://0.0.0.0:38001",
-      "rest_address": "http://0.0.0.0:45639",
-      "grpc_address": "0.0.0.0:43363",
-      "p2p_address": "0.0.0.0:36047",
+      "rpc_address": "http://0.0.0.0:43911",
+      "rest_address": "http://0.0.0.0:36385",
+      "grpc_address": "0.0.0.0:39413",
+      "p2p_address": "0.0.0.0:36255",
       "ibc_paths": [
         "neutron-osmosis"
       ]
@@ -48,7 +48,7 @@
         ],
         "version": "ics20-1",
         "port_id": "transfer",
-        "channel_id": "channel-0"
+        "channel_id": "channel-2"
       }
     },
     {
@@ -58,7 +58,7 @@
         "ordering": "ORDER_UNORDERED",
         "counterparty": {
           "port_id": "transfer",
-          "channel_id": "channel-0"
+          "channel_id": "channel-2"
         },
         "connection_hops": [
           "connection-0"
