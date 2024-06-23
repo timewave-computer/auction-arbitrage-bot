@@ -51,9 +51,9 @@ pub fn deploy_neutron_contracts(test_ctx: &mut TestContext) -> Result<(), SetupE
 
 /// Instantiates the auction manager.
 pub fn create_auction_manager(test_ctx: &mut TestContext) -> Result<(), SetupError> {
-    let mut contract_a = fixtures::use_contract(test_ctx, "auction_manager")?;
+    let mut contract_a: CosmWasm = fixtures::use_contract(test_ctx, "auction_manager")?;
 
-    let neutron = test_ctx.get_mut_chain(NEUTRON_CHAIN);
+    let neutron = test_ctx.get_chain(NEUTRON_CHAIN);
 
     let acc_0_addr = neutron.admin_addr.clone();
 
@@ -77,6 +77,8 @@ pub fn create_auction_manager(test_ctx: &mut TestContext) -> Result<(), SetupErr
         None,
         "",
     )?;
+
+    let neutron = test_ctx.get_mut_chain(NEUTRON_CHAIN);
 
     neutron
         .contract_addrs
@@ -143,7 +145,7 @@ pub fn create_auctions(test_ctx: &mut TestContext) -> Result<(), SetupError> {
 
 /// Instantiates the token registry.
 pub fn create_token_registry(test_ctx: &mut TestContext) -> Result<(), SetupError> {
-    let neutron = test_ctx.get_mut_chain(NEUTRON_CHAIN);
+    let neutron = test_ctx.get_chain(NEUTRON_CHAIN);
 
     let acc_0_addr = neutron.admin_addr.clone();
 
@@ -163,6 +165,8 @@ pub fn create_token_registry(test_ctx: &mut TestContext) -> Result<(), SetupErro
         "",
     )?;
 
+    let neutron = test_ctx.get_mut_chain(NEUTRON_CHAIN);
+
     neutron.contract_addrs.insert(
         "astroport_native_coin_registry".to_owned(),
         contract.address,
@@ -173,7 +177,7 @@ pub fn create_token_registry(test_ctx: &mut TestContext) -> Result<(), SetupErro
 
 /// Instantiates the astroport factory.
 pub fn create_factory(test_ctx: &mut TestContext) -> Result<(), SetupError> {
-    let neutron = test_ctx.get_mut_chain(NEUTRON_CHAIN);
+    let neutron = test_ctx.get_chain(NEUTRON_CHAIN);
 
     let acc_0_addr = neutron.admin_addr.clone();
 
@@ -218,6 +222,8 @@ pub fn create_factory(test_ctx: &mut TestContext) -> Result<(), SetupError> {
         None,
         "",
     )?;
+
+    let neutron = test_ctx.get_mut_chain(NEUTRON_CHAIN);
 
     neutron
         .contract_addrs
@@ -347,6 +353,7 @@ pub fn create_osmo_pools(test_ctx: &mut TestContext) -> Result<(), SetupError> {
     Ok(())
 }
 
+/// Funds all pools
 pub fn fund_pools(test_ctx: &mut TestContext) -> Result<(), SetupError> {
     let atom_denom = test_ctx
         .get_ibc_denoms()
@@ -358,6 +365,7 @@ pub fn fund_pools(test_ctx: &mut TestContext) -> Result<(), SetupError> {
     Ok(())
 }
 
+/// Provides liquidity for a specific pool.
 pub fn fund_pool(
     test_ctx: &mut TestContext,
     denom_a: impl AsRef<str>,
@@ -367,6 +375,114 @@ pub fn fund_pool(
 ) -> Result<(), SetupError> {
     // Get the pool contract from the
     // pool factory
+    let factory = fixtures::use_astroport_factory(test_ctx)?;
+
+    let neutron = test_ctx.get_chain(NEUTRON_CHAIN);
+
+    let acc_0_addr = neutron.admin_addr.clone();
+
+    let pool_resp = factory.query(
+        serde_json::json!({
+            "pair": {
+                "asset_infos": [
+                    {
+                        "native_token": {
+                            "denom": denom_a.as_ref(),
+                        },
+                    },
+                    {
+                        "native_token": {
+                            "denom": denom_b.as_ref(),
+                        }
+                    }
+                ]
+            }
+        })
+        .to_string()
+        .as_str(),
+    );
+
+    let pool_addr = pool_resp
+        .get("contract_addr")
+        .and_then(|addr_json| addr_json.as_str())
+        .ok_or(SetupError::MissingContract(String::from("astroport_pair")))?;
+
+    // Get the instance from the address
+    let mut pool_contract = fixtures::use_contract(test_ctx, "astroport_pair")?;
+    pool_contract.contract_addr = Some(pool_addr.to_owned());
+
+    // Provide liquidity
+    pool_contract.execute(
+        ACC_0_KEY,
+        serde_json::json!({
+            "provide_liquidity": {
+                "assets": [
+                    {
+                        "info": {
+                            "native_token": {
+                                "denom": denom_a.as_ref(),
+                            },
+                        },
+                        "amount": amt_denom_a.to_string(),
+                    },
+                    {
+                        "info": {
+                            "native_token": {
+                                "denom": denom_b.as_ref(),
+                            },
+                        },
+                        "amount": amt_denom_b.to_string(),
+                    },
+                ],
+                "slippage_tolerance": "0.01",
+                "auto_stake": false,
+                "receiver": acc_0_addr,
+            }
+        })
+        .to_string()
+        .as_str(),
+        "",
+    )?;
+
+    Ok(())
+}
+
+/// Funds all auctions.
+pub fn fund_auctions(test_ctx: &mut TestContext) -> Result<(), SetupError> {
+    let atom_denom = test_ctx
+        .get_ibc_denoms()
+        .src(GAIA_CHAIN)
+        .dest(NEUTRON_CHAIN)
+        .get();
+
+    fund_auction(test_ctx, "untrn", &atom_denom, 1000)?;
+    fund_auction(test_ctx, &atom_denom, "untrn", 500)?;
+
+    Ok(())
+}
+
+/// Provides liquidity for a specific auction.
+pub fn fund_auction(
+    test_ctx: &mut TestContext,
+    denom_a: impl AsRef<str>,
+    denom_b: impl AsRef<str>,
+    amt_denom_a: u128,
+) -> Result<(), SetupError> {
+    let manager = fixtures::use_auctions_manager(test_ctx)?;
+
+    let denom_a_str = denom_a.as_ref();
+
+    manager.execute(
+        ACC_0_KEY,
+        serde_json::json!({
+            "auction_funds": {
+                "pair": [denom_a.as_ref(), denom_b.as_ref()],
+            },
+        })
+        .to_string()
+        .as_str(),
+        format!("--amount {amt_denom_a}{denom_a_str}").as_str(),
+    )?;
 
     Ok(())
 }

@@ -4,11 +4,8 @@ use localic_std::modules::cosmwasm::CosmWasm;
 use std::path::PathBuf;
 
 /// Get a new CosmWasm instance for a contract identified by a name.
-pub fn use_contract(
-    test_ctx: &mut TestContext,
-    name: impl AsRef<str>,
-) -> Result<CosmWasm, SetupError> {
-    let neutron = test_ctx.get_mut_chain(NEUTRON_CHAIN);
+pub fn use_contract(test_ctx: &TestContext, name: impl AsRef<str>) -> Result<CosmWasm, SetupError> {
+    let neutron = test_ctx.get_chain(NEUTRON_CHAIN);
 
     let code_id = neutron
         .contract_codes
@@ -26,7 +23,7 @@ pub fn use_contract(
 }
 
 /// Gets the deployed astroport factory for this run.
-pub fn use_astroport_factory(test_ctx: &mut TestContext) -> Result<CosmWasm, SetupError> {
+pub fn use_astroport_factory(test_ctx: &TestContext) -> Result<CosmWasm, SetupError> {
     let neutron = test_ctx.get_chain(NEUTRON_CHAIN);
 
     let code_id =
@@ -55,8 +52,8 @@ pub fn use_astroport_factory(test_ctx: &mut TestContext) -> Result<CosmWasm, Set
 }
 
 /// Gets the deployed auctions manager for this run.
-pub fn use_auctions_manager(test_ctx: &mut TestContext) -> Result<CosmWasm, SetupError> {
-    let neutron = test_ctx.get_mut_chain(NEUTRON_CHAIN);
+pub fn use_auctions_manager(test_ctx: &TestContext) -> Result<CosmWasm, SetupError> {
+    let neutron = test_ctx.get_chain(NEUTRON_CHAIN);
 
     let code_id =
         neutron
