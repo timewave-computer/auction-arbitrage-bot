@@ -1,4 +1,7 @@
-use super::{ARTIFACTS_PATH, OSMOSIS_CHAIN, OSMOSIS_POOLFILE_PATH};
+use super::{
+    ARTIFACTS_PATH, OSMOSIS_CHAIN, OSMOSIS_DOCKER_CONTAINER_ID, OSMOSIS_POOLFILE_PATH,
+    REMOTE_OSMOSIS_POOLFILE_PATH,
+};
 use local_ictest_e2e::{
     utils::{file_system, test_context::TestContext},
     ACC_0_KEY, GAIA_CHAIN, NEUTRON_CHAIN, WASM_EXTENSION,
@@ -6,9 +9,10 @@ use local_ictest_e2e::{
 use localic_std::{errors::LocalError, modules::cosmwasm::CosmWasm};
 use std::{
     ffi::OsStr,
-    fs::{self},
-    io::Error as IoError,
+    fs::{self, OpenOptions},
+    io::{Error as IoError, Write},
     path::PathBuf,
+    process::Command,
     thread,
     time::Duration,
 };
@@ -26,7 +30,9 @@ pub enum SetupError {
     #[error("the contract `{0}` is missing")]
     MissingContract(String),
     #[error("failed to construct JSON")]
-    SerializationError,
+    Serialization,
+    #[error("failed to query container with cmd `{0}`")]
+    ContainerCmd(String),
 }
 
 /// Deploys all neutron contracts to the test context.
@@ -391,19 +397,42 @@ pub fn create_osmo_pool(
 
     // Osmosisd requires a JSON file to specify the
     // configuration of the pool being created
-    let poolfile_str = format!(
-        r#"{{"weights": "1{denom_a_str},1{denom_b_str}","initial-deposit": "1{denom_a_str},1{denom_b_str}","swap-fee": "0.00","exit-fee": "0.00","future-governor": "168h"}}"#
+    let poolfile_str = serde_json::json!({
+        "weights": format!("1{denom_a_str},1{denom_b_str}"),
+        "initial-deposit": format!("1{denom_a_str},1{denom_b_str}"),
+        "swap-fee": "0.00",
+        "exit-fee": "0.00",
+        "future-governor": "168h"
+    })
+    .to_string();
+
+    // Write the poolfile to a file
+    let mut f = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .open(OSMOSIS_POOLFILE_PATH)?;
+    f.write_all(poolfile_str.as_bytes())?;
+
+    // Copy the poolfile to the container using docker cp
+    println!("Copying poolfile from {OSMOSIS_POOLFILE_PATH} to {OSMOSIS_DOCKER_CONTAINER_ID}:{REMOTE_OSMOSIS_POOLFILE_PATH}");
+
+    println!(
+        "Result of copying poolfile: {:?}",
+        Command::new("docker")
+            .arg("cp")
+            .arg(OSMOSIS_POOLFILE_PATH)
+            .arg(format!(
+                "{}:{}",
+                OSMOSIS_DOCKER_CONTAINER_ID, REMOTE_OSMOSIS_POOLFILE_PATH,
+            ))
+            .output()?
     );
 
-    // Copy the poolfile to the container
-    let _ = osmosis.rb.exec(
-        format!("/bin/sh -c 'echo {poolfile_str} > {OSMOSIS_POOLFILE_PATH}'").as_str(),
-        true,
-    );
+    fs::remove_file(OSMOSIS_POOLFILE_PATH)?;
 
     // Create pool
-    let _ = osmosis.rb.tx(
-        format!("poolmanager create-pool  --pool-file {OSMOSIS_POOLFILE_PATH} --from {ACC_0_KEY} --fees 500uosmo")
+    osmosis.rb.tx(
+        format!("tx poolmanager create-pool --pool-file {REMOTE_OSMOSIS_POOLFILE_PATH} --from {ACC_0_KEY} --fees 500uosmo")
             .as_str(),
         true,
     )?;

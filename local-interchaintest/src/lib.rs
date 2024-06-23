@@ -23,4 +23,10 @@ pub const OSMOSIS_CHAIN_ID: &str = "localosmosis-1";
 pub const OSMOSIS_CHAIN: &str = "osmosis";
 
 /// Path to the host machine's osmosis pool file
-pub const OSMOSIS_POOLFILE_PATH: &str = "/var/cosmos-chain/localosmosis-1/pool_file.json";
+pub const OSMOSIS_POOLFILE_PATH: &str = "/tmp/pool_file.json";
+
+/// Path to the remoe machine's osmosis pool file
+pub const REMOTE_OSMOSIS_POOLFILE_PATH: &str = "/var/cosmos-chain/localosmosis-1/pool_file.json";
+
+/// Container id of the local osmosis node
+pub const OSMOSIS_DOCKER_CONTAINER_ID: &str = "localosmosis-1-val-0-neutron_osmosis_gaiaic";
