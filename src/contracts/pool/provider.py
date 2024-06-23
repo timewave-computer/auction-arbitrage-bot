@@ -2,12 +2,14 @@
 Defines an interface for all providers of pricing information to fulfill.
 """
 
+from decimal import Decimal
 import json
 from typing import Any, Optional, cast
 from abc import ABC, abstractmethod
 from cosmpy.aerial.wallet import LocalWallet
 from cosmpy.aerial.tx_helpers import SubmittedTx
 from google.protobuf.message import Message
+from cosmpy.aerial.tx import Transaction
 
 
 def cached_pools(
@@ -41,9 +43,13 @@ class PoolProvider(ABC):
 
     chain_prefix: str
 
+    chain_gas_price: Decimal
+
     chain_fee_denom: str
 
     endpoints: list[str]
+
+    swap_gas_limit: int
 
     swap_fee: int
 
@@ -125,6 +131,14 @@ class PoolProvider(ABC):
         """
         Creates a protobuf message for executing the swap in this pool
         without executing the swap.
+        """
+
+        raise NotImplementedError
+
+    @abstractmethod
+    def submit_swap_tx(self, tx: Transaction) -> SubmittedTx:
+        """
+        Submits a transaction to the blockchain backing this provider.
         """
 
         raise NotImplementedError

@@ -4,6 +4,7 @@ Implemens contract wrappers for Astroport, providing pricing information for
 Astroport pools.
 """
 
+from decimal import Decimal
 import json
 from functools import cached_property
 from typing import Any, cast, Optional, List
@@ -19,6 +20,7 @@ from src.util import (
     ContractInfo,
     try_query_multiple,
     try_exec_multiple_fatal,
+    try_multiple_clients_fatal,
     custom_neutron_network_config,
 )
 import aiohttp
@@ -27,6 +29,7 @@ from google.protobuf.message import Message
 from cosmwasm.wasm.v1.tx_pb2 import MsgExecuteContract
 from cosmos.base.v1beta1.coin_pb2 import Coin
 from cosmpy.crypto.address import Address
+from cosmpy.aerial.tx import Transaction
 
 MAX_SPREAD = "0.05"
 
@@ -104,6 +107,8 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         self.chain_id = contract_info.clients[0].query_chain_id()
         self.chain_prefix = "neutron"
         self.chain_fee_denom = "untrn"
+        self.chain_gas_price = Decimal("0.01")
+        self.swap_gas_limit = 500000
         self.kind = "astroport"
         self.endpoints = endpoints["http"]
         self.session = session
@@ -287,6 +292,12 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
             wallet,
             (self.asset_b_denom, self.asset_a_denom),
             (amount, min_amount),
+        )
+
+    def submit_swap_tx(self, tx: Transaction) -> SubmittedTx:
+        return try_multiple_clients_fatal(
+            self.contract_info.clients,
+            lambda client: client.broadcast_tx(tx),
         )
 
     async def simulate_swap_asset_a(

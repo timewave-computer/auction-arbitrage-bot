@@ -2,6 +2,7 @@
 Implements a pool provider for osmosis.
 """
 
+from decimal import Decimal
 from functools import cached_property
 from typing import Any, Optional, List, cast
 import urllib3
@@ -45,7 +46,7 @@ class OsmosisPoolProvider(PoolProvider):
         self.chain_prefix = "osmo"
         self.chain_fee_denom = "uosmo"
         self.kind = "osmosis"
-
+        self.chain_gas_price = Decimal("0.03")
         self.endpoints = endpoints["http"]
         self.grpc_endpoints = endpoints["grpc"]
         self.address = address
@@ -53,7 +54,6 @@ class OsmosisPoolProvider(PoolProvider):
         self.asset_b_denom = asset_b
         self.pool_id = pool_id
         self.session = session
-        self.swap_fee = 500000
 
     @cached_property
     def ledgers(self) -> List[LedgerClient]:
@@ -249,6 +249,12 @@ class OsmosisPoolProvider(PoolProvider):
             wallet,
             (self.asset_b_denom, self.asset_a_denom),
             (amount, min_amount),
+        )
+
+    def submit_swap_tx(self, tx: Transaction) -> SubmittedTx:
+        return try_multiple_clients_fatal(
+            self.ledgers,
+            lambda client: client.broadcast_tx(tx),
         )
 
     def asset_a(self) -> str:
