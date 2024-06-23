@@ -37,6 +37,8 @@ fn main() {
     // Setup all osmosis pools
     setup::create_osmo_pools(&mut test_ctx).expect("failed to create osmosis pools");
 
+    // Transfer 20000000000 uatom from gaia to neutron
+
     // Fund astroport pools
     setup::fund_pools(&mut test_ctx).expect("failed to fund astroport pools");
 

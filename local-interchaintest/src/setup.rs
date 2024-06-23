@@ -11,7 +11,6 @@ use std::{
     ffi::OsStr,
     fs::{self, OpenOptions},
     io::Write,
-    path::PathBuf,
     process::Command,
     thread,
     time::Duration,
@@ -90,8 +89,8 @@ pub fn create_auction_manager(test_ctx: &mut TestContext) -> Result<(), SetupErr
 /// Instantiates an individual auction.
 pub fn create_auction(
     test_ctx: &mut TestContext,
-    denom_a: impl AsRef<str>,
-    denom_b: impl AsRef<str>,
+    denom_a: &str,
+    denom_b: &str,
 ) -> Result<(), SetupError> {
     // The auctions manager for this deployment
     let contract_a = fixtures::use_auctions_manager(test_ctx)?;
@@ -105,7 +104,7 @@ pub fn create_auction(
             "admin": {
                 "new_auction": {
                     "msg": {
-                        "pair": [denom_a.as_ref(), denom_b.as_ref()],
+                        "pair": [denom_a, denom_b],
                         "auction_strategy": {
                             "start_price_perc": 5000,
                             "end_price_perc": 5000
@@ -234,14 +233,11 @@ pub fn create_factory(test_ctx: &mut TestContext) -> Result<(), SetupError> {
 
 pub fn create_pool(
     test_ctx: &mut TestContext,
-    denom_a: impl AsRef<str>,
-    denom_b: impl AsRef<str>,
+    denom_a: &str,
+    denom_b: &str,
 ) -> Result<(), SetupError> {
     // Factory contract instance
     let contract_a = fixtures::use_astroport_factory(test_ctx)?;
-
-    let denom_a_str = denom_a.as_ref();
-    let denom_b_str = denom_b.as_ref();
 
     println!("executing tx to contract {:?}", contract_a.contract_addr);
 
@@ -255,12 +251,12 @@ pub fn create_pool(
         "asset_infos": [
         {
             "native_token": {
-                "denom": denom_a_str
+                "denom": denom_a
             }
         },
         {
             "native_token": {
-                "denom": denom_b_str
+                "denom": denom_b
             }
         }]}})
         .to_string()
@@ -279,7 +275,7 @@ pub fn create_pools(test_ctx: &mut TestContext) -> Result<(), SetupError> {
         .src(GAIA_CHAIN)
         .dest(NEUTRON_CHAIN)
         .get();
-    create_pool(test_ctx, "untrn", atom_denom)?;
+    create_pool(test_ctx, "untrn", atom_denom.as_str())?;
 
     Ok(())
 }
@@ -287,19 +283,16 @@ pub fn create_pools(test_ctx: &mut TestContext) -> Result<(), SetupError> {
 /// Creates an osmosis pool with the given denoms.
 pub fn create_osmo_pool(
     test_ctx: &mut TestContext,
-    denom_a: impl AsRef<str>,
-    denom_b: impl AsRef<str>,
+    denom_a: &str,
+    denom_b: &str,
 ) -> Result<(), SetupError> {
     let osmosis = test_ctx.get_chain(OSMOSIS_CHAIN);
-
-    let denom_a_str = denom_a.as_ref();
-    let denom_b_str = denom_b.as_ref();
 
     // Osmosisd requires a JSON file to specify the
     // configuration of the pool being created
     let poolfile_str = serde_json::json!({
-        "weights": format!("1{denom_a_str},1{denom_b_str}"),
-        "initial-deposit": format!("1{denom_a_str},1{denom_b_str}"),
+        "weights": format!("1{denom_a},1{denom_b}"),
+        "initial-deposit": format!("1{denom_a},1{denom_b}"),
         "swap-fee": "0.00",
         "exit-fee": "0.00",
         "future-governor": "168h"
@@ -348,7 +341,7 @@ pub fn create_osmo_pools(test_ctx: &mut TestContext) -> Result<(), SetupError> {
         .dest(OSMOSIS_CHAIN)
         .get();
 
-    create_osmo_pool(test_ctx, "uosmo", ntrn_denom)?;
+    create_osmo_pool(test_ctx, "uosmo", ntrn_denom.as_str())?;
 
     Ok(())
 }
@@ -360,7 +353,7 @@ pub fn fund_pools(test_ctx: &mut TestContext) -> Result<(), SetupError> {
         .src(GAIA_CHAIN)
         .dest(NEUTRON_CHAIN)
         .get();
-    fund_pool(test_ctx, "untrn", atom_denom, 10000, 500)?;
+    fund_pool(test_ctx, "untrn", atom_denom.as_str(), 10000, 500)?;
 
     Ok(())
 }
@@ -368,8 +361,8 @@ pub fn fund_pools(test_ctx: &mut TestContext) -> Result<(), SetupError> {
 /// Provides liquidity for a specific pool.
 pub fn fund_pool(
     test_ctx: &mut TestContext,
-    denom_a: impl AsRef<str>,
-    denom_b: impl AsRef<str>,
+    denom_a: &str,
+    denom_b: &str,
     amt_denom_a: u128,
     amt_denom_b: u128,
 ) -> Result<(), SetupError> {
@@ -387,12 +380,12 @@ pub fn fund_pool(
                 "asset_infos": [
                     {
                         "native_token": {
-                            "denom": denom_a.as_ref(),
+                            "denom": denom_a,
                         },
                     },
                     {
                         "native_token": {
-                            "denom": denom_b.as_ref(),
+                            "denom": denom_b,
                         }
                     }
                 ]
@@ -420,7 +413,7 @@ pub fn fund_pool(
                     {
                         "info": {
                             "native_token": {
-                                "denom": denom_a.as_ref(),
+                                "denom": denom_a,
                             },
                         },
                         "amount": amt_denom_a.to_string(),
@@ -428,7 +421,7 @@ pub fn fund_pool(
                     {
                         "info": {
                             "native_token": {
-                                "denom": denom_b.as_ref(),
+                                "denom": denom_b,
                             },
                         },
                         "amount": amt_denom_b.to_string(),
@@ -464,24 +457,22 @@ pub fn fund_auctions(test_ctx: &mut TestContext) -> Result<(), SetupError> {
 /// Provides liquidity for a specific auction.
 pub fn fund_auction(
     test_ctx: &mut TestContext,
-    denom_a: impl AsRef<str>,
-    denom_b: impl AsRef<str>,
+    denom_a: &str,
+    denom_b: &str,
     amt_denom_a: u128,
 ) -> Result<(), SetupError> {
     let manager = fixtures::use_auctions_manager(test_ctx)?;
-
-    let denom_a_str = denom_a.as_ref();
 
     manager.execute(
         ACC_0_KEY,
         serde_json::json!({
             "auction_funds": {
-                "pair": [denom_a.as_ref(), denom_b.as_ref()],
+                "pair": [denom_a, denom_b],
             },
         })
         .to_string()
         .as_str(),
-        format!("--amount {amt_denom_a}{denom_a_str}").as_str(),
+        format!("--amount {amt_denom_a}{denom_a}").as_str(),
     )?;
 
     Ok(())
