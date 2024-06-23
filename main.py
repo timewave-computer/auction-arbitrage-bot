@@ -409,7 +409,10 @@ async def main() -> None:
 
         async def event_loop() -> None:
             while True:
-                await sched.poll()
+                try:
+                    await sched.poll()
+                except e:
+                    logger.error("Polling strategy failed: %s", e)
 
         def daemon() -> None:
             loop = asyncio.get_event_loop()
