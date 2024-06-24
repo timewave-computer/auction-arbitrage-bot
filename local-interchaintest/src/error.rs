@@ -1,6 +1,6 @@
 use localic_std::errors::LocalError;
 use reqwest::Error as ReqwestError;
-use std::io::Error as IoError;
+use std::{io::Error as IoError, str::};
 use thiserror::Error;
 
 /// Errors that may have occurred while deploying contracts.
@@ -18,6 +18,8 @@ pub enum SetupError {
     Serialization,
     #[error("failed to query container with cmd `{0}`")]
     ContainerCmd(String),
+    #[error("failed to parse int from JSON")]
+    ParseInt(#[from],
 }
 
 /// The top-level testing error.

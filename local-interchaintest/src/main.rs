@@ -24,6 +24,9 @@ fn main() {
     // Deploy all required neutron contracts
     setup::deploy_neutron_contracts(&mut test_ctx).expect("failed to deploy contracts");
 
+    // Create tokens for trading
+    setup::create_tokens(&mut test_ctx).expect("failed to create tokens");
+
     // Instantiate all astroport contracts
     setup::create_token_registry(&mut test_ctx)
         .expect("failed to create astroport native coin registry");
@@ -37,13 +40,13 @@ fn main() {
     // Setup all osmosis pools
     setup::create_osmo_pools(&mut test_ctx).expect("failed to create osmosis pools");
 
-    // Transfer 20000000000 uatom from gaia to neutron
-
     // Fund astroport pools
     setup::fund_pools(&mut test_ctx).expect("failed to fund astroport pools");
 
     // Fund auctions
     setup::fund_auctions(&mut test_ctx).expect("failed to fund auctions");
+
+    // Start all auctions
 
     // TODO: Fund osmo pools so we can do integration tests for them too
 }

@@ -1,10 +1,10 @@
 use super::{
-    error::SetupError, fixtures, ARTIFACTS_PATH, OSMOSIS_CHAIN, OSMOSIS_DOCKER_CONTAINER_ID,
-    OSMOSIS_POOLFILE_PATH, REMOTE_OSMOSIS_POOLFILE_PATH,
+    error::SetupError, fixtures, ARTIFACTS_PATH, NEUTRON_TOKENFACTORY_TOKENS, OSMOSIS_CHAIN,
+    OSMOSIS_DOCKER_CONTAINER_ID, OSMOSIS_POOLFILE_PATH, REMOTE_OSMOSIS_POOLFILE_PATH,
 };
 use local_ictest_e2e::{
     utils::{file_system, test_context::TestContext},
-    ACC_0_KEY, GAIA_CHAIN, NEUTRON_CHAIN, WASM_EXTENSION,
+    ACC_0_KEY, NEUTRON_CHAIN, WASM_EXTENSION,
 };
 use localic_std::modules::cosmwasm::CosmWasm;
 use std::{
@@ -46,6 +46,26 @@ pub fn deploy_neutron_contracts(test_ctx: &mut TestContext) -> Result<(), SetupE
 
             Ok(())
         })
+}
+
+/// Creates 4 token on Neutron via the token factory module.
+pub fn create_tokens(test_ctx: &mut TestContext) -> Result<(), SetupError> {
+    NEUTRON_TOKENFACTORY_TOKENS
+        .iter()
+        .map(|token| create_token(test_ctx, token))
+        .collect::<Result<_, _>>()
+}
+
+/// Creates a token on Neutron via the token factory module.
+pub fn create_token(test_ctx: &mut TestContext, subdenom: &str) -> Result<(), SetupError> {
+    let neutron = test_ctx.get_chain(NEUTRON_CHAIN);
+
+    let _ = neutron.rb.tx(
+        format!("tokenfactory create-denom {subdenom}").as_str(),
+        true,
+    )?;
+
+    Ok(())
 }
 
 /// Instantiates the auction manager.
@@ -130,16 +150,10 @@ pub fn create_auction(
 
 /// Instantiates all testing auctions.
 pub fn create_auctions(test_ctx: &mut TestContext) -> Result<(), SetupError> {
-    let atom_denom = test_ctx
-        .get_ibc_denoms()
-        .src(GAIA_CHAIN)
-        .dest(NEUTRON_CHAIN)
-        .get();
-
-    create_auction(test_ctx, "untrn", &atom_denom)?;
-    create_auction(test_ctx, &atom_denom, "untrn")?;
-
-    Ok(())
+    NEUTRON_TOKENFACTORY_TOKENS
+        .iter()
+        .map(|token| create_auction(test_ctx, "untrn", &token))
+        .collect::<Result<_, _>>()
 }
 
 /// Instantiates the token registry.
@@ -270,14 +284,10 @@ pub fn create_pool(
 /// Creates pools with random prices.
 /// Includes at least one pool that may be arbitraged.
 pub fn create_pools(test_ctx: &mut TestContext) -> Result<(), SetupError> {
-    let atom_denom = test_ctx
-        .get_ibc_denoms()
-        .src(GAIA_CHAIN)
-        .dest(NEUTRON_CHAIN)
-        .get();
-    create_pool(test_ctx, "untrn", atom_denom.as_str())?;
-
-    Ok(())
+    NEUTRON_TOKENFACTORY_TOKENS
+        .iter()
+        .map(|token| create_pool(test_ctx, "untrn", &token))
+        .collect::<Result<_, _>>()
 }
 
 /// Creates an osmosis pool with the given denoms.
@@ -348,14 +358,18 @@ pub fn create_osmo_pools(test_ctx: &mut TestContext) -> Result<(), SetupError> {
 
 /// Funds all pools
 pub fn fund_pools(test_ctx: &mut TestContext) -> Result<(), SetupError> {
-    let atom_denom = test_ctx
-        .get_ibc_denoms()
-        .src(GAIA_CHAIN)
-        .dest(NEUTRON_CHAIN)
-        .get();
-    fund_pool(test_ctx, "untrn", atom_denom.as_str(), 10000, 500)?;
-
-    Ok(())
+    NEUTRON_TOKENFACTORY_TOKENS
+        .iter()
+        .map(|token| {
+            fund_pool(
+                test_ctx,
+                "untrn",
+                &token,
+                (rand::random::<f64>() * 10000.0) as u128,
+                (rand::random::<f64>() * 10000.0) as u128,
+            )
+        })
+        .collect::<Result<_, _>>()
 }
 
 /// Provides liquidity for a specific pool.
@@ -442,16 +456,17 @@ pub fn fund_pool(
 
 /// Funds all auctions.
 pub fn fund_auctions(test_ctx: &mut TestContext) -> Result<(), SetupError> {
-    let atom_denom = test_ctx
-        .get_ibc_denoms()
-        .src(GAIA_CHAIN)
-        .dest(NEUTRON_CHAIN)
-        .get();
-
-    fund_auction(test_ctx, "untrn", &atom_denom, 1000)?;
-    fund_auction(test_ctx, &atom_denom, "untrn", 500)?;
-
-    Ok(())
+    NEUTRON_TOKENFACTORY_TOKENS
+        .iter()
+        .map(|token| {
+            fund_auction(
+                test_ctx,
+                "untrn",
+                &token,
+                (rand::random::<f64>() * 10000.0) as u128,
+            )
+        })
+        .collect::<Result<_, _>>()
 }
 
 /// Provides liquidity for a specific auction.
@@ -473,6 +488,49 @@ pub fn fund_auction(
         .to_string()
         .as_str(),
         format!("--amount {amt_denom_a}{denom_a}").as_str(),
+    )?;
+
+    Ok(())
+}
+
+pub fn start_auction(
+    test_ctx: &mut TestContext,
+    denom_a: &str,
+    denom_b: &str,
+) -> Result<(), SetupError> {
+    let manager = fixtures::use_auctions_manager(test_ctx)?;
+    let neutron = test_ctx.get_chain(NEUTRON_CHAIN);
+
+    let maybe_start_block = neutron
+        .rb
+        .query("block", true)
+        .get("block")
+        .and_then(|block| block.get("height"))
+        .ok_or(SetupError::ContainerCmd(String::from("query block")))?;
+    let start_block = maybe_start_block
+        .as_str()
+        .ok_or(SetupError::ContainerCmd(String::from("query block")))?
+        .parse::<u128>()?;
+
+    manager.execute(
+        ACC_0_KEY,
+        serde_json::json!({
+            "server": {
+                "open_auction": {
+            "pair": [
+            denom_a,
+            denom_b
+            ],
+            "params": {
+            "end_block": start_block + 1000,
+            "start_block": start_block + 10,
+            }
+        }
+            },
+        })
+        .to_string()
+        .as_str(),
+        "",
     )?;
 
     Ok(())

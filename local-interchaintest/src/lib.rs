@@ -33,3 +33,7 @@ pub const REMOTE_OSMOSIS_POOLFILE_PATH: &str = "/var/cosmos-chain/localosmosis-1
 
 /// Container id of the local osmosis node
 pub const OSMOSIS_DOCKER_CONTAINER_ID: &str = "localosmosis-1-val-0-neutron_osmosis_gaiaic";
+
+/// Subdenoms of tokenfactory tokens created for testing
+pub const NEUTRON_TOKENFACTORY_TOKENS: [&str; 4] =
+    ["bruhtoken", "amogustoken", "skibidicoin", "gyattoken"];
