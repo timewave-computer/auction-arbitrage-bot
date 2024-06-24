@@ -2,9 +2,10 @@
 Defines common utilities shared across arbitrage strategies.
 """
 
+from decimal import Decimal
+from collections import deque
 import operator
 from functools import reduce
-from decimal import Decimal
 import logging
 import time
 from typing import Optional, Any
@@ -35,6 +36,13 @@ from cosmpy.aerial.tx_helpers import SubmittedTx
 from ibc.applications.transfer.v1 import tx_pb2
 
 logger = logging.getLogger(__name__)
+
+
+"""
+The amount of the summed gas limit that will be consumed if messages
+are batched together.
+"""
+GAS_DISCOUNT_BATCHED = Decimal("0.5")
 
 
 IBC_TRANSFER_GAS = 1000
@@ -113,11 +121,15 @@ async def exec_arb(
     ctx.log_route(
         route_ent,
         "info",
-        ("Queueing candidpate arbitrage opportunity with " "route with %d hop(s): %s"),
+        "Queueing candidpate arbitrage opportunity with route with %d hop(s): %s",
         [len(route), fmt_route(route)],
     )
 
-    for leg, to_swap in zip(route, quantities):
+    to_execute: deque[tuple[Leg, int]] = deque(zip(route, quantities))
+
+    while len(to_execute) > 0:
+        leg, to_swap = to_execute.popleft()
+
         balance_resp = try_multiple_clients(
             ctx.clients[leg.backend.chain_id.split("-")[0]],
             lambda client: client.query_bank_balance(
@@ -127,19 +139,40 @@ async def exec_arb(
         )
 
         if not balance_resp:
-            raise ValueError("Couldn't get balance.")
+            continue
 
         to_swap = min(to_swap, balance_resp)
+
+        # Gather all sequential legs on the same chain
+        sublegs = [(leg, to_swap)]
+
+        while len(to_execute) > 0:
+            subleg, s_to_swap = to_execute.popleft()
+
+            if subleg.backend.chain_id != leg.backend.chain_id:
+                to_execute.appendleft((subleg, s_to_swap))
+
+                break
+
+            sublegs.append((subleg, s_to_swap))
+
+        # Log legs on the same chain
+        if len(sublegs) > 1:
+            ctx.log_route(
+                route_ent,
+                "info",
+                "%d legs are atomic and will be executed in one tx: %s",
+                [len(sublegs), fmt_route([leg for (leg, to_swap) in sublegs])],
+            )
+
+        if not balance_resp:
+            raise ValueError("Couldn't get balance.")
 
         ctx.log_route(
             route_ent,
             "info",
-            "Queueing arb leg on %s with %s -> %s",
-            [
-                fmt_route_leg(leg),
-                leg.in_asset(),
-                leg.out_asset(),
-            ],
+            "Queueing arb legs: [%s]",
+            [fmt_route([leg for leg, _ in sublegs])],
         )
 
         tx: Optional[SubmittedTx] = None
@@ -147,14 +180,18 @@ async def exec_arb(
         ctx.log_route(
             route_ent,
             "info",
-            "Executing arb leg on %s with %d %s -> %s",
+            "Executing arb legs: [%s]",
             [
-                fmt_route_leg(leg),
-                to_swap,
-                leg.in_asset(),
-                leg.out_asset(),
+                ", ".join(
+                    (
+                        f"{fmt_route_leg(leg)} with {to_swap} {leg.in_asset()}"
+                        for (leg, to_swap) in sublegs
+                    )
+                )
             ],
         )
+
+        leg, to_swap = sublegs[0]
 
         # The funds are not already on the current chain, so they need to be moved
         if prev_leg and prev_leg.backend.chain_id != leg.backend.chain_id:
@@ -208,7 +245,7 @@ async def exec_arb(
             ctx.log_route(
                 route_ent,
                 "info",
-                "Arb leg can be executed atomically; no transfer necessary",
+                "Arb leg(s) can be executed atomically; no transfer necessary",
                 [],
             )
 
@@ -221,6 +258,88 @@ async def exec_arb(
             )
 
             return
+
+        # If there are multiple legs, build them as one large
+        # transaction
+        if len(sublegs) > 1:
+            msgs = (
+                (
+                    leg.backend.swap_msg_asset_b(ctx.wallet, to_swap, 0)
+                    if leg.in_asset == leg.backend.asset_b
+                    and not isinstance(leg.backend, AuctionProvider)
+                    else leg.backend.swap_msg_asset_a(ctx.wallet, to_swap, 0)
+                )
+                for leg, to_swap in sublegs
+            )
+
+            acc = try_multiple_clients_fatal(
+                ctx.clients[leg.backend.chain_id.split("-")[0]],
+                lambda client: client.query_account(
+                    str(
+                        Address(
+                            ctx.wallet.public_key(),
+                            prefix=leg.backend.chain_prefix,
+                        )
+                    )
+                ),
+            )
+
+            tx = Transaction()
+
+            for msg in msgs:
+                tx.add_message(msg)
+
+            gas_limit = (
+                sum((leg.backend.swap_gas_limit for leg, _ in sublegs))
+                * GAS_DISCOUNT_BATCHED
+            )
+            gas = gas_limit * sum((leg.backend.chain_gas_price for leg, _ in sublegs))
+
+            tx.seal(
+                SigningCfg.direct(ctx.wallet.public_key(), acc.sequence),
+                gas_limit,
+                gas,
+            )
+            tx.sign(ctx.wallet.signer(), leg.backend.chain_id, acc.number)
+            tx.complete()
+
+            ctx.log_route(
+                route_ent,
+                "info",
+                "Submitting arb",
+                [],
+            )
+
+            tx = leg.backend.submit_swap_tx(tx).wait_to_complete()
+
+            # Notify the user of the arb trade
+            ctx.log_route(
+                route_ent,
+                "info",
+                "Executed legs %s: %s",
+                [
+                    ", ".join(
+                        (
+                            f"{fmt_route_leg(leg)} with {to_swap} {leg.in_asset()}"
+                            for (leg, to_swap) in sublegs
+                        )
+                    ),
+                    tx.tx_hash,
+                ],
+            )
+
+            for leg, _ in sublegs:
+                next(
+                    (
+                        leg_repr
+                        for leg_repr in route_ent.route
+                        if str(leg_repr) == str(leg)
+                    )
+                ).executed = True
+
+                prev_leg = leg
+
+            continue
 
         # If the arb leg is on astroport, simply execute the swap
         # on asset A, producing asset B

@@ -2,8 +2,9 @@
 Implements a pool provider for osmosis.
 """
 
+from decimal import Decimal
 from functools import cached_property
-from typing import Any, Optional, List
+from typing import Any, Optional, List, cast
 import urllib3
 from cosmpy.aerial.wallet import LocalWallet
 from cosmpy.aerial.tx import Transaction, SigningCfg
@@ -18,6 +19,7 @@ from src.util import (
     try_multiple_clients_fatal,
 )
 import aiohttp
+from google.protobuf.message import Message
 
 
 class OsmosisPoolProvider(PoolProvider):
@@ -44,7 +46,7 @@ class OsmosisPoolProvider(PoolProvider):
         self.chain_prefix = "osmo"
         self.chain_fee_denom = "uosmo"
         self.kind = "osmosis"
-
+        self.chain_gas_price = Decimal("0.03")
         self.endpoints = endpoints["http"]
         self.grpc_endpoints = endpoints["grpc"]
         self.address = address
@@ -52,7 +54,6 @@ class OsmosisPoolProvider(PoolProvider):
         self.asset_b_denom = asset_b
         self.pool_id = pool_id
         self.session = session
-        self.swap_fee = 500000
 
     @cached_property
     def ledgers(self) -> List[LedgerClient]:
@@ -107,9 +108,6 @@ class OsmosisPoolProvider(PoolProvider):
         assets: tuple[str, str],
         amount_min_amount: tuple[int, int],
     ) -> SubmittedTx:
-        asset_a, asset_b = assets
-        amount, min_token_out_amount = amount_min_amount
-
         acc = try_multiple_clients_fatal(
             self.ledgers,
             lambda client: client.query_account(
@@ -119,20 +117,7 @@ class OsmosisPoolProvider(PoolProvider):
 
         # Perform the swap using the Osmosis pool manager
         tx = Transaction()
-        tx.add_message(
-            tx_pb2.MsgSwapExactAmountIn(  # pylint: disable=maybe-no-member
-                sender=str(Address(wallet.public_key(), prefix="osmo")),
-                routes=[
-                    swap_route_pb2.SwapAmountInRoute(  # pylint: disable=maybe-no-member
-                        pool_id=self.pool_id, token_out_denom=asset_b
-                    )
-                ],
-                token_in=coin_pb2.Coin(  # pylint: disable=maybe-no-member
-                    denom=asset_a, amount=str(amount)
-                ),
-                token_out_min_amount=str(min_token_out_amount),
-            )
-        )
+        tx.add_message(self.__swap_msg(wallet, assets, amount_min_amount))
 
         gas_limit = 3000000
         gas = try_multiple_clients_fatal(
@@ -148,6 +133,31 @@ class OsmosisPoolProvider(PoolProvider):
             self.ledgers,
             lambda client: client.broadcast_tx(tx),
         )
+
+    def __swap_msg(
+        self,
+        wallet: LocalWallet,
+        assets: tuple[str, str],
+        amount_min_amount: tuple[int, int],
+    ) -> Message:
+        asset_a, asset_b = assets
+        amount, min_token_out_amount = amount_min_amount
+
+        # Perform the swap using the Osmosis pool manager
+        msg = tx_pb2.MsgSwapExactAmountIn(  # pylint: disable=maybe-no-member
+            sender=str(Address(wallet.public_key(), prefix="osmo")),
+            routes=[
+                swap_route_pb2.SwapAmountInRoute(  # pylint: disable=maybe-no-member
+                    pool_id=self.pool_id, token_out_denom=asset_b
+                )
+            ],
+            token_in=coin_pb2.Coin(  # pylint: disable=maybe-no-member
+                denom=asset_a, amount=str(amount)
+            ),
+            token_out_min_amount=str(min_token_out_amount),
+        )
+
+        return cast(Message, msg)
 
     async def __balance(self, asset: str) -> int:
         res = await try_multiple_rest_endpoints(
@@ -215,6 +225,36 @@ class OsmosisPoolProvider(PoolProvider):
             wallet,
             (self.asset_b_denom, self.asset_a_denom),
             (amount, min_amount),
+        )
+
+    def swap_msg_asset_a(
+        self,
+        wallet: LocalWallet,
+        amount: int,
+        min_amount: int,
+    ) -> Message:  # pylint: disable=duplicate-code
+        return self.__swap_msg(
+            wallet,
+            (self.asset_a_denom, self.asset_b_denom),
+            (amount, min_amount),
+        )
+
+    def swap_msg_asset_b(
+        self,
+        wallet: LocalWallet,
+        amount: int,
+        min_amount: int,
+    ) -> Message:
+        return self.__swap_msg(
+            wallet,
+            (self.asset_b_denom, self.asset_a_denom),
+            (amount, min_amount),
+        )
+
+    def submit_swap_tx(self, tx: Transaction) -> SubmittedTx:
+        return try_multiple_clients_fatal(
+            self.ledgers,
+            lambda client: client.broadcast_tx(tx),
         )
 
     def asset_a(self) -> str:

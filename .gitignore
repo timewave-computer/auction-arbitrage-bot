@@ -169,3 +169,7 @@ build/gen/osmosis
 
 # Arb bot configs
 net_config.json
+
+# Nix-specific path configs
+.envrc
+.direnv/
