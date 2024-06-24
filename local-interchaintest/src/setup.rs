@@ -70,7 +70,7 @@ pub fn create_token(test_ctx: &mut TestContext, subdenom: &str) -> Result<(), Se
 
 /// Instantiates the auction manager.
 pub fn create_auction_manager(test_ctx: &mut TestContext) -> Result<(), SetupError> {
-    let mut contract_a: CosmWasm = fixtures::use_contract(test_ctx, "auction_manager")?;
+    let mut contract_a: CosmWasm = fixtures::use_contract(test_ctx, "auctions_manager")?;
 
     let neutron = test_ctx.get_chain(NEUTRON_CHAIN);
 
@@ -92,7 +92,7 @@ pub fn create_auction_manager(test_ctx: &mut TestContext) -> Result<(), SetupErr
         })
         .to_string()
         .as_str(),
-        "auction_manager",
+        "auctions_manager",
         None,
         "",
     )?;

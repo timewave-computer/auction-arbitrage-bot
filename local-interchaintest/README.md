@@ -31,5 +31,9 @@ local-ic start neutron_osmosis --api-port 42069
 ### Run tests
 
 ```bash
-cargo run
+# If running docker in root mode
+make sudo-test
+
+# If running docker in rootless mode
+make test
 ```
