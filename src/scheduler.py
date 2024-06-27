@@ -12,7 +12,6 @@ from cosmpy.aerial.wallet import LocalWallet
 from src.contracts.auction import AuctionDirectory, AuctionProvider
 from src.contracts.route import Route, load_route, LegRepr, Status, Leg
 from src.contracts.pool.provider import PoolProvider
-from src.util import deployments
 import aiohttp
 import grpc
 

@@ -7,7 +7,8 @@ from src.contracts.pool.astroport import (
     NeutronAstroportPoolProvider,
 )
 from src.contracts.pool.osmosis import OsmosisPoolDirectory, OsmosisPoolProvider
-from src.util import deployments, DISCOVERY_CONCURRENCY_FACTOR
+from src.util import DISCOVERY_CONCURRENCY_FACTOR
+from tests.util import deployments
 import pytest
 import aiohttp
 import grpc

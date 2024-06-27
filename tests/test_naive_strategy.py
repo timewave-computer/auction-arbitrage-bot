@@ -7,7 +7,8 @@ from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.route import Leg
 from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
 from src.contracts.auction import AuctionDirectory
-from src.util import deployments, DISCOVERY_CONCURRENCY_FACTOR
+from src.util import DISCOVERY_CONCURRENCY_FACTOR
+from tests.util import deployments
 import pytest
 import aiohttp
 import grpc
