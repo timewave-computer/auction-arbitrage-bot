@@ -192,7 +192,7 @@ class Scheduler(Generic[TState]):
         self.providers: dict[str, dict[str, List[PoolProvider]]] = {}
 
         self.auction_manager = AuctionDirectory(
-            deployments(),
+            self.ctx.deployments,
             ctx.http_session,
             [
                 (
