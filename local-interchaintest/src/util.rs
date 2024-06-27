@@ -43,3 +43,12 @@ pub(crate) fn create_deployment_file(
 
     Ok(())
 }
+
+pub(crate) fn create_arbs_file() -> Result<(), Box<dyn Error>> {
+    let _ = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .open("../arbs.json")?;
+
+    Ok(())
+}

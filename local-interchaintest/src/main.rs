@@ -90,6 +90,7 @@ fn main() -> Result<(), Box<dyn StdError>> {
             .expect("missing deployed astroport factory")
             .as_str(),
     )?;
+    util::create_arbs_file()?;
 
     Command::new("python")
         .current_dir("..")
