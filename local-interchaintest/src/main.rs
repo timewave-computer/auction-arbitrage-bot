@@ -1,184 +1,78 @@
-use local_ictest_e2e::{
-    utils::{
-        file_system, ibc,
-        test_context::{
-            find_pairwise_ccv_channel_ids, find_pairwise_transfer_channel_ids, TestContext,
-        },
-        types::ChainsVec,
-    },
-    GAIA_CHAIN, NEUTRON_CHAIN,
-};
-use local_interchaintest::{error::Error, setup, util, API_URL, CHAIN_CONFIG_PATH, OSMOSIS_CHAIN};
-use localic_std::polling;
-use reqwest::blocking::Client;
-use std::collections::HashMap;
+use localic_utils::{types::contract::MinAmount, ConfigChainBuilder, TestContextBuilder};
+use std::{error::Error as StdError, process::Command};
 
-fn main() {
-    let client = Client::new();
-    polling::poll_for_start(&client, API_URL, 300).expect("failed to poll client");
+/// Tokens that arbitrage is tested against
+const TEST_TOKENS: [&str; 4] = ["bruhtoken", "amoguscoin", "susdao", "skibidicoin"];
 
-    let configured_chains =
-        file_system::read_json_file(CHAIN_CONFIG_PATH).expect("failed to read chain config file");
-    let mut test_ctx = setup_context(configured_chains).expect("failed to construct test context");
+/// The address that should principally own all contracts
+const OWNER_ADDR: &str = "neutron1kuf2kxwuv2p8k3gnpja7mzf05zvep0cyuy7mxg";
 
-    // Deploy all required neutron contracts
-    setup::deploy_neutron_contracts(&mut test_ctx).expect("failed to deploy contracts");
+fn main() -> Result<(), Box<dyn StdError>> {
+    let mut ctx = TestContextBuilder::default()
+        .with_artifacts_dir("contracts")
+        .with_chain(ConfigChainBuilder::default_neutron().build()?)
+        .build()?;
 
-    // Create tokens for trading
-    setup::create_tokens(&mut test_ctx).expect("failed to create tokens");
+    ctx.build_tx_upload_contracts().send()?;
 
-    // Instantiate all astroport contracts
-    setup::create_token_registry(&mut test_ctx)
-        .expect("failed to create astroport native coin registry");
-    setup::create_factory(&mut test_ctx).expect("failed to create astroport factory");
-    setup::create_pools(&mut test_ctx).expect("failed to create astroport pools");
+    // Create tokens w tokenfactory for all test tokens
+    for token in TEST_TOKENS.into_iter() {
+        ctx.build_tx_create_tokenfactory_token()
+            .with_subdenom(token)
+            .send()?;
+    }
 
-    // Instantiate all valence contracts
-    setup::create_auction_manager(&mut test_ctx).expect("failed to create valence auction manager");
-    setup::create_auctions(&mut test_ctx).expect("failed to create valence auctions");
+    // Setup astroport
+    ctx.build_tx_create_token_registry()
+        .with_owner(OWNER_ADDR)
+        .send()?;
+    ctx.build_tx_create_factory()
+        .with_owner(OWNER_ADDR)
+        .send()?;
 
-    // Setup all osmosis pools
-    setup::create_osmo_pools(&mut test_ctx).expect("failed to create osmosis pools");
+    // Create pools for each token against ntrn
+    for token in TEST_TOKENS.into_iter() {
+        ctx.build_tx_create_pool()
+            .with_denom_a("untrn")
+            .with_denom_b(token)
+            .send()?;
+        ctx.build_tx_fund_pool()
+            .with_denom_a("untrn")
+            .with_denom_b(token)
+            .with_amount_denom_a((rand::random::<f64>() * 1000.0) as u128)
+            .with_amount_denom_b((rand::random::<f64>() * 1000.0) as u128)
+            .with_liq_token_receiver(OWNER_ADDR)
+            .send()?;
+    }
 
-    // Fund astroport pools
-    setup::fund_pools(&mut test_ctx).expect("failed to fund astroport pools");
+    // Create a valence auction manager and an auction for each token
+    ctx.build_tx_create_auctions_manager()
+        .with_min_auction_amount(&[(
+            &String::from("untrn"),
+            MinAmount {
+                send: "0".into(),
+                start_auction: "0".into(),
+            },
+        )])
+        .send()?;
+    for token in TEST_TOKENS.into_iter() {
+        ctx.build_tx_create_auction()
+            .with_offer_asset("untrn")
+            .with_ask_asset(token)
+            .with_amount_offer_asset((rand::random::<f64>() * 1000.0) as u128)
+            .send()?;
+        ctx.build_tx_fund_auction()
+            .with_offer_asset("untrn")
+            .with_ask_asset(token)
+            .with_amount_offer_asset((rand::random::<f64>() * 1000.0) as u128)
+            .send()?;
+        ctx.build_tx_start_auction()
+            .with_offer_asset("untrn")
+            .with_ask_asset(token)
+            .send()?;
+    }
 
-    // Fund auctions
-    setup::fund_auctions(&mut test_ctx).expect("failed to fund auctions");
+    // Test that the arb bot can find an arbitrage opportunity
 
-    // Start all auctions
-
-    // TODO: Fund osmo pools so we can do integration tests for them too
-}
-
-fn setup_context(configured_chains: ChainsVec) -> Result<TestContext, Error> {
-    let mut chains = HashMap::new();
-
-    configured_chains
-        .chains
-        .into_iter()
-        .map(util::local_chain_from_config_chain)
-        .try_for_each(|maybe_local_chain| {
-            let local_chain = maybe_local_chain?;
-
-            chains.insert(
-                util::chain_name_from_chain_id(&local_chain.rb.chain_id)?.to_owned(),
-                local_chain,
-            );
-
-            Ok::<(), Error>(())
-        })?;
-
-    let ntrn_channels = chains
-        .get(NEUTRON_CHAIN)
-        .ok_or(Error::UnrecognizedChain(NEUTRON_CHAIN.to_owned()))?
-        .channels
-        .clone();
-    let gaia_channels = chains
-        .get(GAIA_CHAIN)
-        .ok_or(Error::UnrecognizedChain(GAIA_CHAIN.to_owned()))?
-        .channels
-        .clone();
-    let osmo_channels = chains
-        .get(OSMOSIS_CHAIN)
-        .ok_or(Error::UnrecognizedChain(OSMOSIS_CHAIN.to_owned()))?
-        .channels
-        .clone();
-
-    let mut connection_ids = HashMap::new();
-
-    let (ntrn_to_gaia_consumer_channel, gaia_to_ntrn_provider_channel) =
-        find_pairwise_ccv_channel_ids(&gaia_channels, &ntrn_channels)
-            .map_err(|_| Error::ChannelLookup)?;
-
-    connection_ids.insert(
-        (NEUTRON_CHAIN.to_owned(), GAIA_CHAIN.to_owned()),
-        ntrn_to_gaia_consumer_channel.connection_id,
-    );
-    connection_ids.insert(
-        (GAIA_CHAIN.to_owned(), NEUTRON_CHAIN.to_owned()),
-        gaia_to_ntrn_provider_channel.connection_id,
-    );
-
-    let (ntrn_to_osmosis_transfer_channel, osmosis_to_ntrn_transfer_channel) =
-        find_pairwise_transfer_channel_ids(&ntrn_channels, &osmo_channels)
-            .map_err(|_| Error::ChannelLookup)?;
-
-    let (ntrn_to_gaia_transfer_channel, gaia_to_ntrn_transfer_channel) =
-        find_pairwise_transfer_channel_ids(&ntrn_channels, &gaia_channels)
-            .map_err(|_| Error::ChannelLookup)?;
-
-    connection_ids.insert(
-        (NEUTRON_CHAIN.to_owned(), OSMOSIS_CHAIN.to_owned()),
-        ntrn_to_osmosis_transfer_channel.connection_id,
-    );
-    connection_ids.insert(
-        (OSMOSIS_CHAIN.to_owned(), NEUTRON_CHAIN.to_owned()),
-        osmosis_to_ntrn_transfer_channel.connection_id,
-    );
-
-    connection_ids.insert(
-        (NEUTRON_CHAIN.to_owned(), GAIA_CHAIN.to_owned()),
-        ntrn_to_gaia_transfer_channel.connection_id,
-    );
-    connection_ids.insert(
-        (GAIA_CHAIN.to_owned(), NEUTRON_CHAIN.to_owned()),
-        gaia_to_ntrn_transfer_channel.connection_id,
-    );
-
-    let mut transfer_channel_ids = HashMap::new();
-    transfer_channel_ids.insert(
-        (NEUTRON_CHAIN.to_owned(), OSMOSIS_CHAIN.to_owned()),
-        ntrn_to_osmosis_transfer_channel.channel_id.to_owned(),
-    );
-    transfer_channel_ids.insert(
-        (OSMOSIS_CHAIN.to_owned(), NEUTRON_CHAIN.to_owned()),
-        osmosis_to_ntrn_transfer_channel.channel_id.to_owned(),
-    );
-
-    transfer_channel_ids.insert(
-        (NEUTRON_CHAIN.to_owned(), GAIA_CHAIN.to_owned()),
-        ntrn_to_gaia_transfer_channel.channel_id.to_owned(),
-    );
-    transfer_channel_ids.insert(
-        (GAIA_CHAIN.to_owned(), NEUTRON_CHAIN.to_owned()),
-        gaia_to_ntrn_transfer_channel.channel_id.to_owned(),
-    );
-
-    let mut ccv_channel_ids = HashMap::new();
-    ccv_channel_ids.insert(
-        (GAIA_CHAIN.to_owned(), NEUTRON_CHAIN.to_owned()),
-        gaia_to_ntrn_provider_channel.channel_id,
-    );
-    ccv_channel_ids.insert(
-        (NEUTRON_CHAIN.to_owned(), GAIA_CHAIN.to_owned()),
-        ntrn_to_gaia_consumer_channel.channel_id,
-    );
-
-    let mut ibc_denoms = HashMap::new();
-
-    ibc_denoms.insert(
-        (NEUTRON_CHAIN.to_owned(), OSMOSIS_CHAIN.to_owned()),
-        ibc::get_ibc_denom("untrn", &ntrn_to_osmosis_transfer_channel.channel_id),
-    );
-    ibc_denoms.insert(
-        (OSMOSIS_CHAIN.to_owned(), NEUTRON_CHAIN.to_owned()),
-        ibc::get_ibc_denom("uosmo", &osmosis_to_ntrn_transfer_channel.channel_id),
-    );
-    ibc_denoms.insert(
-        (NEUTRON_CHAIN.to_owned(), GAIA_CHAIN.to_owned()),
-        ibc::get_ibc_denom("untrn", &ntrn_to_osmosis_transfer_channel.channel_id),
-    );
-    ibc_denoms.insert(
-        (GAIA_CHAIN.to_owned(), NEUTRON_CHAIN.to_owned()),
-        ibc::get_ibc_denom("uatom", &gaia_to_ntrn_transfer_channel.channel_id),
-    );
-
-    Ok(TestContext::new(
-        chains,
-        transfer_channel_ids,
-        ccv_channel_ids,
-        connection_ids,
-        ibc_denoms,
-    ))
+    Ok(())
 }
