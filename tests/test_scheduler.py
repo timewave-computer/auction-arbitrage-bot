@@ -3,12 +3,12 @@ Tests that the scheduler works as expected.
 """
 
 from dataclasses import dataclass
-from typing import List
+import json
+from typing import List, cast, Any
 from cosmpy.aerial.client import LedgerClient, NetworkConfig
 from cosmpy.aerial.wallet import LocalWallet
 from src.scheduler import Scheduler, Ctx
 from src.util import (
-    deployments,
     NEUTRON_NETWORK_CONFIG,
     DISCOVERY_CONCURRENCY_FACTOR,
     custom_neutron_network_config,
@@ -17,6 +17,7 @@ from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
 from src.contracts.pool.provider import PoolProvider
 from src.contracts.auction import AuctionProvider
+from tests.util import deployments
 import aiohttp
 import pytest
 import grpc
