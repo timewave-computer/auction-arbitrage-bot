@@ -62,53 +62,55 @@ def ctx(session: aiohttp.ClientSession) -> Ctx[State]:
         },
     }
 
-    return Ctx(
-        {
-            "neutron": [
-                LedgerClient(NEUTRON_NETWORK_CONFIG),
-                *[
-                    LedgerClient(custom_neutron_network_config(endpoint))
-                    for endpoint in endpoints["neutron"]["grpc"]
+    with open("contracts/deployments.json", encoding="utf-8") as f:
+        return Ctx(
+            {
+                "neutron": [
+                    LedgerClient(NEUTRON_NETWORK_CONFIG),
+                    *[
+                        LedgerClient(custom_neutron_network_config(endpoint))
+                        for endpoint in endpoints["neutron"]["grpc"]
+                    ],
                 ],
-            ],
-            "osmosis": [
-                *[
-                    LedgerClient(
-                        NetworkConfig(
-                            chain_id="osmosis-1",
-                            url=endpoint,
-                            fee_minimum_gas_price=0.0053,
-                            fee_denomination="uosmo",
-                            staking_denomination="uosmo",
+                "osmosis": [
+                    *[
+                        LedgerClient(
+                            NetworkConfig(
+                                chain_id="osmosis-1",
+                                url=endpoint,
+                                fee_minimum_gas_price=0.0053,
+                                fee_denomination="uosmo",
+                                staking_denomination="uosmo",
+                            )
                         )
-                    )
-                    for endpoint in endpoints["osmosis"]["grpc"]
+                        for endpoint in endpoints["osmosis"]["grpc"]
+                    ],
                 ],
-            ],
-        },
-        endpoints,
-        LocalWallet.from_mnemonic(TEST_WALLET_MNEMONIC, prefix="neutron"),
-        {
-            "pool_file": None,
-            "poll_interval": 120,
-            "discovery_interval": 600,
-            "hops": 3,
-            "pools": 100,
-            "require_leg_types": set(),
-            "base_denom": "",
-            "profit_margin": 100,
-            "wallet_mnemonic": "",
-            "cmd": "",
-            "net_config": "",
-            "log_file": "",
-            "history_file": "",
-            "skip_api_key": None,
-        },
-        None,
-        False,
-        session,
-        [],
-    ).with_state(State(1000))
+            },
+            endpoints,
+            LocalWallet.from_mnemonic(TEST_WALLET_MNEMONIC, prefix="neutron"),
+            {
+                "pool_file": None,
+                "poll_interval": 120,
+                "discovery_interval": 600,
+                "hops": 3,
+                "pools": 100,
+                "require_leg_types": set(),
+                "base_denom": "",
+                "profit_margin": 100,
+                "wallet_mnemonic": "",
+                "cmd": "",
+                "net_config": "",
+                "log_file": "",
+                "history_file": "",
+                "skip_api_key": None,
+            },
+            None,
+            False,
+            session,
+            [],
+            cast(dict[str, Any], json.load(f)),
+        ).with_state(State(1000))
 
 
 @pytest.mark.asyncio

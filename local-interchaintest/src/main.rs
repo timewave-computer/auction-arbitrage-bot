@@ -1,5 +1,8 @@
 use localic_utils::{types::contract::MinAmount, ConfigChainBuilder, TestContextBuilder};
-use std::{error::Error as StdError, process::Command};
+use notify::{Event, RecursiveMode, Result as NotifyResult, Watcher};
+use std::{error::Error as StdError, path::Path, process::Command};
+
+mod util;
 
 /// Tokens that arbitrage is tested against
 const TEST_TOKENS: [&str; 4] = ["bruhtoken", "amoguscoin", "susdao", "skibidicoin"];
@@ -22,6 +25,10 @@ fn main() -> Result<(), Box<dyn StdError>> {
             .send()?;
     }
 
+    let token_denoms = TEST_TOKENS
+        .into_iter()
+        .map(|token| format!("factory/{OWNER_ADDR}/{token}"));
+
     // Setup astroport
     ctx.build_tx_create_token_registry()
         .with_owner(OWNER_ADDR)
@@ -31,14 +38,14 @@ fn main() -> Result<(), Box<dyn StdError>> {
         .send()?;
 
     // Create pools for each token against ntrn
-    for token in TEST_TOKENS.into_iter() {
+    for token in token_denoms.clone() {
         ctx.build_tx_create_pool()
             .with_denom_a("untrn")
-            .with_denom_b(token)
+            .with_denom_b(&token)
             .send()?;
         ctx.build_tx_fund_pool()
             .with_denom_a("untrn")
-            .with_denom_b(token)
+            .with_denom_b(&token)
             .with_amount_denom_a((rand::random::<f64>() * 1000.0) as u128)
             .with_amount_denom_b((rand::random::<f64>() * 1000.0) as u128)
             .with_liq_token_receiver(OWNER_ADDR)
@@ -55,24 +62,52 @@ fn main() -> Result<(), Box<dyn StdError>> {
             },
         )])
         .send()?;
-    for token in TEST_TOKENS.into_iter() {
+    for token in token_denoms {
         ctx.build_tx_create_auction()
             .with_offer_asset("untrn")
-            .with_ask_asset(token)
+            .with_ask_asset(&token)
             .with_amount_offer_asset((rand::random::<f64>() * 1000.0) as u128)
             .send()?;
         ctx.build_tx_fund_auction()
             .with_offer_asset("untrn")
-            .with_ask_asset(token)
+            .with_ask_asset(&token)
             .with_amount_offer_asset((rand::random::<f64>() * 1000.0) as u128)
             .send()?;
         ctx.build_tx_start_auction()
             .with_offer_asset("untrn")
-            .with_ask_asset(token)
+            .with_ask_asset(&token)
             .send()?;
     }
 
-    // Test that the arb bot can find an arbitrage opportunity
+    util::create_deployment_file(
+        ctx.get_astroport_factory()?
+            .remove(0)
+            .contract_addr
+            .expect("missing deployed astroport factory")
+            .as_str(),
+        ctx.get_auctions_manager()?
+            .contract_addr
+            .expect("missing deployed astroport factory")
+            .as_str(),
+    )?;
+
+    Command::new("python")
+        .current_dir("..")
+        .arg("main.py")
+        .arg("--deployments_file")
+        .arg("/tmp/deployments_file.json")
+        .env(
+            "WALLET_MNEMONIC",
+            "dutch suspect purchase critic kind candy clarify polar degree kitchen trend impulse",
+        )
+        .spawn()?;
+
+    // Wait until the arbs.json file has been produced
+    let mut watcher = notify::recommended_watcher(|res: NotifyResult<Event>| {
+        res.expect("failed to watch arbs.json");
+    })?;
+
+    watcher.watch(Path::new("../arbs.json"), RecursiveMode::NonRecursive)?;
 
     Ok(())
 }

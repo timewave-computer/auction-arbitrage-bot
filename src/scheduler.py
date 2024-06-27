@@ -37,6 +37,7 @@ class Ctx(Generic[TState]):
     terminated: bool
     http_session: aiohttp.ClientSession
     order_history: list[Route]
+    deployments: dict[str, Any]
 
     def with_state(self, state: Any) -> Self:
         """
