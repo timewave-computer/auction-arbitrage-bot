@@ -35,6 +35,10 @@ jobs:
       - name: Install local-ic
         run: cd local-interchaintest && git clone https://github.com/strangelove-ventures/interchaintest.git && cd interchaintest/local-interchain && make install
 
+      - name: Install nix
+        uses: cachix/install-nix-action@v27
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
       - name: Get cargo
         uses: actions-rs/toolchain@v1
         with:
