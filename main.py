@@ -10,12 +10,11 @@ import logging
 import sys
 from os import path
 import os
-from typing import Any
+from typing import Any, cast
 from cosmpy.aerial.client import LedgerClient, NetworkConfig
 from cosmpy.aerial.wallet import LocalWallet
 from src.scheduler import Scheduler, Ctx
 from src.util import (
-    deployments,
     NEUTRON_NETWORK_CONFIG,
     custom_neutron_network_config,
     DISCOVERY_CONCURRENCY_FACTOR,
@@ -196,7 +195,7 @@ async def main() -> None:
                 endpoints=endpoints["osmosis"],
             )
             astro = NeutronAstroportPoolDirectory(
-                deployments(),
+                ctx.deployments,
                 ctx.http_session,
                 [
                     (
