@@ -1,3 +1,5 @@
+use cosmwasm_std::Decimal;
+use itertools::Itertools;
 use localic_utils::{types::contract::MinAmount, ConfigChainBuilder, TestContextBuilder};
 use notify::{Event, RecursiveMode, Result as NotifyResult, Watcher};
 use std::{error::Error as StdError, path::Path, process::Command};
@@ -23,11 +25,28 @@ fn main() -> Result<(), Box<dyn StdError>> {
         ctx.build_tx_create_tokenfactory_token()
             .with_subdenom(token)
             .send()?;
+        ctx.build_tx_mint_tokenfactory_token()
+            .with_denom(format!("factory/{OWNER_ADDR}/{token}").as_str())
+            .with_amount(100000000000000)
+            .send()?;
     }
 
-    let token_denoms = TEST_TOKENS
+    let mut token_denoms = TEST_TOKENS
         .into_iter()
-        .map(|token| format!("factory/{OWNER_ADDR}/{token}"));
+        .map(|token| format!("factory/{OWNER_ADDR}/{token}"))
+        .collect::<Vec<String>>();
+    token_denoms.push("untrn".to_owned());
+
+    let token_pairs = token_denoms
+        .iter()
+        .cloned()
+        .permutations(2)
+        .unique_by(|tokens| {
+            let mut to_sort = tokens.clone();
+            to_sort.sort();
+
+            to_sort
+        });
 
     // Setup astroport
     ctx.build_tx_create_token_registry()
@@ -38,44 +57,69 @@ fn main() -> Result<(), Box<dyn StdError>> {
         .send()?;
 
     // Create pools for each token against ntrn
-    for token in token_denoms.clone() {
+    for mut tokens in token_pairs.clone() {
+        let token_a = tokens.remove(0);
+        let token_b = tokens.remove(0);
+
         ctx.build_tx_create_pool()
-            .with_denom_a("untrn")
-            .with_denom_b(&token)
+            .with_denom_a(&token_a)
+            .with_denom_b(&token_b)
             .send()?;
         ctx.build_tx_fund_pool()
-            .with_denom_a("untrn")
-            .with_denom_b(&token)
-            .with_amount_denom_a((rand::random::<f64>() * 1000.0) as u128)
-            .with_amount_denom_b((rand::random::<f64>() * 1000.0) as u128)
+            .with_denom_a(&token_a)
+            .with_denom_b(&token_b)
+            .with_amount_denom_a((rand::random::<f64>() * 100000.0) as u128 + 1000)
+            .with_amount_denom_b((rand::random::<f64>() * 100000.0) as u128 + 1000)
             .with_liq_token_receiver(OWNER_ADDR)
             .send()?;
     }
 
+    let min_tokens = token_denoms
+        .iter()
+        .map(|token| {
+            (
+                token.as_str(),
+                MinAmount {
+                    send: "0".into(),
+                    start_auction: "0".into(),
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+
     // Create a valence auction manager and an auction for each token
     ctx.build_tx_create_auctions_manager()
-        .with_min_auction_amount(&[(
-            &String::from("untrn"),
-            MinAmount {
-                send: "0".into(),
-                start_auction: "0".into(),
-            },
-        )])
+        .with_min_auction_amount(min_tokens.as_slice())
+        .with_server_addr(OWNER_ADDR)
         .send()?;
-    for token in token_denoms {
+    ctx.build_tx_create_price_oracle().send()?;
+    ctx.build_tx_update_auction_oracle().send()?;
+
+    for mut tokens in token_pairs {
+        let token_a = tokens.remove(0);
+        let token_b = tokens.remove(0);
+
         ctx.build_tx_create_auction()
-            .with_offer_asset("untrn")
-            .with_ask_asset(&token)
-            .with_amount_offer_asset((rand::random::<f64>() * 1000.0) as u128)
+            .with_offer_asset(&token_a)
+            .with_ask_asset(&token_b)
+            .with_amount_offer_asset((rand::random::<f64>() * 10000000.0) as u128 + 1000000)
             .send()?;
+
+        ctx.build_tx_manual_oracle_price_update()
+            .with_offer_asset(&token_a)
+            .with_ask_asset(&token_b)
+            .with_price(Decimal::percent(100000000000000))
+            .send()?;
+
         ctx.build_tx_fund_auction()
-            .with_offer_asset("untrn")
-            .with_ask_asset(&token)
-            .with_amount_offer_asset((rand::random::<f64>() * 1000.0) as u128)
+            .with_offer_asset(&token_a)
+            .with_ask_asset(&token_b)
+            .with_amount_offer_asset((rand::random::<f64>() * 10000000.0) as u128 + 1000000)
             .send()?;
         ctx.build_tx_start_auction()
-            .with_offer_asset("untrn")
-            .with_ask_asset(&token)
+            .with_offer_asset(&token_a)
+            .with_ask_asset(&token_b)
+            .with_end_block_delta(10000)
             .send()?;
     }
 
@@ -91,12 +135,18 @@ fn main() -> Result<(), Box<dyn StdError>> {
             .as_str(),
     )?;
     util::create_arbs_file()?;
+    util::create_poolfile()?;
 
-    Command::new("python")
+    let mut proc = Command::new("python")
         .current_dir("..")
         .arg("main.py")
         .arg("--deployments_file")
-        .arg("/tmp/deployments_file.json")
+        .arg("deployments_file.json")
+        .arg("--net_config")
+        .arg("net_config.json")
+        .arg("--base_denom")
+        .arg("untrn")
+        .env("LOGLEVEL", "debug")
         .env(
             "WALLET_MNEMONIC",
             "dutch suspect purchase critic kind candy clarify polar degree kitchen trend impulse",
@@ -109,6 +159,7 @@ fn main() -> Result<(), Box<dyn StdError>> {
     })?;
 
     watcher.watch(Path::new("../arbs.json"), RecursiveMode::NonRecursive)?;
+    proc.wait()?;
 
     Ok(())
 }

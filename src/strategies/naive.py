@@ -479,7 +479,12 @@ async def listen_routes_with_depth_dfs(
             async for route in streamer:
                 yield route
 
-    routes = stream.merge(*[next_legs([leg]) for leg in start_legs])
+    next_jobs = [next_legs([leg]) for leg in start_legs]
+
+    if len(next_jobs) == 0:
+        return
+
+    routes = stream.merge(*next_jobs)
 
     async with routes.stream() as streamer:
         async for route in streamer:

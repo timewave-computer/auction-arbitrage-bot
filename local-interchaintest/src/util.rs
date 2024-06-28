@@ -8,7 +8,7 @@ pub(crate) fn create_deployment_file(
     let mut f = OpenOptions::new()
         .create(true)
         .write(true)
-        .open("/tmp/deployments_file.json")?;
+        .open("../deployments_file.json")?;
 
     f.write_all(
         serde_json::json!({
@@ -45,10 +45,36 @@ pub(crate) fn create_deployment_file(
 }
 
 pub(crate) fn create_arbs_file() -> Result<(), Box<dyn Error>> {
-    let _ = OpenOptions::new()
+    let mut f = OpenOptions::new()
         .create(true)
         .write(true)
         .open("../arbs.json")?;
+
+    f.write_all(serde_json::json!([]).to_string().as_bytes())?;
+
+    Ok(())
+}
+
+pub(crate) fn create_poolfile() -> Result<(), Box<dyn Error>> {
+    let mut f = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .open("../net_config.json")?;
+
+    f.write_all(
+        serde_json::json!({
+            "neutron": {
+                "http": ["http://localhost:1317"],
+                "grpc": ["grpc+http://localhost:9090"],
+            },
+            "osmosis": {
+                "http": ["http://localhost:1319"],
+                "grpc": ["grpc+http://localhost:9092"]
+            }
+        })
+        .to_string()
+        .as_bytes(),
+    )?;
 
     Ok(())
 }
