@@ -54,7 +54,7 @@ class OsmosisPoolProvider(PoolProvider):
         self.asset_b_denom = asset_b
         self.pool_id = pool_id
         self.session = session
-        self.swap_fee = 500000
+        self.swap_fee = 10000
 
     @cached_property
     def ledgers(self) -> List[LedgerClient]:
@@ -120,7 +120,7 @@ class OsmosisPoolProvider(PoolProvider):
         tx = Transaction()
         tx.add_message(self.__swap_msg(wallet, assets, amount_min_amount))
 
-        gas_limit = 3000000
+        gas_limit = 5000000
         gas = try_multiple_clients_fatal(
             self.ledgers,
             lambda client: client.estimate_fee_from_gas(gas_limit),
