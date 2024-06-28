@@ -15,7 +15,6 @@ from cosmpy.aerial.client import LedgerClient, NetworkConfig
 from cosmpy.aerial.wallet import LocalWallet
 from src.scheduler import Scheduler, Ctx
 from src.util import (
-    NEUTRON_NETWORK_CONFIG,
     custom_neutron_network_config,
     DISCOVERY_CONCURRENCY_FACTOR,
 )

@@ -38,7 +38,7 @@ EVALUATION_CONCURRENCY_FACTOR = 10
 
 # The quantity of a denom below which
 # it is no longer worthwhile checking for profit
-DENOM_QUANTITY_ABORT_ARB = 50
+DENOM_QUANTITY_ABORT_ARB = 500
 
 
 NEUTRON_NETWORK_CONFIG = NetworkConfig(
