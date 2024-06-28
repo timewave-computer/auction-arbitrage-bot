@@ -162,7 +162,9 @@ async def strategy(
 
         ctx.update_route(r)
 
-        ctx = ctx.with_state(state.poll(ctx, pools, auctions)).commit_history()
+        ctx = ctx.with_state(state.poll(ctx, pools, auctions))
+
+    ctx.commit_history()
 
     logger.info("Completed arbitrage round")
 

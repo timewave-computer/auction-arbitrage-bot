@@ -36,11 +36,6 @@ DISCOVERY_CONCURRENCY_FACTOR = 20
 EVALUATION_CONCURRENCY_FACTOR = 10
 
 
-# Dictates the maximum portion of the liqiudity in a pool
-# that a trade can be equal to
-MAX_TRADE_IN_POOL_FRACTION = 0.05
-
-
 # The quantity of a denom below which
 # it is no longer worthwhile checking for profit
 DENOM_QUANTITY_ABORT_ARB = 50

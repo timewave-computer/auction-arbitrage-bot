@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 IBC_TRANSFER_GAS = 1000
 
 
-MAX_POOL_LIQUIDITY_TRADE = Decimal("0.2")
+MAX_POOL_LIQUIDITY_TRADE = Decimal("0.005")
 
 
 def fmt_route_leg(leg: Leg) -> str:
@@ -493,7 +493,7 @@ async def quantities_for_route_profit(
 
     quantities: list[int] = [starting_amount]
 
-    while quantities[-1] - quantities[0] <= 0:
+    while quantities[-1] - quantities[0] <= 0 or len(quantities) <= len(route):
         ctx.log_route(r, "info", "Route has possible execution plan: %s", [quantities])
 
         if starting_amount < DENOM_QUANTITY_ABORT_ARB:
@@ -540,7 +540,8 @@ async def quantities_for_route_profit(
                 )
 
                 if (
-                    Decimal(quantities[-1]) / Decimal(leg.backend.remaining_asset_b())
+                    Decimal(quantities[-1])
+                    / Decimal(await leg.backend.balance_asset_b())
                     > MAX_POOL_LIQUIDITY_TRADE
                 ):
                     break
@@ -550,7 +551,7 @@ async def quantities_for_route_profit(
             quantities.append(int(await leg.backend.simulate_swap_asset_b(prev_amt)))
 
             if (
-                Decimal(quantities[-1]) / Decimal(leg.backend.remaining_asset_a())
+                Decimal(quantities[-1]) / Decimal(await leg.backend.balance_asset_a())
                 > MAX_POOL_LIQUIDITY_TRADE
             ):
                 break

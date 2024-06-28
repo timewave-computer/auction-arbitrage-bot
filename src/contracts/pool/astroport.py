@@ -29,6 +29,9 @@ from cosmos.base.v1beta1.coin_pb2 import Coin
 from cosmpy.crypto.address import Address
 
 
+MAX_SPREAD = "0.5"
+
+
 @dataclass
 class Token:
     """
@@ -192,6 +195,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
                         "amount": str(amount),
                     },
                     "ask_asset_info": token_to_asset_info(asset_b),
+                    "max_spread": MAX_SPREAD,
                 }
             },
             funds=f"{amount}{token_to_addr(asset_a)}",
@@ -220,6 +224,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
                                 "amount": str(amount),
                             },
                             "ask_asset_info": token_to_asset_info(asset_b),
+                            "max_spread": MAX_SPREAD,
                         }
                     }
                 ),
