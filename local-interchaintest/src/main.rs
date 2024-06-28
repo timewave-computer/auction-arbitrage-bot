@@ -195,6 +195,22 @@ fn main() -> Result<(), Box<dyn StdError>> {
 
                 assert!(!arbs.is_empty());
 
+                let profit: u64 = arbs
+                    .into_iter()
+                    .filter_map(|arb_str| arb_str.as_str())
+                    .filter_map(|arb_str| {
+                        serde_json::from_str::<Value>(arb_str)
+                            .ok()?
+                            .get("realized_profit")?
+                            .as_number()?
+                            .as_u64()
+                    })
+                    .sum();
+
+                println!("ARB BOT PROFIT: {profit}");
+
+                assert!(profit > 0);
+
                 proc_handle_watcher.kill().expect("failed to kill arb bot");
                 process::exit(0);
             }
