@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 IBC_TRANSFER_GAS = 1000
 
 
-MAX_POOL_LIQUIDITY_TRADE = Decimal("0.005")
+MAX_POOL_LIQUIDITY_TRADE = Decimal("0.05")
 
 
 def fmt_route_leg(leg: Leg) -> str:
