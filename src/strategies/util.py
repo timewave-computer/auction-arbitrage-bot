@@ -375,7 +375,7 @@ async def transfer(
         raise ValueError("Missing channel info for target chain in IBC transfer")
 
     acc = try_multiple_clients_fatal(
-        ctx.clients[prev_leg.backend.chain_nam],
+        ctx.clients[prev_leg.backend.chain_name],
         lambda client: client.query_account(
             str(Address(ctx.wallet.public_key(), prefix=prev_leg.backend.chain_prefix))
         ),
