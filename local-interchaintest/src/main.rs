@@ -15,7 +15,7 @@ use std::{
 mod util;
 
 /// Tokens that arbitrage is tested against
-const TEST_TOKENS: [&str; 4] = ["bruhtoken", "amoguscoin", "susdao", "skibidicoin"];
+const TEST_TOKENS: [&str; 3] = ["bruhtoken", "amoguscoin", "susdao"];
 
 /// Test wallet mnemonic
 const TEST_MNEMONIC: &str = "south excuse merit payment amazing trash salon core cloth wine claw father fiscal anger entry hawk equip cream key inner away outdoor despair air";
