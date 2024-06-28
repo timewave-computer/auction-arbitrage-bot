@@ -60,13 +60,15 @@ IBC_TRANSFER_TIMEOUT_SEC = 20
 IBC_TRANSFER_POLL_INTERVAL_SEC = 5
 
 
-def custom_neutron_network_config(url: str) -> NetworkConfig:
+def custom_neutron_network_config(
+    url: str, chain_id: Optional[str] = "neutron-1"
+) -> NetworkConfig:
     """
     Creates a neutron client NetworkConfig with a specific RPC URL.
     """
 
     return NetworkConfig(
-        chain_id="neutron-1",
+        chain_id=chain_id,
         url=url,
         fee_minimum_gas_price=0.0053,
         fee_denomination="untrn",

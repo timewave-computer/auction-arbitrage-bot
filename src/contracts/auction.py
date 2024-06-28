@@ -42,6 +42,7 @@ class AuctionProvider(WithContract):
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b
         self.chain_id = contract_info.clients[0].query_chain_id()
+        self.chain_name = "neutron"
         self.chain_prefix = "neutron"
         self.chain_fee_denom = "untrn"
         self.kind = "auction"

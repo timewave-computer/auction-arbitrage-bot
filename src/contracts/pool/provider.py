@@ -39,6 +39,8 @@ class PoolProvider(ABC):
 
     chain_id: str
 
+    chain_name: str
+
     chain_prefix: str
 
     chain_fee_denom: str

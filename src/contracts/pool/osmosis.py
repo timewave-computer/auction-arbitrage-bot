@@ -42,6 +42,7 @@ class OsmosisPoolProvider(PoolProvider):
 
         self.client = urllib3.PoolManager()
         self.chain_id = "osmosis-1"
+        self.chain_name = "osmosis"
         self.chain_prefix = "osmo"
         self.chain_fee_denom = "uosmo"
         self.kind = "osmosis"

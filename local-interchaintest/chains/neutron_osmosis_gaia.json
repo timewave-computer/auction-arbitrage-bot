@@ -58,7 +58,7 @@
     },
     {
       "name": "neutron",
-      "chain_id": "localneutron-1",
+      "chain_id": "neutron-1",
       "denom": "untrn",
       "binary": "neutrond",
       "bech32_prefix": "neutron",
@@ -146,7 +146,7 @@
           {
             "name": "acc0",
             "address": "neutron1kuf2kxwuv2p8k3gnpja7mzf05zvep0cyuy7mxg",
-            "amount": "10000000000%DENOM%",
+            "amount": "100000000000000000%DENOM%",
             "mnemonic": "south excuse merit payment amazing trash salon core cloth wine claw father fiscal anger entry hawk equip cream key inner away outdoor despair air"
           }
         ]

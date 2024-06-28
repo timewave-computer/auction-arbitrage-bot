@@ -14,3 +14,4 @@ rand = "0.8.5"
 localic-utils = { git = "https://github.com/timewave-computer/localic-utils", branch = "dowlandaiello/feature-sharedrepo" }
 notify = "6.1.1"
 itertools = "0.13.0"
+shared_child = "1.0.0"

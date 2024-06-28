@@ -7,6 +7,7 @@ pub(crate) fn create_deployment_file(
 ) -> Result<(), Box<dyn Error>> {
     let mut f = OpenOptions::new()
         .create(true)
+        .truncate(true)
         .write(true)
         .open("../deployments_file.json")?;
 
@@ -47,6 +48,7 @@ pub(crate) fn create_deployment_file(
 pub(crate) fn create_arbs_file() -> Result<(), Box<dyn Error>> {
     let mut f = OpenOptions::new()
         .create(true)
+        .truncate(true)
         .write(true)
         .open("../arbs.json")?;
 
@@ -55,9 +57,10 @@ pub(crate) fn create_arbs_file() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub(crate) fn create_poolfile() -> Result<(), Box<dyn Error>> {
+pub(crate) fn create_netconfig() -> Result<(), Box<dyn Error>> {
     let mut f = OpenOptions::new()
         .create(true)
+        .truncate(true)
         .write(true)
         .open("../net_config.json")?;
 

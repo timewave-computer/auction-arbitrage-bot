@@ -135,7 +135,6 @@ async def main() -> None:
             ctx: Ctx[Any] = Ctx(
                 {
                     "neutron": [
-                        LedgerClient(NEUTRON_NETWORK_CONFIG),
                         *[
                             LedgerClient(custom_neutron_network_config(endpoint))
                             for endpoint in endpoints["neutron"]["grpc"]

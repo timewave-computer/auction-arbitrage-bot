@@ -28,8 +28,6 @@ from cosmwasm.wasm.v1.tx_pb2 import MsgExecuteContract
 from cosmos.base.v1beta1.coin_pb2 import Coin
 from cosmpy.crypto.address import Address
 
-MAX_SPREAD = "0.05"
-
 
 @dataclass
 class Token:
@@ -102,6 +100,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b
         self.chain_id = contract_info.clients[0].query_chain_id()
+        self.chain_name = "neutron"
         self.chain_prefix = "neutron"
         self.chain_fee_denom = "untrn"
         self.kind = "astroport"
@@ -193,7 +192,6 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
                         "amount": str(amount),
                     },
                     "ask_asset_info": token_to_asset_info(asset_b),
-                    "max_spread": MAX_SPREAD,
                 }
             },
             funds=f"{amount}{token_to_addr(asset_a)}",
@@ -222,7 +220,6 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
                                 "amount": str(amount),
                             },
                             "ask_asset_info": token_to_asset_info(asset_b),
-                            "max_spread": MAX_SPREAD,
                         }
                     }
                 ),
