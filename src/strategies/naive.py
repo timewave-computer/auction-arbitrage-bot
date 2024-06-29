@@ -237,7 +237,7 @@ async def eval_route(
     ctx.log_route(
         r,
         "info",
-        "Route has investment ramp of %d",
+        "Route has starting amount of %d",
         [
             starting_amt,
         ],

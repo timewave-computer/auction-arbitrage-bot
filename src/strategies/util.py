@@ -37,7 +37,7 @@ from ibc.applications.transfer.v1 import tx_pb2
 logger = logging.getLogger(__name__)
 
 
-IBC_TRANSFER_GAS = 1000
+IBC_TRANSFER_GAS = 100000
 
 
 MAX_POOL_LIQUIDITY_TRADE = Decimal("0.1")
@@ -121,16 +121,29 @@ async def exec_arb(
     )
 
     for leg, to_swap in zip(route, quantities):
-        balance_resp = try_multiple_clients(
-            ctx.clients[leg.backend.chain_name],
-            lambda client: client.query_bank_balance(
-                Address(ctx.wallet.public_key(), prefix=leg.backend.chain_prefix),
-                leg.in_asset(),
-            ),
-        )
+        balance_resp: Optional[int]
+
+        if prev_leg:
+            balance_resp = try_multiple_clients(
+                ctx.clients[prev_leg.backend.chain_name],
+                lambda client: client.query_bank_balance(
+                    Address(
+                        ctx.wallet.public_key(), prefix=prev_leg.backend.chain_prefix
+                    ),
+                    prev_leg.out_asset(),
+                ),
+            )
+        else:
+            balance_resp = try_multiple_clients(
+                ctx.clients[leg.backend.chain_name],
+                lambda client: client.query_bank_balance(
+                    Address(ctx.wallet.public_key(), prefix=leg.backend.chain_prefix),
+                    leg.in_asset(),
+                ),
+            )
 
         if not balance_resp:
-            raise ValueError("Couldn't get balance.")
+            raise ValueError(f"Couldn't get balance for asset {leg.in_asset()}.")
 
         to_swap = min(to_swap, balance_resp)
 
@@ -358,8 +371,6 @@ async def transfer(
         session=ctx.http_session,
     )
 
-    breakpoint()
-
     if not denom_info:
         raise ValueError("Missing denom info for target chain in IBC transfer")
 
@@ -387,20 +398,13 @@ async def transfer(
         }
     else:
         channel_info = await try_multiple_rest_endpoints(
-            ctx.endpoints[prev_leg.backend.chain_name]["http"],
+            ctx.endpoints[leg.backend.chain_name]["http"],
             f"/ibc/core/channel/v1/channels/{denom_info.channel}/ports/{denom_info.port}",
             ctx.http_session,
         )
 
     if not channel_info:
         raise ValueError("Missing channel info for target chain in IBC transfer")
-
-    acc = try_multiple_clients_fatal(
-        ctx.clients[prev_leg.backend.chain_name],
-        lambda client: client.query_account(
-            str(Address(ctx.wallet.public_key(), prefix=prev_leg.backend.chain_prefix))
-        ),
-    )
 
     logger.debug(
         "Executing IBC transfer %s from %s -> %s with source port %s, source channel %s, sender %s, and receiver %s",
@@ -429,12 +433,19 @@ async def transfer(
         )
     )
 
+    acc = try_multiple_clients_fatal(
+        ctx.clients[prev_leg.backend.chain_name],
+        lambda client: client.query_account(
+            str(Address(ctx.wallet.public_key(), prefix=prev_leg.backend.chain_prefix))
+        ),
+    )
+
     tx = Transaction()
     tx.add_message(msg)
     tx.seal(
         SigningCfg.direct(ctx.wallet.public_key(), acc.sequence),
-        f"10000{prev_leg.backend.chain_fee_denom}",
-        100000,
+        f"100000{prev_leg.backend.chain_fee_denom}",
+        1000000,
     )
     tx.sign(ctx.wallet.signer(), prev_leg.backend.chain_id, acc.number)
     tx.complete()
@@ -494,7 +505,7 @@ async def transfer(
     while time.time() < timeout:
         time.sleep(IBC_TRANSFER_POLL_INTERVAL_SEC)
 
-        if asyncio.run(transfer_or_continue()):
+        if await transfer_or_continue():
             break
 
 
