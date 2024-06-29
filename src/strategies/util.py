@@ -363,7 +363,7 @@ async def transfer(
     if not denom_info:
         raise ValueError("Missing denom info for target chain in IBC transfer")
 
-    channel_info: dict[str, Any]
+    channel_info: Optional[dict[str, Any]]
 
     # Not enough info to complete the transfer
     if not denom_info or not denom_info.port or not denom_info.channel:
@@ -374,7 +374,7 @@ async def transfer(
             session=ctx.http_session,
         )
 
-        if not our_trace.port or not our_trace.channel:
+        if not our_trace or not our_trace.port or not our_trace.channel:
             raise ValueError("Missing channel info for target chain in IBC transfer")
 
         channel_info = {
@@ -392,8 +392,8 @@ async def transfer(
             ctx.http_session,
         )
 
-        if not channel_info:
-            raise ValueError("Missing channel info for target chain in IBC transfer")
+    if not channel_info:
+        raise ValueError("Missing channel info for target chain in IBC transfer")
 
     acc = try_multiple_clients_fatal(
         ctx.clients[prev_leg.backend.chain_name],
