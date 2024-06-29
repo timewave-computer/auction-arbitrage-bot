@@ -29,7 +29,7 @@ const OWNER_ADDR: &str = "neutron1kuf2kxwuv2p8k3gnpja7mzf05zvep0cyuy7mxg";
 fn main() -> Result<(), Box<dyn StdError>> {
     let mut ctx = TestContextBuilder::default()
         .with_artifacts_dir("contracts")
-        .with_unwrap_raw_logs(true)
+        .with_unwrap_raw_logs(false)
         .with_chain(
             ConfigChainBuilder::default_neutron()
                 .with_chain_id("neutron-1")
