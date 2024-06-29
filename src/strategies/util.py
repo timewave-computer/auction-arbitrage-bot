@@ -358,21 +358,39 @@ async def transfer(
         session=ctx.http_session,
     )
 
+    breakpoint()
+
     if not denom_info:
         raise ValueError("Missing denom info for target chain in IBC transfer")
 
-    channel_info = await try_multiple_rest_endpoints(
-        ctx.endpoints[prev_leg.backend.chain_name]["http"],
-        f"/ibc/core/channel/v1/channels/{denom_info.channel}/ports/{denom_info.port}",
-        ctx.http_session,
-    )
-
-    if not channel_info:
-        raise ValueError("Missing channel info for target chain in IBC transfer")
+    channel_info: dict[str, Any]
 
     # Not enough info to complete the transfer
     if not denom_info or not denom_info.port or not denom_info.channel:
-        raise ValueError("Missing channel info for target chain in IBC transfer")
+        our_trace = await denom_info_on_chain(
+            src_chain=leg.backend.chain_id,
+            src_denom=denom_info.denom,
+            dest_chain=prev_leg.backend.chain_id,
+            session=ctx.http_session,
+        )
+
+        channel_info = {
+            "channel": {
+                "counterparty": {
+                    "port_id": our_trace.port,
+                    "channel_id": our_trace.channel,
+                }
+            }
+        }
+    else:
+        channel_info = await try_multiple_rest_endpoints(
+            ctx.endpoints[prev_leg.backend.chain_name]["http"],
+            f"/ibc/core/channel/v1/channels/{denom_info.channel}/ports/{denom_info.port}",
+            ctx.http_session,
+        )
+
+        if not channel_info:
+            raise ValueError("Missing channel info for target chain in IBC transfer")
 
     acc = try_multiple_clients_fatal(
         ctx.clients[prev_leg.backend.chain_name],
@@ -412,8 +430,8 @@ async def transfer(
     tx.add_message(msg)
     tx.seal(
         SigningCfg.direct(ctx.wallet.public_key(), acc.sequence),
-        f"3000{prev_leg.backend.chain_fee_denom}",
-        50000,
+        f"10000{prev_leg.backend.chain_fee_denom}",
+        100000,
     )
     tx.sign(ctx.wallet.signer(), prev_leg.backend.chain_id, acc.number)
     tx.complete()
