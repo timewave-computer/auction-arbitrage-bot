@@ -169,9 +169,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.0.101"
+version = "1.0.102"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac367972e516d45567c7eafc73d24e1c193dcf200a8d94e9db7b3d38b349572d"
+checksum = "779e6b7d17797c0b42023d417228c02889300190e700cb074c3438d9c541d332"
 
 [[package]]
 name = "cfg-if"
@@ -1077,7 +1077,7 @@ version = "0.1.0"
 dependencies = [
  "cosmwasm-std",
  "itertools 0.13.0",
- "localic-std",
+ "localic-std 0.0.1 (git+https://github.com/strangelove-ventures/interchaintest.git?branch=main)",
  "localic-utils",
  "notify",
  "rand",
@@ -1101,14 +1101,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "localic-std"
+version = "0.0.1"
+source = "git+https://github.com/strangelove-ventures/interchaintest?rev=f326371#f32637153eb3665c1c43c5f320888645eb8671c5"
+dependencies = [
+ "cosmwasm-std",
+ "reqwest",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "localic-utils"
 version = "0.1.0"
-source = "git+https://github.com/timewave-computer/localic-utils?branch=dowlandaiello/feature-sharedrepo#ad05068e4c4a7264d8fe7a7de0a4194fd82cbe94"
+source = "git+https://github.com/timewave-computer/localic-utils?branch=dowlandaiello/feature-sharedrepo#3384024d7502596213e8e34c2d98b8c7ab2ae4ce"
 dependencies = [
  "astroport",
  "cosmwasm-std",
  "derive_builder",
- "localic-std",
+ "localic-std 0.0.1 (git+https://github.com/strangelove-ventures/interchaintest?rev=f326371)",
  "log",
  "serde",
  "serde_json",
@@ -1238,9 +1250,9 @@ dependencies = [
 
 [[package]]
 name = "object"
-version = "0.36.0"
+version = "0.36.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "576dfe1fc8f9df304abb159d767a29d0476f7750fbf8aa7ad07816004a207434"
+checksum = "081b846d1d56ddfc18fdf1a922e4f6e07a11768ea1b92dec44e42b72712ccfce"
 dependencies = [
  "memchr",
 ]
