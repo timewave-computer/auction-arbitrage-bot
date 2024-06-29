@@ -362,7 +362,7 @@ async def transfer(
         raise ValueError("Missing denom info for target chain in IBC transfer")
 
     channel_info = await try_multiple_rest_endpoints(
-        ctx.endpoints[leg.backend.chain_name]["http"],
+        ctx.endpoints[prev_leg.backend.chain_name]["http"],
         f"/ibc/core/channel/v1/channels/{denom_info.channel}/ports/{denom_info.port}",
         ctx.http_session,
     )
