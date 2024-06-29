@@ -76,7 +76,7 @@
       "ics_consumer_link": "localcosmos-1",
       "ibc_paths": ["neutron-osmosis"],
       "debugging": true,
-      "block_time": "500ms",
+      "block_time": "250ms",
       "host_port_override": {
         "26657": "26657",
         "1317": "1317",
