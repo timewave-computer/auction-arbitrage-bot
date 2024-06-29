@@ -124,13 +124,15 @@ async def exec_arb(
         balance_resp: Optional[int]
 
         if prev_leg:
+            chain_name = prev_leg.backend.chain_name
+            chain_prefix = prev_leg.backend.chain_prefix
+            out_asset = prev_leg.out_asset()
+
             balance_resp = try_multiple_clients(
-                ctx.clients[prev_leg.backend.chain_name],
+                ctx.clients[chain_name],
                 lambda client: client.query_bank_balance(
-                    Address(
-                        ctx.wallet.public_key(), prefix=prev_leg.backend.chain_prefix
-                    ),
-                    prev_leg.out_asset(),
+                    Address(ctx.wallet.public_key(), prefix=chain_prefix),
+                    out_asset,
                 ),
             )
         else:
