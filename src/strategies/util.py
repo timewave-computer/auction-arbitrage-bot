@@ -374,6 +374,9 @@ async def transfer(
             session=ctx.http_session,
         )
 
+        if not our_trace.port or not our_trace.channel:
+            raise ValueError("Missing channel info for target chain in IBC transfer")
+
         channel_info = {
             "channel": {
                 "counterparty": {
