@@ -27,7 +27,6 @@ from src.util import (
     DENOM_QUANTITY_ABORT_ARB,
 )
 from src.scheduler import Ctx
-import asyncio
 from cosmos.base.v1beta1 import coin_pb2
 from cosmpy.crypto.address import Address
 from cosmpy.aerial.tx import Transaction, SigningCfg
