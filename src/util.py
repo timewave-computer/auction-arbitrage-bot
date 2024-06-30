@@ -12,7 +12,6 @@ from functools import cached_property
 from dataclasses import dataclass
 import aiohttp
 import grpc
-from src.scheduler.util import Ctx
 from cosmpy.aerial.client import NetworkConfig, LedgerClient
 from cosmpy.aerial.contract import LedgerContract
 from cosmpy.aerial.wallet import LocalWallet
@@ -261,7 +260,10 @@ class DenomChainInfo:
 
 
 async def denom_info(
-    src_chain: str, src_denom: str, session: aiohttp.ClientSession, ctx: Ctx
+    src_chain: str,
+    src_denom: str,
+    session: aiohttp.ClientSession,
+    endpoints: dict[str, dict[str, list[str]]],
 ) -> list[DenomChainInfo]:
     """
     Gets a denom's denom and channel on/to other chains.
@@ -274,8 +276,10 @@ async def denom_info(
         filter(
             is_not_none,
             [
-                await denom_info_on_chain(src_chain, src_denom, chain_id, session, ctx)
-                for chain_id in ctx.endpoint.keys()
+                await denom_info_on_chain(
+                    src_chain, src_denom, chain_id, session, endpoints
+                )
+                for chain_id in endpoint.keys()
             ],
         )
     )
@@ -286,7 +290,7 @@ async def denom_info_on_chain(
     src_denom: str,
     dest_chain: str,
     session: aiohttp.ClientSession,
-    ctx: Ctx,
+    endpoints: dict[str, dict[str, list[str]]],
 ) -> Optional[DenomChainInfo]:
     """
     Gets a neutron denom's denom and channel on/to another chain.
@@ -296,7 +300,7 @@ async def denom_info_on_chain(
     if "ibc" in src_denom:
         _, denom_hash = src_denom.split("/")
         trace = await try_multiple_rest_endpoints(
-            ctx.endpoints[dest_chain],
+            endpoints[dest_chain],
             f"/ibc/apps/transfer/v1/denom_traces/{denom_hash}",
             session,
         )
@@ -313,7 +317,7 @@ async def denom_info_on_chain(
 
     # Get all channels with the other chain
     channels = await try_multiple_rest_endpoints(
-        ctx.endpoints[dest_chain],
+        endpoints[dest_chain],
         "/ibc/core/channel/v1/channels/",
         session,
     )
