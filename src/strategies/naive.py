@@ -387,7 +387,7 @@ async def listen_routes_with_depth_dfs(
                     prev_pool.backend.chain_id,
                     end,
                     ctx.http_session,
-                    ctx,
+                    ctx.endpoints,
                 )
 
                 denom_cache[end] = {

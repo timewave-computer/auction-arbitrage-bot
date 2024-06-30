@@ -395,7 +395,7 @@ async def route_bellman_ford(
                     edge.backend.in_asset(),
                     "neutron-1",
                     ctx.http_session,
-                    ctx,
+                    ctx.endpoints,
                 )
                 out_asset_info = await denom_info_on_chain(
                     edge.backend.backend.chain_id,

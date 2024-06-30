@@ -370,7 +370,7 @@ async def transfer(
         src_denom=denom,
         dest_chain=leg.backend.chain_id,
         session=ctx.http_session,
-        ctx=ctx,
+        endpoints=ctx.endpoints,
     )
 
     if not denom_info:
@@ -385,7 +385,7 @@ async def transfer(
             src_denom=denom_info.denom,
             dest_chain=prev_leg.backend.chain_id,
             session=ctx.http_session,
-            ctx=ctx,
+            endpoints=ctx.endpoints,
         )
 
         if not our_trace or not our_trace.port or not our_trace.channel:

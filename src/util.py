@@ -279,7 +279,7 @@ async def denom_info(
                 await denom_info_on_chain(
                     src_chain, src_denom, chain_id, session, endpoints
                 )
-                for chain_id in endpoint.keys()
+                for chain_id in endpoints.keys()
             ],
         )
     )
@@ -300,7 +300,7 @@ async def denom_info_on_chain(
     if "ibc" in src_denom:
         _, denom_hash = src_denom.split("/")
         trace = await try_multiple_rest_endpoints(
-            endpoints[dest_chain],
+            endpoints[dest_chain]["http"],
             f"/ibc/apps/transfer/v1/denom_traces/{denom_hash}",
             session,
         )
@@ -317,7 +317,7 @@ async def denom_info_on_chain(
 
     # Get all channels with the other chain
     channels = await try_multiple_rest_endpoints(
-        endpoints[dest_chain],
+        endpoints[dest_chain]["http"],
         "/ibc/core/channel/v1/channels/",
         session,
     )
