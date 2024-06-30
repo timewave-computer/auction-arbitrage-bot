@@ -387,7 +387,7 @@ async def listen_routes_with_depth_dfs(
                     prev_pool.backend.chain_id,
                     end,
                     ctx.http_session,
-                    api_key=ctx.cli_args["skip_api_key"],
+                    ctx,
                 )
 
                 denom_cache[end] = {

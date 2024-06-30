@@ -2,11 +2,12 @@
 Implements utilities for implementing arbitrage bots.
 """
 
+from hashlib import sha256
 import asyncio
 from base64 import standard_b64encode
 import json
 from decimal import Decimal
-from typing import Any, Optional, Callable, TypeVar
+from typing import Any, Optional, Callable, TypeVar, TypeGuard
 from functools import cached_property
 from dataclasses import dataclass
 import aiohttp
@@ -266,13 +267,16 @@ async def denom_info(
     Gets a denom's denom and channel on/to other chains.
     """
 
+    def is_not_none(info: Optional[DenomChainInfo]) -> TypeGuard[DenomChainInfo]:
+        return info is not None
+
     return list(
         filter(
-            lambda denom_info: denom_info,
-            (
-                denom_info_on_chain(src_chain, src_denom, chain_id, session, ctx)
+            is_not_none,
+            [
+                await denom_info_on_chain(src_chain, src_denom, chain_id, session, ctx)
                 for chain_id in ctx.endpoint.keys()
-            ),
+            ],
         )
     )
 
@@ -297,8 +301,52 @@ async def denom_info_on_chain(
             session,
         )
 
+        if not trace:
+            return None
+
         base_denom = trace["denom_trace"]["base_denom"]
         path = trace["denom_trace"]["base_denom"]
+
+        port_name, channel_id = path.split("/")
+
+        return DenomChainInfo(base_denom, port_name, channel_id, dest_chain)
+
+    # Get all channels with the other chain
+    channels = await try_multiple_rest_endpoints(
+        ctx.endpoints[dest_chain],
+        "/ibc/core/channel/v1/channels/",
+        session,
+    )
+
+    if not channels:
+        return None
+
+    channels = [
+        channel
+        for channel in channels["channels"]
+        if channel["state"] == "OPEN"
+        and "counterparty" in channel
+        and channel["counterparty"]
+        and channel["connection_hops"] == 1
+    ]
+
+    if len(channels) == 0:
+        return None
+
+    channel = channels[0]
+    route_hash = sha256(
+        bytes(
+            channel["port_id"] + "/" + channel["channel_id"] + "/" + src_denom, "utf-8"
+        )
+    )
+    denom = f"ibc/{route_hash}"
+
+    return DenomChainInfo(
+        denom,
+        channel["counterparty"]["port_id"],
+        channel["counterparty"]["channel_id"],
+        dest_chain,
+    )
 
 
 @dataclass

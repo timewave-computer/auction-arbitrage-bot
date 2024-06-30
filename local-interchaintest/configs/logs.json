@@ -1,5 +1,5 @@
 {
-  "start_time": 1719721910,
+  "start_time": 1719740638,
   "chains": [
     {
       "chain_id": "localcosmos-1",
@@ -7,7 +7,7 @@
       "rpc_address": "http://0.0.0.0:26658",
       "rest_address": "http://0.0.0.0:1318",
       "grpc_address": "0.0.0.0:9091",
-      "p2p_address": "0.0.0.0:33311",
+      "p2p_address": "0.0.0.0:37713",
       "ibc_paths": []
     },
     {
@@ -16,7 +16,7 @@
       "rpc_address": "http://0.0.0.0:26657",
       "rest_address": "http://0.0.0.0:1317",
       "grpc_address": "0.0.0.0:9090",
-      "p2p_address": "0.0.0.0:45257",
+      "p2p_address": "0.0.0.0:33409",
       "ibc_paths": [
         "neutron-osmosis"
       ]
@@ -27,7 +27,7 @@
       "rpc_address": "http://0.0.0.0:26659",
       "rest_address": "http://0.0.0.0:1319",
       "grpc_address": "0.0.0.0:9092",
-      "p2p_address": "0.0.0.0:35361",
+      "p2p_address": "0.0.0.0:40897",
       "ibc_paths": [
         "neutron-osmosis"
       ]
