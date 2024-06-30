@@ -318,7 +318,7 @@ async def denom_info_on_chain(
     # Get all channels with the other chain
     channels = await try_multiple_rest_endpoints(
         endpoints[dest_chain]["http"],
-        "/ibc/core/channel/v1/channels/",
+        "/ibc/core/channel/v1/channels",
         session,
     )
 
