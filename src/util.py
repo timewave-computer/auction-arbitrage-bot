@@ -73,7 +73,10 @@ def custom_neutron_network_config(
 
 
 async def try_multiple_rest_endpoints(
-    endpoints: list[str], route: str, session: aiohttp.ClientSession
+    endpoints: list[str],
+    route: str,
+    session: aiohttp.ClientSession,
+    json_body: Optional[dict[str, Any]] = None,
 ) -> Optional[Any]:
     """
     Returns the response from the first queried endpoint that responds successfully.
@@ -87,6 +90,7 @@ async def try_multiple_rest_endpoints(
                     "accept": "application/json",
                     "content-type": "application/json",
                 },
+                json=json_body,
             ) as resp:
                 if resp.status != 200:
                     continue
@@ -316,22 +320,56 @@ async def denom_info_on_chain(
         return DenomChainInfo(base_denom, port_name, channel_id, dest_chain)
 
     # Get all channels with the other chain
-    channels = await try_multiple_rest_endpoints(
-        endpoints[dest_chain]["http"],
-        "/ibc/core/channel/v1/channels",
-        session,
+    channels = []
+    next_key = ""
+
+    while next_key is not None:
+        maybe_channels = await try_multiple_rest_endpoints(
+            endpoints[src_chain]["http"],
+            f"/ibc/core/channel/v1/channels?pagination.key={next_key}",
+            session,
+        )
+
+        if not maybe_channels:
+            break
+
+        channels.extend(maybe_channels["channels"])
+
+        if (
+            not "next_key" in maybe_channels["pagination"]
+            or maybe_channels["pagination"]["next_key"] == ""
+        ):
+            next_key = None
+
+            break
+
+        next_key = maybe_channels["pagination"]["next_key"]
+
+    states = await asyncio.gather(
+        *[
+            try_multiple_rest_endpoints(
+                endpoints[src_chain]["http"],
+                f"/ibc/core/channel/v1/channels/{channel['channel_id']}/ports/{channel['port_id']}/client_state",
+                session,
+            )
+            for channel in channels
+        ]
     )
+
+    breakpoint()
 
     if not channels:
         return None
 
     channels = [
         channel
-        for channel in channels["channels"]
-        if channel["state"] == "OPEN"
+        for (channel, state) in zip(channels, states)
+        if channel["state"] == "STATE_OPEN"
+        and state
         and "counterparty" in channel
-        and channel["counterparty"]
-        and channel["connection_hops"] == 1
+        and channel["port_id"] == "transfer"
+        and len(channel["connection_hops"]) == 1
+        and state["identified_client_state"]["client_state"]["chain_id"] == dest_chain
     ]
 
     if len(channels) == 0:
