@@ -312,7 +312,7 @@ async def listen_routes_with_depth_dfs(
     auctions: dict[str, dict[str, AuctionProvider]],
     ctx: Ctx[State],
 ) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
-    denom_cache: dict[str, dict[str, str]] = {}
+    denom_cache: dict[str, dict[str, list[str]]] = {}
 
     start_pools: list[Union[AuctionProvider, PoolProvider]] = [
         *auctions.get(src, {}).values(),
@@ -391,19 +391,21 @@ async def listen_routes_with_depth_dfs(
                 )
 
                 denom_cache[end] = {
-                    info.chain_id: info.denom
+                    info[0].chain_id: [i.denom for i in info]
                     for info in (
                         denom_infos
                         + [
-                            DenomChainInfo(
-                                denom=end,
-                                port=None,
-                                channel=None,
-                                chain_id=prev_pool.backend.chain_id,
-                            )
+                            [
+                                DenomChainInfo(
+                                    denom=end,
+                                    port=None,
+                                    channel=None,
+                                    chain_id=prev_pool.backend.chain_id,
+                                )
+                            ]
                         ]
                     )
-                    if info.chain_id
+                    if len(info) > 0 and info[0].chain_id
                 }
             except asyncio.TimeoutError:
                 return
@@ -453,7 +455,8 @@ async def listen_routes_with_depth_dfs(
                         ),
                         auction,
                     )
-                    for denom in denom_cache[end].values()
+                    for denom_set in denom_cache[end].values()
+                    for denom in denom_set
                     for auction in auctions.get(denom, {}).values()
                     if auction.chain_id != prev_pool.backend.chain_id
                 ),
@@ -471,7 +474,8 @@ async def listen_routes_with_depth_dfs(
                         ),
                         pool,
                     )
-                    for denom in denom_cache[end].values()
+                    for denom_set in denom_cache[end].values()
+                    for denom in denom_set
                     for pool_set in pools.get(denom, {}).values()
                     for pool in pool_set
                     if pool.chain_id != prev_pool.backend.chain_id

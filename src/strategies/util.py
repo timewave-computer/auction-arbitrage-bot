@@ -190,7 +190,13 @@ async def exec_arb(
             # Cancel arb if the transfer fails
             try:
                 await transfer(
-                    route_ent, prev_leg.out_asset(), prev_leg, leg, ctx, to_swap
+                    route_ent,
+                    prev_leg.out_asset(),
+                    leg.in_asset(),
+                    prev_leg,
+                    leg,
+                    ctx,
+                    to_swap,
                 )
             except Exception as e:
                 ctx.log_route(
@@ -353,6 +359,7 @@ async def recover_funds(
 async def transfer(
     route: Route,
     denom: str,
+    dest_denom: str,
     prev_leg: Leg,
     leg: Leg,
     ctx: Ctx[Any],
@@ -365,7 +372,7 @@ async def transfer(
     succeeded.
     """
 
-    denom_info = await denom_info_on_chain(
+    denom_infos = await denom_info_on_chain(
         src_chain=prev_leg.backend.chain_id,
         src_denom=denom,
         dest_chain=leg.backend.chain_id,
@@ -373,14 +380,21 @@ async def transfer(
         endpoints=ctx.endpoints,
     )
 
-    if not denom_info:
+    if not denom_infos or len(denom_infos) == 0:
         raise ValueError("Missing denom info for target chain in IBC transfer")
+
+    denom_infos = [info for info in (denom_infos) if info.denom == dest_denom]
+
+    if not denom_infos or len(denom_infos) == 0:
+        raise ValueError("Missing denom info for target chain in IBC transfer")
+
+    denom_info = denom_infos[0]
 
     channel_info: Optional[dict[str, Any]]
 
     # Not enough info to complete the transfer
-    if not denom_info or not denom_info.port or not denom_info.channel:
-        our_trace = await denom_info_on_chain(
+    if not denom_infos or not denom_info.port or not denom_info.channel:
+        our_traces = await denom_info_on_chain(
             src_chain=leg.backend.chain_id,
             src_denom=denom_info.denom,
             dest_chain=prev_leg.backend.chain_id,
@@ -388,8 +402,15 @@ async def transfer(
             endpoints=ctx.endpoints,
         )
 
-        if not our_trace or not our_trace.port or not our_trace.channel:
+        if not our_traces:
             raise ValueError("Missing channel info for target chain in IBC transfer")
+
+        our_traces = [trace for trace in (our_traces) if trace.denom == denom]
+
+        if not our_traces or len(our_traces) == 0:
+            raise ValueError("Missing channel info for target chain in IBC transfer")
+
+        our_trace = our_traces[0]
 
         channel_info = {
             "channel": {

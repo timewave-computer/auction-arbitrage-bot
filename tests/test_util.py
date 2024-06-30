@@ -35,8 +35,18 @@ async def test_denom_info() -> None:
     ) as session:
         local_ctx = ctx(session)
 
-        info = await denom_info_on_chain(
+        infos = await denom_info_on_chain(
             "neutron-1", "untrn", "osmosis-1", session, local_ctx.endpoints
         )
 
-        assert info is not None
+        assert infos is not None
+        assert any(
+            [
+                info.denom
+                == "ibc/126DA09104B71B164883842B769C0E9EC1486C0887D27A9999E395C2C8FB5682"
+                and info.port == "transfer"
+                for info in infos
+            ]
+        )
+
+        breakpoint()

@@ -268,12 +268,14 @@ async def denom_info(
     src_denom: str,
     session: aiohttp.ClientSession,
     endpoints: dict[str, dict[str, list[str]]],
-) -> list[DenomChainInfo]:
+) -> list[list[DenomChainInfo]]:
     """
     Gets a denom's denom and channel on/to other chains.
     """
 
-    def is_not_none(info: Optional[DenomChainInfo]) -> TypeGuard[DenomChainInfo]:
+    def is_not_none(
+        info: Optional[list[DenomChainInfo]],
+    ) -> TypeGuard[list[DenomChainInfo]]:
         return info is not None
 
     return list(
@@ -295,33 +297,14 @@ async def denom_info_on_chain(
     dest_chain: str,
     session: aiohttp.ClientSession,
     endpoints: dict[str, dict[str, list[str]]],
-) -> Optional[DenomChainInfo]:
+) -> Optional[list[DenomChainInfo]]:
     """
     Gets a neutron denom's denom and channel on/to another chain.
     """
 
-    # Check if this denom is from another chain
-    if "ibc" in src_denom:
-        _, denom_hash = src_denom.split("/")
-        trace = await try_multiple_rest_endpoints(
-            endpoints[dest_chain]["http"],
-            f"/ibc/apps/transfer/v1/denom_traces/{denom_hash}",
-            session,
-        )
-
-        if not trace:
-            return None
-
-        base_denom = trace["denom_trace"]["base_denom"]
-        path = trace["denom_trace"]["base_denom"]
-
-        port_name, channel_id = path.split("/")
-
-        return DenomChainInfo(base_denom, port_name, channel_id, dest_chain)
-
     # Get all channels with the other chain
     channels = []
-    next_key = ""
+    next_key: Optional[str] = ""
 
     while next_key is not None:
         maybe_channels = await try_multiple_rest_endpoints(
@@ -356,8 +339,6 @@ async def denom_info_on_chain(
         ]
     )
 
-    breakpoint()
-
     if not channels:
         return None
 
@@ -375,20 +356,28 @@ async def denom_info_on_chain(
     if len(channels) == 0:
         return None
 
-    channel = channels[0]
-    route_hash = sha256(
-        bytes(
-            channel["port_id"] + "/" + channel["channel_id"] + "/" + src_denom, "utf-8"
+    def channel_to_denom(channel: dict[str, Any]) -> DenomChainInfo:
+        m = sha256()
+        m.update(
+            bytes(
+                channel["counterparty"]["port_id"]
+                + "/"
+                + channel["counterparty"]["channel_id"]
+                + "/"
+                + src_denom,
+                "utf-8",
+            )
         )
-    )
-    denom = f"ibc/{route_hash}"
+        denom = f"ibc/{m.hexdigest().upper()}"
 
-    return DenomChainInfo(
-        denom,
-        channel["counterparty"]["port_id"],
-        channel["counterparty"]["channel_id"],
-        dest_chain,
-    )
+        return DenomChainInfo(
+            denom,
+            channel["port_id"],
+            channel["channel_id"],
+            dest_chain,
+        )
+
+    return [channel_to_denom(channel) for channel in channels]
 
 
 @dataclass
