@@ -40,6 +40,8 @@ fn main() -> Result<(), Box<dyn StdError>> {
                 .with_chain_id("neutron-1")
                 .build()?,
         )
+        .with_transfer_channel("neutron", "osmosis")
+        .with_transfer_channel("osmosis", "neutron")
         .build()?;
 
     ctx.build_tx_upload_contracts().send()?;
@@ -96,6 +98,24 @@ fn main() -> Result<(), Box<dyn StdError>> {
             .with_amount_denom_b((rand::random::<f64>() * 10000000000000.0) as u128 + 1000)
             .with_liq_token_receiver(OWNER_ADDR)
             .with_slippage_tolerance(Decimal::percent(50))
+            .send()?;
+    }
+
+    // Create pools for each token on osmosis
+    for mut tokens in token_pairs.clone() {
+        let token_a = tokens.remove(0);
+        let token_b = tokens.remove(0);
+
+        let weight_a = (rand::random::<f64>() * 10) as u128 + 1;
+        let weight_b = (rand::random::<f64>() * 10) as u128 + 1;
+
+        let scale = (rand::random::<f64>() * 1000) as u128 + 1;
+
+        ctx.build_tx_create_osmo_pool()
+            .with_weight(&token_a, weight_a)
+            .with_weight(&token_b, weight_b)
+            .with_initial_deposit(&token_a, scale * weight_a)
+            .with_initial_deposit(&token_b, scale * weight_b)
             .send()?;
     }
 
