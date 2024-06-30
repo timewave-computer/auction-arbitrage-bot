@@ -319,7 +319,7 @@ async def denom_info_on_chain(
         channels.extend(maybe_channels["channels"])
 
         if (
-            not "next_key" in maybe_channels["pagination"]
+            "next_key" not in maybe_channels["pagination"]
             or maybe_channels["pagination"]["next_key"] == ""
         ):
             next_key = None

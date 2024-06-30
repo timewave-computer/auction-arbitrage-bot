@@ -26,7 +26,7 @@ async def test_denom_info() -> None:
 
 
 @pytest.mark.asyncio
-async def test_denom_info() -> None:
+async def test_denom_info_on_chain() -> None:
     async with aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(
             force_close=True, limit_per_host=DISCOVERY_CONCURRENCY_FACTOR

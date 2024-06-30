@@ -335,7 +335,12 @@ async def listen_routes_with_depth_dfs(
 
         if len(path) >= 2 and not (
             path[-1].in_asset() == path[-2].out_asset()
-            or path[-1].in_asset() in denom_cache[path[-2].out_asset()].values()
+            or path[-1].in_asset()
+            in [
+                denom
+                for denom_list in denom_cache[path[-2].out_asset()].values()
+                for denom in denom_list
+            ]
         ):
             return
 
