@@ -204,9 +204,11 @@ class Scheduler(Generic[TState]):
                         endpoint.split("grpc+http://")[1],
                     )
                 )
-                for endpoint in ctx.endpoints["neutron"]["grpc"]
+                for endpoint in ctx.endpoints[
+                    self.ctx.deployments["auctions"].keys()[0]
+                ]["grpc"]
             ],
-            endpoints=ctx.endpoints["neutron"],
+            endpoints=ctx.endpoints[self.ctx.deployments["auctions"].keys()[0]],
             poolfile_path=ctx.cli_args["pool_file"],
         )
         self.auctions = {}

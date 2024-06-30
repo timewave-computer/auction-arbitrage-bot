@@ -53,11 +53,11 @@ def ctx(session: aiohttp.ClientSession) -> Ctx[State]:
     """
 
     endpoints: dict[str, dict[str, list[str]]] = {
-        "neutron": {
+        "neutron-1": {
             "http": ["https://neutron-rest.publicnode.com"],
             "grpc": ["grpc+https://neutron-grpc.publicnode.com:443"],
         },
-        "osmosis": {
+        "osmosis-1": {
             "http": ["https://lcd.osmosis.zone"],
             "grpc": ["grpc+https://osmosis-grpc.publicnode.com:443"],
         },

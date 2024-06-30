@@ -15,7 +15,11 @@ pub(crate) fn create_deployment_file(
         serde_json::json!({
             "pools": {
                 "astroport": {
-                    "neutron": {
+                    "localneutron-1": {
+                        "chain_name": "neutron",
+                        "chain_name": "neutron",
+                        "chain_prefix": "neutron",
+                        "chain_fee_denom": "untrn",
                         "directory": {
                             "address": astroport_factory_address,
                             "src": "contracts/astroport_factory.wasm",
@@ -27,7 +31,10 @@ pub(crate) fn create_deployment_file(
                 }
             },
             "auctions": {
-                "neutron": {
+                "localneutron-1": {
+                    "chain_name": "neutron",
+                    "chain_prefix": "neutron",
+                    "chain_fee_denom": "untrn",
                     "auctions_manager": {
                         "address": auctions_manager_address,
                         "src": "contracts/auctions_manager.wasm",
@@ -66,11 +73,11 @@ pub(crate) fn create_netconfig() -> Result<(), Box<dyn Error>> {
 
     f.write_all(
         serde_json::json!({
-            "neutron": {
+            "localneutron-1": {
                 "http": ["http://localhost:1317"],
                 "grpc": ["grpc+http://localhost:9090"],
             },
-            "osmosis": {
+            "localosmosis-1": {
                 "http": ["http://localhost:1319"],
                 "grpc": ["grpc+http://localhost:9092"]
             }

@@ -106,11 +106,11 @@ async def main() -> None:
 
     # The user may want to use custom RPC providers
     endpoints: dict[str, dict[str, list[str]]] = {
-        "neutron": {
+        "neutron-1": {
             "http": ["https://neutron-rest.publicnode.com"],
             "grpc": ["grpc+https://neutron-grpc.publicnode.com:443"],
         },
-        "osmosis": {
+        "osmosis-1": {
             "http": ["https://lcd.osmosis.zone"],
             "grpc": ["grpc+https://osmosis-grpc.publicnode.com:443"],
         },
@@ -133,26 +133,11 @@ async def main() -> None:
         ) as session:
             ctx: Ctx[Any] = Ctx(
                 {
-                    "neutron": [
-                        *[
-                            LedgerClient(custom_neutron_network_config(endpoint))
-                            for endpoint in endpoints["neutron"]["grpc"]
-                        ],
-                    ],
-                    "osmosis": [
-                        *[
-                            LedgerClient(
-                                NetworkConfig(
-                                    chain_id="osmosis-1",
-                                    url=endpoint,
-                                    fee_minimum_gas_price=0.0053,
-                                    fee_denomination="uosmo",
-                                    staking_denomination="uosmo",
-                                )
-                            )
-                            for endpoint in endpoints["osmosis"]["grpc"]
-                        ],
-                    ],
+                    chain_id: [
+                        LedgerClient(custom_neutron_network_config(endpoint))
+                        for endpoint in endpoints["grpc"]
+                    ]
+                    for chain_id, endpoint in endpoints.entries()
                 },
                 endpoints,
                 LocalWallet.from_mnemonic(
@@ -206,10 +191,12 @@ async def main() -> None:
                             endpoint.split("grpc+http://")[1],
                         )
                     )
-                    for endpoint in endpoints["neutron"]["grpc"]
+                    for endpoint in endpoints[
+                        deployments["pools"]["astroport"].keys()[0]
+                    ]["grpc"]
                 ],
                 poolfile_path=args.pool_file,
-                endpoints=endpoints["neutron"],
+                endpoints=endpoints[deployments["pools"]["astroport"].keys()[0]],
             )
 
             osmo_pools = await osmosis.pools()

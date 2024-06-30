@@ -92,6 +92,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
 
     def __init__(
         self,
+        deployments: dict[str, Any],
         endpoints: dict[str, list[str]],
         contract_info: ContractInfo,
         asset_a: Token | NativeToken,
@@ -103,7 +104,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b
         self.chain_id = contract_info.clients[0].query_chain_id()
-        self.chain_name = "neutron"
+        self.chain_name = deployments["pools"]["astroport"].values()[0]["chain_name"]
         self.chain_prefix = "neutron"
         self.chain_fee_denom = "untrn"
         self.kind = "astroport"
@@ -359,7 +360,8 @@ class NeutronAstroportPoolDirectory:
         poolfile_path: Optional[str] = None,
         endpoints: Optional[dict[str, list[str]]] = None,
     ):
-        self.deployment_info = deployments["pools"]["astroport"]["neutron"]
+        self.deployments = deployments
+        self.deployment_info = deployments["pools"]["astroport"].values()[0]
         self.cached_pools = cached_pools(poolfile_path, "neutron_astroport")
         self.session = session
         self.grpc_channels = grpc_channels
@@ -407,6 +409,7 @@ class NeutronAstroportPoolDirectory:
                 token_to_addr(asset_b),
             )
             provider = NeutronAstroportPoolProvider(
+                self.deployments,
                 self.endpoints,
                 ContractInfo(
                     self.deployment_info,

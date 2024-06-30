@@ -58,7 +58,7 @@
     },
     {
       "name": "neutron",
-      "chain_id": "neutron-1",
+      "chain_id": "localneutron-1",
       "denom": "untrn",
       "binary": "neutrond",
       "bech32_prefix": "neutron",
@@ -154,7 +154,7 @@
     },
     {
       "name": "osmosis",
-      "chain_id": "osmosis-1",
+      "chain_id": "localosmosis-1",
       "denom": "uosmo",
       "binary": "osmosisd",
       "bech32_prefix": "osmo",
