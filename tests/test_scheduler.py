@@ -142,12 +142,12 @@ async def test_register_provider() -> None:
         ),
         timeout=aiohttp.ClientTimeout(total=30),
     ) as session:
-        osmosis = OsmosisPoolDirectory(session)
+        osmosis = OsmosisPoolDirectory(deployments(), session)
         pool = list(list((await osmosis.pools()).values())[0].values())[0]
 
         sched = Scheduler(ctx(session), strategy)
 
-        directory = OsmosisPoolDirectory(session)
+        directory = OsmosisPoolDirectory(deployments(), session)
         pools = await directory.pools()
 
         for base in pools.values():
@@ -169,7 +169,7 @@ async def test_poll() -> None:
         ),
         timeout=aiohttp.ClientTimeout(total=30),
     ) as session:
-        osmosis = OsmosisPoolDirectory(session)
+        osmosis = OsmosisPoolDirectory(deployments(), session)
         astroport = NeutronAstroportPoolDirectory(
             deployments(),
             session,

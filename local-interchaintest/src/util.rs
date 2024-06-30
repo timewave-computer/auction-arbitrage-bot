@@ -17,7 +17,6 @@ pub(crate) fn create_deployment_file(
                 "astroport": {
                     "localneutron-1": {
                         "chain_name": "neutron",
-                        "chain_name": "neutron",
                         "chain_prefix": "neutron",
                         "chain_fee_denom": "untrn",
                         "directory": {
@@ -27,6 +26,13 @@ pub(crate) fn create_deployment_file(
                         "pair": {
                             "src": "contracts/astroport_pair.wasm"
                         }
+                    }
+                },
+                "osmosis": {
+                    "localosmosis-1": {
+                        "chain_name": "osmosis",
+                        "chain_prefix": "osmo",
+                        "chain_fee_denom": "uosmo"
                     }
                 }
             },

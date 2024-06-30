@@ -28,6 +28,7 @@ class OsmosisPoolProvider(PoolProvider):
 
     def __init__(
         self,
+        deployments: dict[str, Any],
         endpoints: dict[str, list[str]],
         address: str,
         pool_id: int,
@@ -38,13 +39,16 @@ class OsmosisPoolProvider(PoolProvider):
         Initializes the Osmosis pool provider.
         """
 
+        chain_info = deployments["pools"]["osmosis"].values()[0]
+
         asset_a, asset_b = assets
 
+        self.deployments = deployments
         self.client = urllib3.PoolManager()
-        self.chain_id = "osmosis-1"
-        self.chain_name = "osmosis"
-        self.chain_prefix = "osmo"
-        self.chain_fee_denom = "uosmo"
+        self.chain_id = deployments["pools"]["osmosis"].keys()[0]
+        self.chain_name = chain_info["chain_name"]
+        self.chain_prefix = chain_info["chain_prefix"]
+        self.chain_fee_denom = chain_info["chain_fee_denom"]
         self.kind = "osmosis"
 
         self.endpoints = endpoints["http"]
@@ -61,7 +65,7 @@ class OsmosisPoolProvider(PoolProvider):
         return [
             LedgerClient(
                 NetworkConfig(
-                    chain_id="osmosis-1",
+                    chain_id=self.deployments["pools"]["osmosis"].keys()[0],
                     url=url,
                     fee_minimum_gas_price=0.0025,
                     fee_denomination="uosmo",
@@ -291,12 +295,14 @@ class OsmosisPoolDirectory:
 
     def __init__(
         self,
+        deployments: dict[str, Any],
         session: aiohttp.ClientSession,
         poolfile_path: Optional[str] = None,
         endpoints: Optional[dict[str, list[str]]] = None,
     ) -> None:
         self.cached_pools = cached_pools(poolfile_path, "osmosis")
 
+        self.deployments = deployments
         self.client = urllib3.PoolManager()
         self.endpoints = (
             endpoints
@@ -321,6 +327,7 @@ class OsmosisPoolDirectory:
         for poolfile_entry in self.cached_pools:
             asset_a, asset_b = (poolfile_entry["asset_a"], poolfile_entry["asset_b"])
             provider = OsmosisPoolProvider(
+                self.deployments,
                 self.endpoints,
                 poolfile_entry["address"],
                 poolfile_entry["pool_id"],
@@ -381,6 +388,7 @@ class OsmosisPoolDirectory:
                 continue
 
             provider = OsmosisPoolProvider(
+                self.deployments,
                 self.endpoints,
                 pool["address"],
                 pool_id,

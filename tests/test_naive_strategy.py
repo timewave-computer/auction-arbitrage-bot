@@ -31,7 +31,7 @@ async def test_fmt_route_leg() -> None:
         timeout=aiohttp.ClientTimeout(total=30),
     ) as session:
         # Register Osmosis and Astroport providers
-        osmosis = OsmosisPoolDirectory(session)
+        osmosis = OsmosisPoolDirectory(deployments(), session)
         pool = list(list((await osmosis.pools()).values())[0].values())[0]
 
         # Check that a route leg can be formatter

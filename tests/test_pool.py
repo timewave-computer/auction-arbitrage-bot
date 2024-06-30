@@ -62,7 +62,7 @@ async def test_osmosis_pools() -> None:
         ),
         timeout=aiohttp.ClientTimeout(total=30),
     ) as session:
-        osmosis = OsmosisPoolDirectory(session)
+        osmosis = OsmosisPoolDirectory(deployments(), session)
         pools = await osmosis.pools()
 
         assert len(pools) != 0
@@ -86,7 +86,7 @@ async def test_osmosis_poolfile() -> None:
         timeout=aiohttp.ClientTimeout(total=30),
     ) as session:
         osmosis = OsmosisPoolDirectory(
-            session, poolfile_path="tests/test_poolfile.json"
+            deployments(), session, poolfile_path="tests/test_poolfile.json"
         )
         pools = await osmosis.pools()
 
@@ -185,7 +185,7 @@ async def test_osmosis_provider() -> None:
         ),
         timeout=aiohttp.ClientTimeout(total=30),
     ) as session:
-        osmosis = OsmosisPoolDirectory(session)
+        osmosis = OsmosisPoolDirectory(deployments(), session)
         pools = await osmosis.pools()
 
         # All pools must have assets
@@ -219,7 +219,7 @@ async def test_osmosis_dump() -> None:
         ),
         timeout=aiohttp.ClientTimeout(total=30),
     ) as session:
-        osmosis = OsmosisPoolDirectory(session)
+        osmosis = OsmosisPoolDirectory(deployments(), session)
         pools = await osmosis.pools()
 
         # The directory must be able to dump pools

@@ -11,7 +11,7 @@ import sys
 from os import path
 import os
 from typing import Any, cast
-from cosmpy.aerial.client import LedgerClient, NetworkConfig
+from cosmpy.aerial.client import LedgerClient
 from cosmpy.aerial.wallet import LocalWallet
 from src.scheduler import Scheduler, Ctx
 from src.util import (
@@ -137,7 +137,7 @@ async def main() -> None:
                         LedgerClient(custom_neutron_network_config(endpoint))
                         for endpoint in endpoints["grpc"]
                     ]
-                    for chain_id, endpoint in endpoints.entries()
+                    for chain_id, endpoint in endpoints.items()
                 },
                 endpoints,
                 LocalWallet.from_mnemonic(
@@ -173,9 +173,10 @@ async def main() -> None:
 
             # Register Osmosis and Astroport providers
             osmosis = OsmosisPoolDirectory(
+                ctx.deployments,
                 ctx.http_session,
                 poolfile_path=args.pool_file,
-                endpoints=endpoints["osmosis"],
+                endpoints=endpoints[ctx.deployments["pools"]["osmosis"].keys()[0]],
             )
             astro = NeutronAstroportPoolDirectory(
                 ctx.deployments,
@@ -192,11 +193,11 @@ async def main() -> None:
                         )
                     )
                     for endpoint in endpoints[
-                        deployments["pools"]["astroport"].keys()[0]
+                        ctx.deployments["pools"]["astroport"].keys()[0]
                     ]["grpc"]
                 ],
                 poolfile_path=args.pool_file,
-                endpoints=endpoints[deployments["pools"]["astroport"].keys()[0]],
+                endpoints=endpoints[ctx.deployments["pools"]["astroport"].keys()[0]],
             )
 
             osmo_pools = await osmosis.pools()

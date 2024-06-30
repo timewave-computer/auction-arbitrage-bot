@@ -30,16 +30,8 @@ fn main() -> Result<(), Box<dyn StdError>> {
     let mut ctx = TestContextBuilder::default()
         .with_artifacts_dir("contracts")
         .with_unwrap_raw_logs(false)
-        .with_chain(
-            ConfigChainBuilder::default_neutron()
-                .with_chain_id("neutron-1")
-                .build()?,
-        )
-        .with_chain(
-            ConfigChainBuilder::default_osmosis()
-                .with_chain_id("neutron-1")
-                .build()?,
-        )
+        .with_chain(ConfigChainBuilder::default_neutron().build()?)
+        .with_chain(ConfigChainBuilder::default_osmosis().build()?)
         .with_transfer_channel("neutron", "osmosis")
         .with_transfer_channel("osmosis", "neutron")
         .build()?;

@@ -100,13 +100,15 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         session: aiohttp.ClientSession,
         grpc_channels: list[grpc.aio.Channel],
     ):
+        chain_info = deployments["pools"]["astroport"].values()[0]
+
         WithContract.__init__(self, contract_info)
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b
         self.chain_id = contract_info.clients[0].query_chain_id()
-        self.chain_name = deployments["pools"]["astroport"].values()[0]["chain_name"]
-        self.chain_prefix = "neutron"
-        self.chain_fee_denom = "untrn"
+        self.chain_name = chain_info["chain_name"]
+        self.chain_prefix = chain_info["chain_prefix"]
+        self.chain_fee_denom = chain_info["chain_fee_denom"]
         self.kind = "astroport"
         self.endpoints = endpoints["http"]
         self.session = session
@@ -486,6 +488,7 @@ class NeutronAstroportPoolDirectory:
                 continue
 
             provider = NeutronAstroportPoolProvider(
+                self.deployments,
                 self.endpoints,
                 ContractInfo(
                     self.deployment_info,

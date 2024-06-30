@@ -31,6 +31,7 @@ class AuctionProvider(WithContract):
 
     def __init__(
         self,
+        deployments: dict[str, Any],
         endpoints: dict[str, list[str]],
         contract_info: ContractInfo,
         asset_a: str,
@@ -38,13 +39,15 @@ class AuctionProvider(WithContract):
         session: aiohttp.ClientSession,
         grpc_channels: list[grpc.aio.Channel],
     ):
+        chain_info = deployments["auctions"].values()[0]
+
         WithContract.__init__(self, contract_info)
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b
         self.chain_id = contract_info.clients[0].query_chain_id()
-        self.chain_name = "neutron"
-        self.chain_prefix = "neutron"
-        self.chain_fee_denom = "untrn"
+        self.chain_name = chain_info["chain_name"]
+        self.chain_prefix = chain_info["chain_prefix"]
+        self.chain_fee_denom = chain_info["chain_fee_denom"]
         self.kind = "auction"
         self.endpoints = endpoints["http"]
         self.session = session
@@ -185,7 +188,8 @@ class AuctionDirectory:
                 "grpc": ["grpc+https://neutron-grpc.publicnode.com:443"],
             }
         )
-        self.deployment_info = deployments["auctions"]["neutron"]
+        self.deployments = deployments
+        self.deployment_info = deployments["auctions"].values()[0]
         self.cached_auctions = None
         self.session = session
         self.grpc_channels = grpc_channels
@@ -224,6 +228,7 @@ class AuctionDirectory:
                 poolfile_entry["asset_b"],
             )
             provider = AuctionProvider(
+                self.deployments,
                 self.endpoints,
                 ContractInfo(
                     self.deployment_info,
@@ -270,6 +275,7 @@ class AuctionDirectory:
             asset_b, asset_a = pair
 
             provider = AuctionProvider(
+                self.deployments,
                 self.endpoints,
                 ContractInfo(self.deployment_info, self.clients, addr, "auction"),
                 asset_a,
