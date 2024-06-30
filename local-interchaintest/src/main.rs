@@ -98,16 +98,16 @@ fn main() -> Result<(), Box<dyn StdError>> {
         let token_a = tokens.remove(0);
         let token_b = tokens.remove(0);
 
-        let weight_a = (rand::random::<f64>() * 10) as u128 + 1;
-        let weight_b = (rand::random::<f64>() * 10) as u128 + 1;
+        let weight_a = (rand::random::<f64>() * 10.0) as u64 + 1;
+        let weight_b = (rand::random::<f64>() * 10.0) as u64 + 1;
 
-        let scale = (rand::random::<f64>() * 1000) as u128 + 1;
+        let scale = (rand::random::<f64>() * 1000.0) as u64 + 1;
 
         ctx.build_tx_create_osmo_pool()
             .with_weight(&token_a, weight_a)
             .with_weight(&token_b, weight_b)
-            .with_initial_deposit(&token_a, scale * weight_a)
-            .with_initial_deposit(&token_b, scale * weight_b)
+            .with_initial_deposit(&token_a, (scale * weight_a) as u64)
+            .with_initial_deposit(&token_b, (scale * weight_b) as u64)
             .send()?;
     }
 
