@@ -154,7 +154,7 @@
     },
     {
       "name": "osmosis",
-      "chain_id": "localosmosis-1",
+      "chain_id": "osmosis-1",
       "denom": "uosmo",
       "binary": "osmosisd",
       "bech32_prefix": "osmo",

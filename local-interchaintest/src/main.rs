@@ -35,6 +35,11 @@ fn main() -> Result<(), Box<dyn StdError>> {
                 .with_chain_id("neutron-1")
                 .build()?,
         )
+        .with_chain(
+            ConfigChainBuilder::default_osmosis()
+                .with_chain_id("neutron-1")
+                .build()?,
+        )
         .build()?;
 
     ctx.build_tx_upload_contracts().send()?;
