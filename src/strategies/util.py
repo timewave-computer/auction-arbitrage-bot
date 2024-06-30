@@ -123,12 +123,12 @@ async def exec_arb(
         balance_resp: Optional[int]
 
         if prev_leg:
-            chain_name = prev_leg.backend.chain_name
+            chain_id = prev_leg.backend.chain_id
             chain_prefix = prev_leg.backend.chain_prefix
             out_asset = prev_leg.out_asset()
 
             balance_resp = try_multiple_clients(
-                ctx.clients[chain_name],
+                ctx.clients[chain_id],
                 lambda client: client.query_bank_balance(
                     Address(ctx.wallet.public_key(), prefix=chain_prefix),
                     out_asset,
@@ -136,7 +136,7 @@ async def exec_arb(
             )
         else:
             balance_resp = try_multiple_clients(
-                ctx.clients[leg.backend.chain_name],
+                ctx.clients[leg.backend.chain_id],
                 lambda client: client.query_bank_balance(
                     Address(ctx.wallet.public_key(), prefix=leg.backend.chain_prefix),
                     leg.in_asset(),
@@ -324,7 +324,7 @@ async def recover_funds(
     )
 
     balance_resp = try_multiple_clients(
-        ctx.clients[curr_leg.backend.chain_name],
+        ctx.clients[curr_leg.backend.chain_id],
         lambda client: client.query_bank_balance(
             Address(ctx.wallet.public_key(), prefix=curr_leg.backend.chain_prefix),
             curr_leg.in_asset(),
@@ -435,7 +435,7 @@ async def transfer(
     )
 
     acc = try_multiple_clients_fatal(
-        ctx.clients[prev_leg.backend.chain_name],
+        ctx.clients[prev_leg.backend.chain_id],
         lambda client: client.query_account(
             str(Address(ctx.wallet.public_key(), prefix=prev_leg.backend.chain_prefix))
         ),
@@ -452,7 +452,7 @@ async def transfer(
     tx.complete()
 
     submitted = try_multiple_clients_fatal(
-        ctx.clients[prev_leg.backend.chain_name],
+        ctx.clients[prev_leg.backend.chain_id],
         lambda client: client.broadcast_tx(tx),
     ).wait_to_complete()
 

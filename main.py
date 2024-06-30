@@ -137,7 +137,7 @@ async def main() -> None:
                         LedgerClient(custom_neutron_network_config(endpoint))
                         for endpoint in endpoints["grpc"]
                     ]
-                    for chain_id, endpoint in endpoints.items()
+                    for chain_id, endpoints in endpoints.items()
                 },
                 endpoints,
                 LocalWallet.from_mnemonic(

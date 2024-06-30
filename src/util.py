@@ -11,6 +11,7 @@ from functools import cached_property
 from dataclasses import dataclass
 import aiohttp
 import grpc
+from src.scheduler.util import Ctx
 from cosmpy.aerial.client import NetworkConfig, LedgerClient
 from cosmpy.aerial.contract import LedgerContract
 from cosmpy.aerial.wallet import LocalWallet
@@ -259,55 +260,21 @@ class DenomChainInfo:
 
 
 async def denom_info(
-    src_chain: str,
-    src_denom: str,
-    session: aiohttp.ClientSession,
-    api_key: Optional[str] = None,
+    src_chain: str, src_denom: str, session: aiohttp.ClientSession, ctx: Ctx
 ) -> list[DenomChainInfo]:
     """
     Gets a denom's denom and channel on/to other chains.
     """
 
-    head = {"accept": "application/json", "content-type": "application/json"}
-
-    if api_key:
-        head["authorization"] = api_key
-
-    async with session.post(
-        "https://api.skip.money/v1/fungible/assets_from_source",
-        headers=head,
-        json={
-            "allow_multi_tx": False,
-            "include_cw20_assets": True,
-            "source_asset_denom": src_denom,
-            "source_asset_chain_id": src_chain,
-            "client_id": "timewave-arb-bot",
-        },
-    ) as resp:
-        if resp.status != 200:
-            return []
-
-        dests = (await resp.json())["dest_assets"]
-
-        def chain_info(chain_id: str, info: dict[str, Any]) -> DenomChainInfo:
-            info = info["assets"][0]
-
-            if info["trace"] != "":
-                parts = info["trace"].split("/")
-                port, channel = parts[0], parts[1]
-
-                return DenomChainInfo(
-                    denom=info["denom"],
-                    port=port,
-                    channel=channel,
-                    chain_id=chain_id,
-                )
-
-            return DenomChainInfo(
-                denom=info["denom"], port=None, channel=None, chain_id=chain_id
-            )
-
-        return [chain_info(chain_id, info) for chain_id, info in dests.items()]
+    return list(
+        filter(
+            lambda denom_info: denom_info,
+            (
+                denom_info_on_chain(src_chain, src_denom, chain_id, session, ctx)
+                for chain_id in ctx.endpoint.keys()
+            ),
+        )
+    )
 
 
 async def denom_info_on_chain(
@@ -315,51 +282,23 @@ async def denom_info_on_chain(
     src_denom: str,
     dest_chain: str,
     session: aiohttp.ClientSession,
-    api_key: Optional[str] = None,
+    ctx: Ctx,
 ) -> Optional[DenomChainInfo]:
     """
     Gets a neutron denom's denom and channel on/to another chain.
     """
 
-    head = {"accept": "application/json", "content-type": "application/json"}
+    # Check if this denom is from another chain
+    if "ibc" in src_denom:
+        _, denom_hash = src_denom.split("/")
+        trace = await try_multiple_rest_endpoints(
+            ctx.endpoints[dest_chain],
+            f"/ibc/apps/transfer/v1/denom_traces/{denom_hash}",
+            session,
+        )
 
-    if api_key:
-        head["authorization"] = api_key
-
-    async with session.post(
-        "https://api.skip.money/v1/fungible/assets_from_source",
-        headers=head,
-        json={
-            "allow_multi_tx": False,
-            "include_cw20_assets": True,
-            "source_asset_denom": src_denom,
-            "source_asset_chain_id": src_chain,
-            "client_id": "timewave-arb-bot",
-        },
-    ) as resp:
-        if resp.status != 200:
-            return None
-
-        dests = (await resp.json())["dest_assets"]
-
-        if dest_chain in dests:
-            info = dests[dest_chain]["assets"][0]
-
-            if info["trace"] != "":
-                port, channel = info["trace"].split("/")
-
-                return DenomChainInfo(
-                    denom=info["denom"],
-                    port=port,
-                    channel=channel,
-                    chain_id=dest_chain,
-                )
-
-            return DenomChainInfo(
-                denom=info["denom"], port=None, channel=None, chain_id=dest_chain
-            )
-
-        return None
+        base_denom = trace["denom_trace"]["base_denom"]
+        path = trace["denom_trace"]["base_denom"]
 
 
 @dataclass
