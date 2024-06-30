@@ -176,7 +176,9 @@ async def main() -> None:
                 ctx.deployments,
                 ctx.http_session,
                 poolfile_path=args.pool_file,
-                endpoints=endpoints[ctx.deployments["pools"]["osmosis"].keys()[0]],
+                endpoints=endpoints[
+                    list(ctx.deployments["pools"]["osmosis"].keys())[0]
+                ],
             )
             astro = NeutronAstroportPoolDirectory(
                 ctx.deployments,
@@ -193,11 +195,13 @@ async def main() -> None:
                         )
                     )
                     for endpoint in endpoints[
-                        ctx.deployments["pools"]["astroport"].keys()[0]
+                        list(ctx.deployments["pools"]["astroport"].keys())[0]
                     ]["grpc"]
                 ],
                 poolfile_path=args.pool_file,
-                endpoints=endpoints[ctx.deployments["pools"]["astroport"].keys()[0]],
+                endpoints=endpoints[
+                    list(ctx.deployments["pools"]["astroport"].keys())[0]
+                ],
             )
 
             osmo_pools = await osmosis.pools()

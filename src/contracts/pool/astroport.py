@@ -100,7 +100,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         session: aiohttp.ClientSession,
         grpc_channels: list[grpc.aio.Channel],
     ):
-        chain_info = deployments["pools"]["astroport"].values()[0]
+        chain_info = list(deployments["pools"]["astroport"].values())[0]
 
         WithContract.__init__(self, contract_info)
         self.asset_a_denom = asset_a
@@ -363,7 +363,7 @@ class NeutronAstroportPoolDirectory:
         endpoints: Optional[dict[str, list[str]]] = None,
     ):
         self.deployments = deployments
-        self.deployment_info = deployments["pools"]["astroport"].values()[0]
+        self.deployment_info = list(deployments["pools"]["astroport"].values())[0]
         self.cached_pools = cached_pools(poolfile_path, "neutron_astroport")
         self.session = session
         self.grpc_channels = grpc_channels

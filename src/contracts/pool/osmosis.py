@@ -39,13 +39,13 @@ class OsmosisPoolProvider(PoolProvider):
         Initializes the Osmosis pool provider.
         """
 
-        chain_info = deployments["pools"]["osmosis"].values()[0]
+        chain_info = list(deployments["pools"]["osmosis"].values())[0]
 
         asset_a, asset_b = assets
 
         self.deployments = deployments
         self.client = urllib3.PoolManager()
-        self.chain_id = deployments["pools"]["osmosis"].keys()[0]
+        self.chain_id = list(deployments["pools"]["osmosis"].keys())[0]
         self.chain_name = chain_info["chain_name"]
         self.chain_prefix = chain_info["chain_prefix"]
         self.chain_fee_denom = chain_info["chain_fee_denom"]
@@ -65,7 +65,7 @@ class OsmosisPoolProvider(PoolProvider):
         return [
             LedgerClient(
                 NetworkConfig(
-                    chain_id=self.deployments["pools"]["osmosis"].keys()[0],
+                    chain_id=list(self.deployments["pools"]["osmosis"].keys())[0],
                     url=url,
                     fee_minimum_gas_price=0.0025,
                     fee_denomination="uosmo",

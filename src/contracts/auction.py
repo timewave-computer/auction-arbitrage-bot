@@ -39,7 +39,7 @@ class AuctionProvider(WithContract):
         session: aiohttp.ClientSession,
         grpc_channels: list[grpc.aio.Channel],
     ):
-        chain_info = deployments["auctions"].values()[0]
+        chain_info = list(deployments["auctions"].values())[0]
 
         WithContract.__init__(self, contract_info)
         self.asset_a_denom = asset_a
@@ -189,7 +189,7 @@ class AuctionDirectory:
             }
         )
         self.deployments = deployments
-        self.deployment_info = deployments["auctions"].values()[0]
+        self.deployment_info = list(deployments["auctions"].values())[0]
         self.cached_auctions = None
         self.session = session
         self.grpc_channels = grpc_channels

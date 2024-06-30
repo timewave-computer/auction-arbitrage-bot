@@ -66,14 +66,14 @@ def ctx(session: aiohttp.ClientSession) -> Ctx[State]:
     with open("contracts/deployments.json", encoding="utf-8") as f:
         return Ctx(
             {
-                "neutron": [
+                "neutron-1": [
                     LedgerClient(NEUTRON_NETWORK_CONFIG),
                     *[
                         LedgerClient(custom_neutron_network_config(endpoint))
-                        for endpoint in endpoints["neutron"]["grpc"]
+                        for endpoint in endpoints["neutron-1"]["grpc"]
                     ],
                 ],
-                "osmosis": [
+                "osmosis-1": [
                     *[
                         LedgerClient(
                             NetworkConfig(
@@ -84,7 +84,7 @@ def ctx(session: aiohttp.ClientSession) -> Ctx[State]:
                                 staking_denomination="uosmo",
                             )
                         )
-                        for endpoint in endpoints["osmosis"]["grpc"]
+                        for endpoint in endpoints["osmosis-1"]["grpc"]
                     ],
                 ],
             },

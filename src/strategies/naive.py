@@ -57,11 +57,13 @@ class State:
         self.liquidity_cache = {}
 
         balance_resp = try_multiple_clients(
-            ctx.clients[ctx.deployments["auctions"].keys()[0]],
+            ctx.clients[list(ctx.deployments["auctions"].keys())[0]],
             lambda client: client.query_bank_balance(
                 Address(
                     ctx.wallet.public_key(),
-                    prefix=ctx.deployments["auctions"].values()[0]["chain_prefix"],
+                    prefix=list(ctx.deployments["auctions"].values())[0][
+                        "chain_prefix"
+                    ],
                 ),
                 ctx.cli_args["base_denom"],
             ),
@@ -124,11 +126,13 @@ async def strategy(
             await exec_arb(r, r.expected_profit, r.quantities, route, ctx)
 
             balance_after_resp = try_multiple_clients(
-                ctx.clients[ctx.deployments["auctions"].keys()[0]],
+                ctx.clients[list(ctx.deployments["auctions"].keys())[0]],
                 lambda client: client.query_bank_balance(
                     Address(
                         ctx.wallet.public_key(),
-                        prefix=ctx.deployments["auctions"].values()[0]["chain_prefix"],
+                        prefix=list(ctx.deployments["auctions"].values())[0][
+                            "chain_prefix"
+                        ],
                     ),
                     ctx.cli_args["base_denom"],
                 ),
