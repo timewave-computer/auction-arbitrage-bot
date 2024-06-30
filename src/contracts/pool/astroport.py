@@ -386,8 +386,10 @@ class NeutronAstroportPoolDirectory:
 
     @cached_property
     def clients(self) -> List[LedgerClient]:
+        chain_id = list(self.deployments["pools"]["astroport"].keys())[0]
+
         return [
-            LedgerClient(custom_neutron_network_config(endpoint))
+            LedgerClient(custom_neutron_network_config(endpoint, chain_id=chain_id))
             for endpoint in self.endpoints["grpc"]
         ]
 
