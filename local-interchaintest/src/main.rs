@@ -45,7 +45,7 @@ fn main() -> Result<(), Box<dyn StdError>> {
     let mut denom_map: HashMap<String, Vec<HashMap<String, String>>> = Default::default();
 
     fn denom_map_entry_for(denom: &str, ctx: &mut TestContext) -> Option<HashMap<String, String>> {
-        let trace = ctx.get_ibc_trace(denom, "localneutron-1", "localosmosis-1")?;
+        let trace = ctx.get_ibc_trace(denom, "neutron", "osmosis")?;
 
         let mut ent = HashMap::new();
         ent.insert("chain_id".into(), "localosmosis-1".into());
@@ -58,18 +58,18 @@ fn main() -> Result<(), Box<dyn StdError>> {
 
     ctx.build_tx_upload_contracts().send()?;
 
-    denom_map.insert(
-        String::from("untrn"),
-        vec![denom_map_entry_for("untrn", &mut ctx)
-            .expect("Failed to get denom map entry for untrn")],
-    );
-
     ctx.build_tx_transfer()
         .with_chain_name("neutron")
         .with_recipient(OSMO_OWNER_ADDR)
         .with_denom("untrn")
         .with_amount(1000000)
         .send()?;
+
+    denom_map.insert(
+        String::from("untrn"),
+        vec![denom_map_entry_for("untrn", &mut ctx)
+            .expect("Failed to get denom map entry for untrn")],
+    );
 
     // Create tokens w tokenfactory for all test tokens
     for token in TEST_TOKENS.into_iter() {
@@ -131,21 +131,6 @@ fn main() -> Result<(), Box<dyn StdError>> {
         let token_a = tokens.remove(0);
         let token_b = tokens.remove(0);
 
-        let ibc_denom_a = ctx
-            .get_ibc_denom(&token_a, NEUTRON_CHAIN_NAME, OSMOSIS_CHAIN_NAME)
-            .ok_or(Error::MissingContextVariable(format!(
-                "ibc_denom::{}",
-                &token_a
-            )))?;
-        println!("{} {} {}", token_a, NEUTRON_CHAIN_NAME, OSMOSIS_CHAIN_NAME);
-        println!("{} {} {}", token_b, NEUTRON_CHAIN_NAME, OSMOSIS_CHAIN_NAME);
-        let ibc_denom_b = ctx
-            .get_ibc_denom(&token_b, NEUTRON_CHAIN_NAME, OSMOSIS_CHAIN_NAME)
-            .ok_or(Error::MissingContextVariable(format!(
-                "ibc_denom::{}",
-                &token_b
-            )))?;
-
         let weight_a = (rand::random::<f64>() * 10.0) as u64 + 1;
         let weight_b = (rand::random::<f64>() * 10.0) as u64 + 1;
 
@@ -154,21 +139,36 @@ fn main() -> Result<(), Box<dyn StdError>> {
         ctx.build_tx_transfer()
             .with_chain_name("neutron")
             .with_recipient(OSMO_OWNER_ADDR)
-            .with_denom(if token_a != "untrn" {
-                &token_a
-            } else {
-                &token_b
-            })
+            .with_denom(&token_a)
+            .with_amount((scale * weight_a) as u128)
+            .send()?;
+        ctx.build_tx_transfer()
+            .with_chain_name("neutron")
+            .with_recipient(OSMO_OWNER_ADDR)
+            .with_denom(&token_b)
             .with_amount((scale * weight_a) as u128)
             .send()?;
 
+        let ibc_denom_a = ctx
+            .get_ibc_denom(&token_a, NEUTRON_CHAIN_NAME, OSMOSIS_CHAIN_NAME)
+            .ok_or(Error::MissingContextVariable(format!(
+                "ibc_denom::{}",
+                &token_a
+            )))?;
+        let ibc_denom_b = ctx
+            .get_ibc_denom(&token_b, NEUTRON_CHAIN_NAME, OSMOSIS_CHAIN_NAME)
+            .ok_or(Error::MissingContextVariable(format!(
+                "ibc_denom::{}",
+                &token_b
+            )))?;
+
         denom_map.insert(
-            String::from(token_a),
+            String::from(token_a.clone()),
             vec![denom_map_entry_for(&token_a, &mut ctx)
                 .expect("Failed to get denom map entry for untrn")],
         );
         denom_map.insert(
-            String::from(token_b),
+            String::from(token_b.clone()),
             vec![denom_map_entry_for(&token_b, &mut ctx)
                 .expect("Failed to get denom map entry for untrn")],
         );
