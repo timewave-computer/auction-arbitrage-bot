@@ -303,54 +303,53 @@ async def denom_info_on_chain(
     """
 
     # Get all channels with the other chain
-    channels = []
-    next_key: Optional[str] = ""
 
-    while next_key is not None:
-        maybe_channels = await try_multiple_rest_endpoints(
-            endpoints[src_chain]["http"],
-            f"/ibc/core/channel/v1/channels?pagination.key={next_key}",
-            session,
-        )
+    async def chain_channels(chain: str) -> list[dict[str, Any]]:
+        channels = []
+        next_key: Optional[str] = ""
 
-        if not maybe_channels:
-            break
-
-        channels.extend(maybe_channels["channels"])
-
-        if (
-            "next_key" not in maybe_channels["pagination"]
-            or maybe_channels["pagination"]["next_key"] == ""
-        ):
-            next_key = None
-
-            break
-
-        next_key = maybe_channels["pagination"]["next_key"]
-
-    states = await asyncio.gather(
-        *[
-            try_multiple_rest_endpoints(
-                endpoints[src_chain]["http"],
-                f"/ibc/core/channel/v1/channels/{channel['channel_id']}/ports/{channel['port_id']}/client_state",
+        while next_key is not None:
+            maybe_channels = await try_multiple_rest_endpoints(
+                endpoints[chain]["http"],
+                f"/ibc/core/channel/v1/channels?pagination.key={next_key}",
                 session,
             )
-            for channel in channels
-        ]
-    )
 
-    if not channels:
-        return None
+            if not maybe_channels:
+                break
+
+            channels.extend(maybe_channels["channels"])
+
+            if (
+                "next_key" not in maybe_channels["pagination"]
+                or maybe_channels["pagination"]["next_key"] == ""
+            ):
+                next_key = None
+
+                break
+
+            next_key = maybe_channels["pagination"]["next_key"]
+
+        if not channels:
+            return []
+
+        return channels
+
+    channels_src = await chain_channels(src_chain)
+    channels_by_id_src = {channel["channel_id"]: channel for channel in channels_src}
+    channels_dest = await chain_channels(dest_chain)
+    channels_by_counterparty_id_dest = {
+        channel["counterparty"]["channel_id"]: channel for channel in channels_dest
+    }
 
     channels = [
         channel
-        for (channel, state) in zip(channels, states)
+        for (channel_id, channel) in channels_by_id_src.items()
         if channel["state"] == "STATE_OPEN"
-        and state
         and "counterparty" in channel
         and channel["port_id"] == "transfer"
         and len(channel["connection_hops"]) == 1
-        and state["identified_client_state"]["client_state"]["chain_id"] == dest_chain
+        and channel_id in channels_by_counterparty_id_dest
     ]
 
     if len(channels) == 0:

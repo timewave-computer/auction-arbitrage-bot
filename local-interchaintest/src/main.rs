@@ -1,6 +1,9 @@
 use cosmwasm_std::Decimal;
 use itertools::Itertools;
-use localic_utils::{types::contract::MinAmount, ConfigChainBuilder, TestContextBuilder};
+use localic_utils::{
+    error::Error, types::contract::MinAmount, ConfigChainBuilder, TestContextBuilder,
+    NEUTRON_CHAIN_NAME, OSMOSIS_CHAIN_NAME,
+};
 use notify::{Event, EventKind, RecursiveMode, Result as NotifyResult, Watcher};
 use serde_json::Value;
 use shared_child::SharedChild;
@@ -25,11 +28,12 @@ const ARBFILE_PATH: &str = "../arbs.json";
 
 /// The address that should principally own all contracts
 const OWNER_ADDR: &str = "neutron1kuf2kxwuv2p8k3gnpja7mzf05zvep0cyuy7mxg";
+const OSMO_OWNER_ADDR: &str = "osmo1kuf2kxwuv2p8k3gnpja7mzf05zvep0cysqyf2a";
 
 fn main() -> Result<(), Box<dyn StdError>> {
     let mut ctx = TestContextBuilder::default()
         .with_artifacts_dir("contracts")
-        .with_unwrap_raw_logs(false)
+        .with_unwrap_raw_logs(true)
         .with_chain(ConfigChainBuilder::default_neutron().build()?)
         .with_chain(ConfigChainBuilder::default_osmosis().build()?)
         .with_transfer_channel("neutron", "osmosis")
@@ -37,6 +41,13 @@ fn main() -> Result<(), Box<dyn StdError>> {
         .build()?;
 
     ctx.build_tx_upload_contracts().send()?;
+
+    ctx.build_tx_transfer()
+        .with_chain_name("neutron")
+        .with_recipient(OSMO_OWNER_ADDR)
+        .with_denom("untrn")
+        .with_amount(1000000)
+        .send()?;
 
     // Create tokens w tokenfactory for all test tokens
     for token in TEST_TOKENS.into_iter() {
@@ -98,16 +109,52 @@ fn main() -> Result<(), Box<dyn StdError>> {
         let token_a = tokens.remove(0);
         let token_b = tokens.remove(0);
 
+        let ibc_denom_a = ctx
+            .get_ibc_denom(&token_a, NEUTRON_CHAIN_NAME, OSMOSIS_CHAIN_NAME)
+            .ok_or(Error::MissingContextVariable(format!(
+                "ibc_denom::{}",
+                &token_a
+            )))?;
+        println!("{} {} {}", token_a, NEUTRON_CHAIN_NAME, OSMOSIS_CHAIN_NAME);
+        println!("{} {} {}", token_b, NEUTRON_CHAIN_NAME, OSMOSIS_CHAIN_NAME);
+        let ibc_denom_b = ctx
+            .get_ibc_denom(&token_b, NEUTRON_CHAIN_NAME, OSMOSIS_CHAIN_NAME)
+            .ok_or(Error::MissingContextVariable(format!(
+                "ibc_denom::{}",
+                &token_b
+            )))?;
+
         let weight_a = (rand::random::<f64>() * 10.0) as u64 + 1;
         let weight_b = (rand::random::<f64>() * 10.0) as u64 + 1;
 
         let scale = (rand::random::<f64>() * 1000.0) as u64 + 1;
 
+        ctx.build_tx_transfer()
+            .with_chain_name("neutron")
+            .with_recipient(OSMO_OWNER_ADDR)
+            .with_denom(if token_a != "untrn" {
+                &token_a
+            } else {
+                &token_b
+            })
+            .with_amount((scale * weight_a) as u128)
+            .send()?;
+
         ctx.build_tx_create_osmo_pool()
-            .with_weight(&token_a, weight_a)
-            .with_weight(&token_b, weight_b)
-            .with_initial_deposit(&token_a, (scale * weight_a) as u64)
-            .with_initial_deposit(&token_b, (scale * weight_b) as u64)
+            .with_weight(&ibc_denom_a, weight_a)
+            .with_weight(&ibc_denom_b, weight_b)
+            .with_initial_deposit(&ibc_denom_a, (scale * weight_a) as u64)
+            .with_initial_deposit(&ibc_denom_b, (scale * weight_b) as u64)
+            .send()?;
+
+        let pool_id = ctx.get_osmo_pool(&ibc_denom_a, &ibc_denom_b)?;
+
+        // Fund the pool
+        ctx.build_tx_fund_osmo_pool()
+            .with_pool_id(pool_id)
+            .with_max_amount_in(&ibc_denom_a, (scale * weight_a) as u64)
+            .with_max_amount_in(&ibc_denom_b, (scale * weight_b) as u64)
+            .with_share_amount_out(1000000000000)
             .send()?;
     }
 

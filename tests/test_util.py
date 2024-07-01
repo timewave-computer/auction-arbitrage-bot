@@ -48,5 +48,3 @@ async def test_denom_info_on_chain() -> None:
                 for info in infos
             ]
         )
-
-        breakpoint()
