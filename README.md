@@ -111,11 +111,11 @@ Custom RPC providers may be specified with the `--net_config` flag. This flag sp
 
 ```json
 {
-  "neutron": {
+  "neutron-1": {
     "http": ["https://neutron-rest.publicnode.com"],
 	"grpc": ["grpc+https://neutron-grpc.publicnode.com:443"]
   },
-  "osmosis": {
+  "osmosis-1": {
     "http": ["https://lcd.osmosis.zone"],
 	"grpc": ["https://osmosis-rpc.publicnode.com:443"]
   }

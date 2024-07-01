@@ -6,7 +6,7 @@ import asyncio
 from base64 import standard_b64encode
 import json
 from decimal import Decimal
-from typing import Any, cast, Optional, Callable, TypeVar
+from typing import Any, Optional, Callable, TypeVar
 from functools import cached_property
 from dataclasses import dataclass
 import aiohttp
@@ -36,14 +36,9 @@ DISCOVERY_CONCURRENCY_FACTOR = 20
 EVALUATION_CONCURRENCY_FACTOR = 10
 
 
-# Dictates the maximum portion of the liqiudity in a pool
-# that a trade can be equal to
-MAX_TRADE_IN_POOL_FRACTION = 0.05
-
-
 # The quantity of a denom below which
 # it is no longer worthwhile checking for profit
-DENOM_QUANTITY_ABORT_ARB = 50
+DENOM_QUANTITY_ABORT_ARB = 500
 
 
 NEUTRON_NETWORK_CONFIG = NetworkConfig(
@@ -60,13 +55,15 @@ IBC_TRANSFER_TIMEOUT_SEC = 20
 IBC_TRANSFER_POLL_INTERVAL_SEC = 5
 
 
-def custom_neutron_network_config(url: str) -> NetworkConfig:
+def custom_neutron_network_config(
+    url: str, chain_id: Optional[str] = "neutron-1"
+) -> NetworkConfig:
     """
     Creates a neutron client NetworkConfig with a specific RPC URL.
     """
 
     return NetworkConfig(
-        chain_id="neutron-1",
+        chain_id=chain_id,
         url=url,
         fee_minimum_gas_price=0.0053,
         fee_denomination="untrn",
@@ -75,7 +72,10 @@ def custom_neutron_network_config(url: str) -> NetworkConfig:
 
 
 async def try_multiple_rest_endpoints(
-    endpoints: list[str], route: str, session: aiohttp.ClientSession
+    endpoints: list[str],
+    route: str,
+    session: aiohttp.ClientSession,
+    json_body: Optional[dict[str, Any]] = None,
 ) -> Optional[Any]:
     """
     Returns the response from the first queried endpoint that responds successfully.
@@ -89,6 +89,7 @@ async def try_multiple_rest_endpoints(
                     "accept": "application/json",
                     "content-type": "application/json",
                 },
+                json=json_body,
             ) as resp:
                 if resp.status != 200:
                     continue
@@ -229,15 +230,6 @@ def try_exec_multiple_fatal(
     assert False
 
 
-def deployments() -> dict[str, Any]:
-    """
-    Gets a dict of contracts to address on different networks.
-    See contracts/deployments.json.
-    """
-    with open("contracts/deployments.json", encoding="utf-8") as f:
-        return cast(dict[str, Any], json.load(f))
-
-
 def decimal_to_int(dec: Decimal) -> int:
     """
     Converts a cosmwasm decimal with 18 decimal places to
@@ -274,16 +266,26 @@ async def denom_info(
     src_chain: str,
     src_denom: str,
     session: aiohttp.ClientSession,
-    api_key: Optional[str] = None,
-) -> list[DenomChainInfo]:
+    denom_map: Optional[dict[str, list[dict[str, str]]]] = None,
+) -> list[list[DenomChainInfo]]:
     """
     Gets a denom's denom and channel on/to other chains.
     """
 
-    head = {"accept": "application/json", "content-type": "application/json"}
+    if denom_map:
+        return [
+            [
+                DenomChainInfo(
+                    denom_info["denom"],
+                    denom_info["port_id"],
+                    denom_info["channel_id"],
+                    denom_info["chain_id"],
+                )
+            ]
+            for denom_info in denom_map[src_denom]
+        ]
 
-    if api_key:
-        head["authorization"] = api_key
+    head = {"accept": "application/json", "content-type": "application/json"}
 
     async with session.post(
         "https://api.skip.money/v1/fungible/assets_from_source",
@@ -319,7 +321,7 @@ async def denom_info(
                 denom=info["denom"], port=None, channel=None, chain_id=chain_id
             )
 
-        return [chain_info(chain_id, info) for chain_id, info in dests.items()]
+        return [[chain_info(chain_id, info) for chain_id, info in dests.items()]]
 
 
 async def denom_info_on_chain(
@@ -327,16 +329,25 @@ async def denom_info_on_chain(
     src_denom: str,
     dest_chain: str,
     session: aiohttp.ClientSession,
-    api_key: Optional[str] = None,
-) -> Optional[DenomChainInfo]:
+    denom_map: Optional[dict[str, list[dict[str, str]]]] = None,
+) -> Optional[list[DenomChainInfo]]:
     """
     Gets a neutron denom's denom and channel on/to another chain.
     """
 
-    head = {"accept": "application/json", "content-type": "application/json"}
+    if denom_map:
+        return [
+            DenomChainInfo(
+                denom_info["denom"],
+                denom_info["port_id"],
+                denom_info["channel_id"],
+                denom_info["chain_id"],
+            )
+            for denom_info in denom_map[src_denom]
+            if denom_info["chain_id"] == dest_chain
+        ][:1]
 
-    if api_key:
-        head["authorization"] = api_key
+    head = {"accept": "application/json", "content-type": "application/json"}
 
     async with session.post(
         "https://api.skip.money/v1/fungible/assets_from_source",
@@ -360,16 +371,20 @@ async def denom_info_on_chain(
             if info["trace"] != "":
                 port, channel = info["trace"].split("/")
 
-                return DenomChainInfo(
-                    denom=info["denom"],
-                    port=port,
-                    channel=channel,
-                    chain_id=dest_chain,
-                )
+                return [
+                    DenomChainInfo(
+                        denom=info["denom"],
+                        port=port,
+                        channel=channel,
+                        chain_id=dest_chain,
+                    )
+                ]
 
-            return DenomChainInfo(
-                denom=info["denom"], port=None, channel=None, chain_id=dest_chain
-            )
+            return [
+                DenomChainInfo(
+                    denom=info["denom"], port=None, channel=None, chain_id=dest_chain
+                )
+            ]
 
         return None
 

@@ -7,7 +7,8 @@ from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.route import Leg
 from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
 from src.contracts.auction import AuctionDirectory
-from src.util import deployments, DISCOVERY_CONCURRENCY_FACTOR
+from src.util import DISCOVERY_CONCURRENCY_FACTOR
+from tests.util import deployments
 import pytest
 import aiohttp
 import grpc
@@ -30,7 +31,7 @@ async def test_fmt_route_leg() -> None:
         timeout=aiohttp.ClientTimeout(total=30),
     ) as session:
         # Register Osmosis and Astroport providers
-        osmosis = OsmosisPoolDirectory(session)
+        osmosis = OsmosisPoolDirectory(deployments(), session)
         pool = list(list((await osmosis.pools()).values())[0].values())[0]
 
         # Check that a route leg can be formatter

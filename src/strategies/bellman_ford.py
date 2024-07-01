@@ -151,7 +151,7 @@ async def pair_provider_edge(
     src: str, pair: str, provider: Union[PoolProvider, AuctionProvider]
 ) -> tuple[str, Optional[Edge]]:
     """
-    Calculates edge weights for all pairs connected to a base pair.
+    Calculates edge weights for a specific pair connected to a base.
     """
 
     logger.debug("Getting weight for edge %s -> %s", src, pair)
@@ -389,27 +389,47 @@ async def route_bellman_ford(
     for _ in range(len(vertices)):
         for edge_a, edge_b in ctx.state.weights.values():
 
-            def relax_edge(edge: Edge) -> None:
+            async def relax_edge(edge: Edge) -> None:
+                in_asset_infos = await denom_info_on_chain(
+                    edge.backend.backend.chain_id,
+                    edge.backend.in_asset(),
+                    "neutron-1",
+                    ctx.http_session,
+                )
+                out_asset_infos = await denom_info_on_chain(
+                    edge.backend.backend.chain_id,
+                    edge.backend.out_asset(),
+                    "neutron-1",
+                    ctx.http_session,
+                )
+
+                if not in_asset_infos:
+                    return
+
+                if not out_asset_infos:
+                    return
+
+                in_asset = in_asset_infos[0].denom
+                out_asset = out_asset_infos[0].denom
+
                 if (
                     (
-                        distances[edge.backend.in_asset()]
-                        if distances[edge.backend.in_asset()] != Decimal("Inf")
+                        distances[in_asset]
+                        if distances[in_asset] != Decimal("Inf")
                         else Decimal(0)
                     )
                     + edge.weight
-                ) < distances[edge.backend.out_asset()]:
-                    distances[edge.backend.out_asset()] = (
-                        distances[edge.backend.in_asset()]
-                        if distances[edge.backend.in_asset()] != Decimal("Inf")
+                ) < distances[out_asset]:
+                    distances[out_asset] = (
+                        distances[in_asset]
+                        if distances[in_asset] != Decimal("Inf")
                         else Decimal(0)
                     )
-                    pred[edge.backend.out_asset()] = edge.backend.in_asset()
-                    pair_leg[(edge.backend.in_asset(), edge.backend.out_asset())] = (
-                        edge.backend
-                    )
+                    pred[out_asset] = in_asset
+                    pair_leg[in_asset, out_asset] = edge.backend
 
-            relax_edge(edge_a)
-            relax_edge(edge_b)
+            await relax_edge(edge_a)
+            await relax_edge(edge_b)
 
     cycles = []
 
@@ -469,31 +489,39 @@ async def route_bellman_ford(
     # construct it to do so
     if legs[0].in_asset() != src or legs[-1].out_asset() != src:
         in_denom = await denom_info_on_chain(
-            "neutron-1", src, legs[0].backend.chain_id, ctx.http_session
+            "neutron-1",
+            src,
+            legs[0].backend.chain_id,
+            ctx.http_session,
         )
 
         if not in_denom:
             return None
 
         out_denom = await denom_info_on_chain(
-            "neutron-1", src, legs[-1].backend.chain_id, ctx.http_session
+            "neutron-1",
+            src,
+            legs[-1].backend.chain_id,
+            ctx.http_session,
         )
 
         if not out_denom:
             return None
 
         in_legs: list[Union[PoolProvider, AuctionProvider]] = list(
-            pools.get(in_denom.denom, {}).get(legs[0].in_asset(), [])
+            pools.get(in_denom[0].denom, {}).get(legs[0].in_asset(), [])
         )
-        in_auction = auctions.get(in_denom.denom, {}).get(legs[0].in_asset(), None)
+        in_auction = auctions.get(in_denom[0].denom, {}).get(legs[0].in_asset(), None)
 
         if in_auction:
             in_legs.append(in_auction)
 
         out_legs: list[Union[PoolProvider, AuctionProvider]] = list(
-            pools.get(legs[-1].out_asset(), {}).get(out_denom.denom, [])
+            pools.get(legs[-1].out_asset(), {}).get(out_denom[0].denom, [])
         )
-        out_auction = auctions.get(legs[-1].out_asset(), {}).get(out_denom.denom, None)
+        out_auction = auctions.get(legs[-1].out_asset(), {}).get(
+            out_denom[0].denom, None
+        )
 
         if out_auction:
             out_legs.append(out_auction)
@@ -509,12 +537,12 @@ async def route_bellman_ford(
                 Leg(
                     (
                         in_leg.asset_a
-                        if in_leg.asset_a() == in_denom.denom
+                        if in_leg.asset_a() == in_denom[0].denom
                         else in_leg.asset_b
                     ),
                     (
                         in_leg.asset_b
-                        if in_leg.asset_a() == in_denom.denom
+                        if in_leg.asset_a() == in_denom[0].denom
                         else in_leg.asset_a
                     ),
                     in_leg,
@@ -525,12 +553,12 @@ async def route_bellman_ford(
                 Leg(
                     (
                         out_leg.asset_b
-                        if out_leg.asset_a() == out_denom.denom
+                        if out_leg.asset_a() == out_denom[0].denom
                         else out_leg.asset_a
                     ),
                     (
                         out_leg.asset_a
-                        if out_leg.asset_a() == out_denom.denom
+                        if out_leg.asset_a() == out_denom[0].denom
                         else out_leg.asset_b
                     ),
                     out_leg,

@@ -12,7 +12,6 @@ from cosmpy.aerial.wallet import LocalWallet
 from src.contracts.auction import AuctionDirectory, AuctionProvider
 from src.contracts.route import Route, load_route, LegRepr, Status, Leg
 from src.contracts.pool.provider import PoolProvider
-from src.util import deployments
 import aiohttp
 import grpc
 
@@ -37,6 +36,8 @@ class Ctx(Generic[TState]):
     terminated: bool
     http_session: aiohttp.ClientSession
     order_history: list[Route]
+    deployments: dict[str, Any]
+    denom_map: Optional[dict[str, list[dict[str, str]]]]
 
     def with_state(self, state: Any) -> Self:
         """
@@ -191,7 +192,7 @@ class Scheduler(Generic[TState]):
         self.providers: dict[str, dict[str, List[PoolProvider]]] = {}
 
         self.auction_manager = AuctionDirectory(
-            deployments(),
+            self.ctx.deployments,
             ctx.http_session,
             [
                 (
@@ -204,9 +205,11 @@ class Scheduler(Generic[TState]):
                         endpoint.split("grpc+http://")[1],
                     )
                 )
-                for endpoint in ctx.endpoints["neutron"]["grpc"]
+                for endpoint in ctx.endpoints[
+                    list(self.ctx.deployments["auctions"].keys())[0]
+                ]["grpc"]
             ],
-            endpoints=ctx.endpoints["neutron"],
+            endpoints=ctx.endpoints[list(self.ctx.deployments["auctions"].keys())[0]],
             poolfile_path=ctx.cli_args["pool_file"],
         )
         self.auctions = {}

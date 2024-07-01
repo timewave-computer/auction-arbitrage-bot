@@ -3,7 +3,8 @@ Tests that the auction directory and providers work as expected.
 """
 
 from src.contracts.auction import AuctionDirectory, AuctionProvider
-from src.util import deployments, DISCOVERY_CONCURRENCY_FACTOR
+from src.util import DISCOVERY_CONCURRENCY_FACTOR
+from tests.util import deployments
 import pytest
 import aiohttp
 import grpc

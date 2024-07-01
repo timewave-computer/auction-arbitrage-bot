@@ -2,6 +2,9 @@ name: Test Auction Arbitrage Bot
 
 on: [push]
 
+env:
+  GO_VERSION: 1.21
+
 jobs:
   test:
     name: python test
@@ -17,4 +20,31 @@ jobs:
         run: nix develop --command make lint
       - name: Run tests
         run: nix develop --command make test
-        
+  int-test:
+    name: integration test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install local-ic
+        run: cd local-interchaintest && git clone https://github.com/strangelove-ventures/interchaintest.git && cd interchaintest/local-interchain && make install
+
+      - name: Install nix
+        uses: cachix/install-nix-action@v27
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Get cargo
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Compile protobuf
+        run: nix develop --command make proto
+      - name: Run local-interchaintest
+        run: cd local-interchaintest && local-ic start neutron_osmosis_gaia --api-port 42069 & curl --head -X GET --retry 200 --retry-connrefused --retry-delay 1 http://localhost:42069 && cd local-interchaintest && nix develop --command make test

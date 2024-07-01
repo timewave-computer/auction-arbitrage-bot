@@ -57,9 +57,14 @@ class State:
         self.liquidity_cache = {}
 
         balance_resp = try_multiple_clients(
-            ctx.clients["neutron"],
+            ctx.clients[list(ctx.deployments["auctions"].keys())[0]],
             lambda client: client.query_bank_balance(
-                Address(ctx.wallet.public_key(), prefix="neutron"),
+                Address(
+                    ctx.wallet.public_key(),
+                    prefix=list(ctx.deployments["auctions"].values())[0][
+                        "chain_prefix"
+                    ],
+                ),
                 ctx.cli_args["base_denom"],
             ),
         )
@@ -121,9 +126,14 @@ async def strategy(
             await exec_arb(r, r.expected_profit, r.quantities, route, ctx)
 
             balance_after_resp = try_multiple_clients(
-                ctx.clients["neutron"],
+                ctx.clients[list(ctx.deployments["auctions"].keys())[0]],
                 lambda client: client.query_bank_balance(
-                    Address(ctx.wallet.public_key(), prefix="neutron"),
+                    Address(
+                        ctx.wallet.public_key(),
+                        prefix=list(ctx.deployments["auctions"].values())[0][
+                            "chain_prefix"
+                        ],
+                    ),
                     ctx.cli_args["base_denom"],
                 ),
             )
@@ -162,7 +172,9 @@ async def strategy(
 
         ctx.update_route(r)
 
-        ctx = ctx.with_state(state.poll(ctx, pools, auctions)).commit_history()
+        ctx = ctx.with_state(state.poll(ctx, pools, auctions))
+
+    ctx.commit_history()
 
     logger.info("Completed arbitrage round")
 
@@ -235,7 +247,7 @@ async def eval_route(
     ctx.log_route(
         r,
         "info",
-        "Route has investment ramp of %d",
+        "Route has starting amount of %d",
         [
             starting_amt,
         ],
@@ -300,7 +312,7 @@ async def listen_routes_with_depth_dfs(
     auctions: dict[str, dict[str, AuctionProvider]],
     ctx: Ctx[State],
 ) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
-    denom_cache: dict[str, dict[str, str]] = {}
+    denom_cache: dict[str, dict[str, list[str]]] = {}
 
     start_pools: list[Union[AuctionProvider, PoolProvider]] = [
         *auctions.get(src, {}).values(),
@@ -323,7 +335,12 @@ async def listen_routes_with_depth_dfs(
 
         if len(path) >= 2 and not (
             path[-1].in_asset() == path[-2].out_asset()
-            or path[-1].in_asset() in denom_cache[path[-2].out_asset()].values()
+            or path[-1].in_asset()
+            in [
+                denom
+                for denom_list in denom_cache[path[-2].out_asset()].values()
+                for denom in denom_list
+            ]
         ):
             return
 
@@ -372,26 +389,25 @@ async def listen_routes_with_depth_dfs(
         if end not in denom_cache:
             try:
                 denom_infos = await denom_info(
-                    prev_pool.backend.chain_id,
-                    end,
-                    ctx.http_session,
-                    api_key=ctx.cli_args["skip_api_key"],
+                    prev_pool.backend.chain_id, end, ctx.http_session, ctx.denom_map
                 )
 
                 denom_cache[end] = {
-                    info.chain_id: info.denom
+                    info[0].chain_id: [i.denom for i in info]
                     for info in (
                         denom_infos
                         + [
-                            DenomChainInfo(
-                                denom=end,
-                                port=None,
-                                channel=None,
-                                chain_id=prev_pool.backend.chain_id,
-                            )
+                            [
+                                DenomChainInfo(
+                                    denom=end,
+                                    port=None,
+                                    channel=None,
+                                    chain_id=prev_pool.backend.chain_id,
+                                )
+                            ]
                         ]
                     )
-                    if info.chain_id
+                    if len(info) > 0 and info[0].chain_id
                 }
             except asyncio.TimeoutError:
                 return
@@ -441,7 +457,8 @@ async def listen_routes_with_depth_dfs(
                         ),
                         auction,
                     )
-                    for denom in denom_cache[end].values()
+                    for denom_set in denom_cache[end].values()
+                    for denom in denom_set
                     for auction in auctions.get(denom, {}).values()
                     if auction.chain_id != prev_pool.backend.chain_id
                 ),
@@ -459,7 +476,8 @@ async def listen_routes_with_depth_dfs(
                         ),
                         pool,
                     )
-                    for denom in denom_cache[end].values()
+                    for denom_set in denom_cache[end].values()
+                    for denom in denom_set
                     for pool_set in pools.get(denom, {}).values()
                     for pool in pool_set
                     if pool.chain_id != prev_pool.backend.chain_id
@@ -479,7 +497,12 @@ async def listen_routes_with_depth_dfs(
             async for route in streamer:
                 yield route
 
-    routes = stream.merge(*[next_legs([leg]) for leg in start_legs])
+    next_jobs = [next_legs([leg]) for leg in start_legs]
+
+    if len(next_jobs) == 0:
+        return
+
+    routes = stream.merge(*next_jobs)
 
     async with routes.stream() as streamer:
         async for route in streamer:

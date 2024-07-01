@@ -27,7 +27,6 @@ from src.util import (
     DENOM_QUANTITY_ABORT_ARB,
 )
 from src.scheduler import Ctx
-import asyncio
 from cosmos.base.v1beta1 import coin_pb2
 from cosmpy.crypto.address import Address
 from cosmpy.aerial.tx import Transaction, SigningCfg
@@ -37,7 +36,10 @@ from ibc.applications.transfer.v1 import tx_pb2
 logger = logging.getLogger(__name__)
 
 
-IBC_TRANSFER_GAS = 1000
+IBC_TRANSFER_GAS = 100000
+
+
+MAX_POOL_LIQUIDITY_TRADE = Decimal("0.1")
 
 
 def fmt_route_leg(leg: Leg) -> str:
@@ -118,16 +120,31 @@ async def exec_arb(
     )
 
     for leg, to_swap in zip(route, quantities):
-        balance_resp = try_multiple_clients(
-            ctx.clients[leg.backend.chain_id.split("-")[0]],
-            lambda client: client.query_bank_balance(
-                Address(ctx.wallet.public_key(), prefix=leg.backend.chain_prefix),
-                leg.in_asset(),
-            ),
-        )
+        balance_resp: Optional[int]
+
+        if prev_leg:
+            chain_id = prev_leg.backend.chain_id
+            chain_prefix = prev_leg.backend.chain_prefix
+            out_asset = prev_leg.out_asset()
+
+            balance_resp = try_multiple_clients(
+                ctx.clients[chain_id],
+                lambda client: client.query_bank_balance(
+                    Address(ctx.wallet.public_key(), prefix=chain_prefix),
+                    out_asset,
+                ),
+            )
+        else:
+            balance_resp = try_multiple_clients(
+                ctx.clients[leg.backend.chain_id],
+                lambda client: client.query_bank_balance(
+                    Address(ctx.wallet.public_key(), prefix=leg.backend.chain_prefix),
+                    leg.in_asset(),
+                ),
+            )
 
         if not balance_resp:
-            raise ValueError("Couldn't get balance.")
+            raise ValueError(f"Couldn't get balance for asset {leg.in_asset()}.")
 
         to_swap = min(to_swap, balance_resp)
 
@@ -173,7 +190,13 @@ async def exec_arb(
             # Cancel arb if the transfer fails
             try:
                 await transfer(
-                    route_ent, prev_leg.out_asset(), prev_leg, leg, ctx, to_swap
+                    route_ent,
+                    prev_leg.out_asset(),
+                    leg.in_asset(),
+                    prev_leg,
+                    leg,
+                    ctx,
+                    to_swap,
                 )
             except Exception as e:
                 ctx.log_route(
@@ -307,7 +330,7 @@ async def recover_funds(
     )
 
     balance_resp = try_multiple_clients(
-        ctx.clients[curr_leg.backend.chain_id.split("-")[0]],
+        ctx.clients[curr_leg.backend.chain_id],
         lambda client: client.query_bank_balance(
             Address(ctx.wallet.public_key(), prefix=curr_leg.backend.chain_prefix),
             curr_leg.in_asset(),
@@ -336,6 +359,7 @@ async def recover_funds(
 async def transfer(
     route: Route,
     denom: str,
+    dest_denom: str,
     prev_leg: Leg,
     leg: Leg,
     ctx: Ctx[Any],
@@ -348,35 +372,63 @@ async def transfer(
     succeeded.
     """
 
-    denom_info = await denom_info_on_chain(
+    denom_infos = await denom_info_on_chain(
         src_chain=prev_leg.backend.chain_id,
         src_denom=denom,
         dest_chain=leg.backend.chain_id,
         session=ctx.http_session,
+        denom_map=ctx.denom_map,
     )
 
-    if not denom_info:
+    if not denom_infos or len(denom_infos) == 0:
         raise ValueError("Missing denom info for target chain in IBC transfer")
 
-    channel_info = await try_multiple_rest_endpoints(
-        ctx.endpoints[leg.backend.chain_id.split("-")[0]]["http"],
-        f"/ibc/core/channel/v1/channels/{denom_info.channel}/ports/{denom_info.port}",
-        ctx.http_session,
-    )
+    denom_infos = [info for info in (denom_infos) if info.denom == dest_denom]
+
+    if not denom_infos or len(denom_infos) == 0:
+        raise ValueError("Missing denom info for target chain in IBC transfer")
+
+    denom_info = denom_infos[0]
+
+    channel_info: Optional[dict[str, Any]]
+
+    # Not enough info to complete the transfer
+    if not denom_infos or not denom_info.port or not denom_info.channel:
+        our_traces = await denom_info_on_chain(
+            src_chain=leg.backend.chain_id,
+            src_denom=denom_info.denom,
+            dest_chain=prev_leg.backend.chain_id,
+            session=ctx.http_session,
+            denom_map=ctx.denom_map,
+        )
+
+        if not our_traces:
+            raise ValueError("Missing channel info for target chain in IBC transfer")
+
+        our_traces = [trace for trace in (our_traces) if trace.denom == denom]
+
+        if not our_traces or len(our_traces) == 0:
+            raise ValueError("Missing channel info for target chain in IBC transfer")
+
+        our_trace = our_traces[0]
+
+        channel_info = {
+            "channel": {
+                "counterparty": {
+                    "port_id": our_trace.port,
+                    "channel_id": our_trace.channel,
+                }
+            }
+        }
+    else:
+        channel_info = await try_multiple_rest_endpoints(
+            ctx.endpoints[leg.backend.chain_name]["http"],
+            f"/ibc/core/channel/v1/channels/{denom_info.channel}/ports/{denom_info.port}",
+            ctx.http_session,
+        )
 
     if not channel_info:
         raise ValueError("Missing channel info for target chain in IBC transfer")
-
-    # Not enough info to complete the transfer
-    if not denom_info or not denom_info.port or not denom_info.channel:
-        raise ValueError("Missing channel info for target chain in IBC transfer")
-
-    acc = try_multiple_clients_fatal(
-        ctx.clients[prev_leg.backend.chain_id.split("-")[0]],
-        lambda client: client.query_account(
-            str(Address(ctx.wallet.public_key(), prefix=prev_leg.backend.chain_prefix))
-        ),
-    )
 
     logger.debug(
         "Executing IBC transfer %s from %s -> %s with source port %s, source channel %s, sender %s, and receiver %s",
@@ -405,18 +457,25 @@ async def transfer(
         )
     )
 
+    acc = try_multiple_clients_fatal(
+        ctx.clients[prev_leg.backend.chain_id],
+        lambda client: client.query_account(
+            str(Address(ctx.wallet.public_key(), prefix=prev_leg.backend.chain_prefix))
+        ),
+    )
+
     tx = Transaction()
     tx.add_message(msg)
     tx.seal(
         SigningCfg.direct(ctx.wallet.public_key(), acc.sequence),
-        f"3000{prev_leg.backend.chain_fee_denom}",
-        50000,
+        f"100000{prev_leg.backend.chain_fee_denom}",
+        1000000,
     )
     tx.sign(ctx.wallet.signer(), prev_leg.backend.chain_id, acc.number)
     tx.complete()
 
     submitted = try_multiple_clients_fatal(
-        ctx.clients[prev_leg.backend.chain_id.split("-")[0]],
+        ctx.clients[prev_leg.backend.chain_id],
         lambda client: client.broadcast_tx(tx),
     ).wait_to_complete()
 
@@ -470,7 +529,7 @@ async def transfer(
     while time.time() < timeout:
         time.sleep(IBC_TRANSFER_POLL_INTERVAL_SEC)
 
-        if asyncio.run(transfer_or_continue()):
+        if await transfer_or_continue():
             break
 
 
@@ -490,7 +549,7 @@ async def quantities_for_route_profit(
 
     quantities: list[int] = [starting_amount]
 
-    while quantities[-1] - quantities[0] <= 0:
+    while quantities[-1] - quantities[0] <= 0 or len(quantities) <= len(route):
         ctx.log_route(r, "info", "Route has possible execution plan: %s", [quantities])
 
         if starting_amount < DENOM_QUANTITY_ABORT_ARB:
@@ -536,9 +595,22 @@ async def quantities_for_route_profit(
                     int(await leg.backend.simulate_swap_asset_a(prev_amt))
                 )
 
+                if (
+                    Decimal(quantities[-1])
+                    / Decimal(await leg.backend.balance_asset_b())
+                    > MAX_POOL_LIQUIDITY_TRADE
+                ):
+                    break
+
                 continue
 
             quantities.append(int(await leg.backend.simulate_swap_asset_b(prev_amt)))
+
+            if (
+                Decimal(quantities[-1]) / Decimal(await leg.backend.balance_asset_a())
+                > MAX_POOL_LIQUIDITY_TRADE
+            ):
+                break
 
         starting_amount = int(Decimal(starting_amount) / Decimal(2.0))
 
