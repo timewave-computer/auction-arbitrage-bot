@@ -377,7 +377,7 @@ async def transfer(
         src_denom=denom,
         dest_chain=leg.backend.chain_id,
         session=ctx.http_session,
-        endpoints=ctx.endpoints,
+        denom_map=ctx.denom_map,
     )
 
     if not denom_infos or len(denom_infos) == 0:
@@ -399,7 +399,7 @@ async def transfer(
             src_denom=denom_info.denom,
             dest_chain=prev_leg.backend.chain_id,
             session=ctx.http_session,
-            endpoints=ctx.endpoints,
+            denom_map=ctx.denom_map,
         )
 
         if not our_traces:

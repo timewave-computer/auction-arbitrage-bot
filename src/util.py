@@ -2,12 +2,11 @@
 Implements utilities for implementing arbitrage bots.
 """
 
-from hashlib import sha256
 import asyncio
 from base64 import standard_b64encode
 import json
 from decimal import Decimal
-from typing import Any, Optional, Callable, TypeVar, TypeGuard
+from typing import Any, Optional, Callable, TypeVar
 from functools import cached_property
 from dataclasses import dataclass
 import aiohttp
@@ -267,28 +266,62 @@ async def denom_info(
     src_chain: str,
     src_denom: str,
     session: aiohttp.ClientSession,
-    endpoints: dict[str, dict[str, list[str]]],
+    denom_map: Optional[dict[str, list[dict[str, str]]]] = None,
 ) -> list[list[DenomChainInfo]]:
     """
     Gets a denom's denom and channel on/to other chains.
     """
 
-    def is_not_none(
-        info: Optional[list[DenomChainInfo]],
-    ) -> TypeGuard[list[DenomChainInfo]]:
-        return info is not None
-
-    return list(
-        filter(
-            is_not_none,
+    if denom_map:
+        return [
             [
-                await denom_info_on_chain(
-                    src_chain, src_denom, chain_id, session, endpoints
+                DenomChainInfo(
+                    denom_info["denom"],
+                    denom_info["port_id"],
+                    denom_info["channel_id"],
+                    denom_info["chain_id"],
                 )
-                for chain_id in endpoints.keys()
-            ],
-        )
-    )
+            ]
+            for denom_info in denom_map[src_denom]
+        ]
+
+    head = {"accept": "application/json", "content-type": "application/json"}
+
+    async with session.post(
+        "https://api.skip.money/v1/fungible/assets_from_source",
+        headers=head,
+        json={
+            "allow_multi_tx": False,
+            "include_cw20_assets": True,
+            "source_asset_denom": src_denom,
+            "source_asset_chain_id": src_chain,
+            "client_id": "timewave-arb-bot",
+        },
+    ) as resp:
+        if resp.status != 200:
+            return []
+
+        dests = (await resp.json())["dest_assets"]
+
+        def chain_info(chain_id: str, info: dict[str, Any]) -> DenomChainInfo:
+            info = info["assets"][0]
+
+            if info["trace"] != "":
+                parts = info["trace"].split("/")
+                port, channel = parts[0], parts[1]
+
+                return DenomChainInfo(
+                    denom=info["denom"],
+                    port=port,
+                    channel=channel,
+                    chain_id=chain_id,
+                )
+
+            return DenomChainInfo(
+                denom=info["denom"], port=None, channel=None, chain_id=chain_id
+            )
+
+        return [[chain_info(chain_id, info) for chain_id, info in dests.items()]]
 
 
 async def denom_info_on_chain(
@@ -296,87 +329,64 @@ async def denom_info_on_chain(
     src_denom: str,
     dest_chain: str,
     session: aiohttp.ClientSession,
-    endpoints: dict[str, dict[str, list[str]]],
+    denom_map: Optional[dict[str, list[dict[str, str]]]] = None,
 ) -> Optional[list[DenomChainInfo]]:
     """
     Gets a neutron denom's denom and channel on/to another chain.
     """
 
-    # Get all channels with the other chain
-
-    async def chain_channels(chain: str) -> list[dict[str, Any]]:
-        channels = []
-        next_key: Optional[str] = ""
-
-        while next_key is not None:
-            maybe_channels = await try_multiple_rest_endpoints(
-                endpoints[chain]["http"],
-                f"/ibc/core/channel/v1/channels?pagination.key={next_key}",
-                session,
+    if denom_map:
+        return [
+            DenomChainInfo(
+                denom_info["denom"],
+                denom_info["port_id"],
+                denom_info["channel_id"],
+                denom_info["chain_id"],
             )
+            for denom_info in denom_map[src_denom]
+            if denom_info["chain_id"] == dest_chain
+        ][:1]
 
-            if not maybe_channels:
-                break
+    head = {"accept": "application/json", "content-type": "application/json"}
 
-            channels.extend(maybe_channels["channels"])
+    async with session.post(
+        "https://api.skip.money/v1/fungible/assets_from_source",
+        headers=head,
+        json={
+            "allow_multi_tx": False,
+            "include_cw20_assets": True,
+            "source_asset_denom": src_denom,
+            "source_asset_chain_id": src_chain,
+            "client_id": "timewave-arb-bot",
+        },
+    ) as resp:
+        if resp.status != 200:
+            return None
 
-            if (
-                "next_key" not in maybe_channels["pagination"]
-                or maybe_channels["pagination"]["next_key"] == ""
-            ):
-                next_key = None
+        dests = (await resp.json())["dest_assets"]
 
-                break
+        if dest_chain in dests:
+            info = dests[dest_chain]["assets"][0]
 
-            next_key = maybe_channels["pagination"]["next_key"]
+            if info["trace"] != "":
+                port, channel = info["trace"].split("/")
 
-        if not channels:
-            return []
+                return [
+                    DenomChainInfo(
+                        denom=info["denom"],
+                        port=port,
+                        channel=channel,
+                        chain_id=dest_chain,
+                    )
+                ]
 
-        return channels
+            return [
+                DenomChainInfo(
+                    denom=info["denom"], port=None, channel=None, chain_id=dest_chain
+                )
+            ]
 
-    channels_src = await chain_channels(src_chain)
-    channels_by_id_src = {channel["channel_id"]: channel for channel in channels_src}
-    channels_dest = await chain_channels(dest_chain)
-    channels_by_counterparty_id_dest = {
-        channel["counterparty"]["channel_id"]: channel for channel in channels_dest
-    }
-
-    channels = [
-        channel
-        for (channel_id, channel) in channels_by_id_src.items()
-        if channel["state"] == "STATE_OPEN"
-        and "counterparty" in channel
-        and channel["port_id"] == "transfer"
-        and len(channel["connection_hops"]) == 1
-        and channel_id in channels_by_counterparty_id_dest
-    ]
-
-    if len(channels) == 0:
         return None
-
-    def channel_to_denom(channel: dict[str, Any]) -> DenomChainInfo:
-        m = sha256()
-        m.update(
-            bytes(
-                channel["counterparty"]["port_id"]
-                + "/"
-                + channel["counterparty"]["channel_id"]
-                + "/"
-                + src_denom,
-                "utf-8",
-            )
-        )
-        denom = f"ibc/{m.hexdigest().upper()}"
-
-        return DenomChainInfo(
-            denom,
-            channel["port_id"],
-            channel["channel_id"],
-            dest_chain,
-        )
-
-    return [channel_to_denom(channel) for channel in channels]
 
 
 @dataclass

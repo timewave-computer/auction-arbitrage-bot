@@ -1,4 +1,4 @@
-use std::{error::Error, fs::OpenOptions, io::Write};
+use std::{collections::HashMap, error::Error, fs::OpenOptions, io::Write};
 
 /// Creates an arb bot contract address file.
 pub(crate) fn create_deployment_file(
@@ -91,6 +91,20 @@ pub(crate) fn create_netconfig() -> Result<(), Box<dyn Error>> {
         .to_string()
         .as_bytes(),
     )?;
+
+    Ok(())
+}
+
+pub(crate) fn create_denom_file(
+    denoms: HashMap<String, Vec<HashMap<String, String>>>,
+) -> Result<(), Box<dyn Error>> {
+    let mut f = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open("../denoms.json")?;
+
+    f.write_all(serde_json::to_string(&denoms)?.as_bytes())?;
 
     Ok(())
 }

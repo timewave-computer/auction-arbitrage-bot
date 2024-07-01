@@ -37,6 +37,7 @@ class Ctx(Generic[TState]):
     http_session: aiohttp.ClientSession
     order_history: list[Route]
     deployments: dict[str, Any]
+    denom_map: Optional[dict[str, list[dict[str, str]]]]
 
     def with_state(self, state: Any) -> Self:
         """

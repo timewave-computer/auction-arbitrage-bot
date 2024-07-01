@@ -395,14 +395,12 @@ async def route_bellman_ford(
                     edge.backend.in_asset(),
                     "neutron-1",
                     ctx.http_session,
-                    ctx.endpoints,
                 )
                 out_asset_infos = await denom_info_on_chain(
                     edge.backend.backend.chain_id,
                     edge.backend.out_asset(),
                     "neutron-1",
                     ctx.http_session,
-                    ctx.endpoints,
                 )
 
                 if not in_asset_infos:
@@ -491,14 +489,20 @@ async def route_bellman_ford(
     # construct it to do so
     if legs[0].in_asset() != src or legs[-1].out_asset() != src:
         in_denom = await denom_info_on_chain(
-            "neutron-1", src, legs[0].backend.chain_id, ctx.http_session, ctx.endpoints
+            "neutron-1",
+            src,
+            legs[0].backend.chain_id,
+            ctx.http_session,
         )
 
         if not in_denom:
             return None
 
         out_denom = await denom_info_on_chain(
-            "neutron-1", src, legs[-1].backend.chain_id, ctx.http_session, ctx.endpoints
+            "neutron-1",
+            src,
+            legs[-1].backend.chain_id,
+            ctx.http_session,
         )
 
         if not out_denom:

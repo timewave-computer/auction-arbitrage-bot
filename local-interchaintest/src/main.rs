@@ -1,13 +1,14 @@
 use cosmwasm_std::Decimal;
 use itertools::Itertools;
 use localic_utils::{
-    error::Error, types::contract::MinAmount, ConfigChainBuilder, TestContextBuilder,
-    NEUTRON_CHAIN_NAME, OSMOSIS_CHAIN_NAME,
+    error::Error, types::contract::MinAmount, utils::test_context::TestContext, ConfigChainBuilder,
+    TestContextBuilder, NEUTRON_CHAIN_NAME, OSMOSIS_CHAIN_NAME,
 };
 use notify::{Event, EventKind, RecursiveMode, Result as NotifyResult, Watcher};
 use serde_json::Value;
 use shared_child::SharedChild;
 use std::{
+    collections::HashMap,
     error::Error as StdError,
     fs::OpenOptions,
     path::Path,
@@ -40,7 +41,28 @@ fn main() -> Result<(), Box<dyn StdError>> {
         .with_transfer_channel("osmosis", "neutron")
         .build()?;
 
+    // Mapping of denoms to their matching denoms, chain id's, channel id's, and ports
+    let mut denom_map: HashMap<String, Vec<HashMap<String, String>>> = Default::default();
+
+    fn denom_map_entry_for(denom: &str, ctx: &mut TestContext) -> Option<HashMap<String, String>> {
+        let trace = ctx.get_ibc_trace(denom, "localneutron-1", "localosmosis-1")?;
+
+        let mut ent = HashMap::new();
+        ent.insert("chain_id".into(), "localosmosis-1".into());
+        ent.insert("channel_id".into(), trace.channel_id);
+        ent.insert("port_id".into(), "transfer".into());
+        ent.insert("denom".into(), trace.dest_denom);
+
+        Some(ent)
+    }
+
     ctx.build_tx_upload_contracts().send()?;
+
+    denom_map.insert(
+        String::from("untrn"),
+        vec![denom_map_entry_for("untrn", &mut ctx)
+            .expect("Failed to get denom map entry for untrn")],
+    );
 
     ctx.build_tx_transfer()
         .with_chain_name("neutron")
@@ -140,6 +162,17 @@ fn main() -> Result<(), Box<dyn StdError>> {
             .with_amount((scale * weight_a) as u128)
             .send()?;
 
+        denom_map.insert(
+            String::from(token_a),
+            vec![denom_map_entry_for(&token_a, &mut ctx)
+                .expect("Failed to get denom map entry for untrn")],
+        );
+        denom_map.insert(
+            String::from(token_b),
+            vec![denom_map_entry_for(&token_b, &mut ctx)
+                .expect("Failed to get denom map entry for untrn")],
+        );
+
         ctx.build_tx_create_osmo_pool()
             .with_weight(&ibc_denom_a, weight_a)
             .with_weight(&ibc_denom_b, weight_b)
@@ -220,6 +253,7 @@ fn main() -> Result<(), Box<dyn StdError>> {
     )?;
     util::create_arbs_file()?;
     util::create_netconfig()?;
+    util::create_denom_file(denom_map)?;
 
     let mut cmd = Command::new("python");
     cmd.current_dir("..")
@@ -230,6 +264,8 @@ fn main() -> Result<(), Box<dyn StdError>> {
         .arg("net_config.json")
         .arg("--base_denom")
         .arg("untrn")
+        .arg("--denom_file")
+        .arg("denoms.json")
         .env("LOGLEVEL", "debug")
         .env("WALLET_MNEMONIC", TEST_MNEMONIC);
 

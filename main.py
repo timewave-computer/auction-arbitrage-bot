@@ -10,7 +10,7 @@ import logging
 import sys
 from os import path
 import os
-from typing import Any, cast
+from typing import Any, cast, Optional
 from cosmpy.aerial.client import LedgerClient
 from cosmpy.aerial.wallet import LocalWallet
 from src.scheduler import Scheduler, Ctx
@@ -42,6 +42,7 @@ async def main() -> None:
             opportunities between Neutron and Osmosis via Astroport and Valence.""",
     )
     parser.add_argument("-f", "--pool_file", default=None)
+    parser.add_argument("--denom_file", default=None)
     parser.add_argument("-p", "--poll_interval", default=120)
     parser.add_argument("-d", "--discovery_interval", default=600)
     parser.add_argument("-nh", "--hops", default=3)
@@ -93,6 +94,13 @@ async def main() -> None:
                 [],
                 f,
             )
+
+    denom_map: Optional[dict[str, list[dict[str, str]]]] = None
+
+    # If the user has specified a denom map, use that instead of skip
+    if args.denom_file is not None and path.isfile(args.denom_file):
+        with open(args.denom_file, "r", encoding="utf-8") as f:
+            denom_map = json.load(f)
 
     # If the user specified a poolfile, create the poolfile if it is empty
     if args.pool_file is not None and not path.isfile(args.pool_file):
@@ -170,6 +178,7 @@ async def main() -> None:
                 session,
                 [],
                 cast(dict[str, Any], json.load(f)),
+                denom_map,
             ).recover_history()
             sched = Scheduler(ctx, strategy)
 

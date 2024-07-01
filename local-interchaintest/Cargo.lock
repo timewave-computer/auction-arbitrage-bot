@@ -1105,7 +1105,7 @@ dependencies = [
 [[package]]
 name = "localic-std"
 version = "0.0.1"
-source = "git+https://github.com/strangelove-ventures/interchaintest.git?branch=main#f32637153eb3665c1c43c5f320888645eb8671c5"
+source = "git+https://github.com/strangelove-ventures/interchaintest.git?branch=main#7362f311855da8809c518b5aae3d29edfdc56670"
 dependencies = [
  "cosmwasm-std",
  "reqwest",
@@ -1129,7 +1129,7 @@ dependencies = [
 [[package]]
 name = "localic-utils"
 version = "0.1.0"
-source = "git+https://github.com/timewave-computer/localic-utils?branch=dowlandaiello/feature-sharedrepo#46e4303104856197ce39cd69cdb0e367b24704ec"
+source = "git+https://github.com/timewave-computer/localic-utils?branch=dowlandaiello/feature-sharedrepo#a991fc2314fb651e3ffb1c959056c93cfa1d0346"
 dependencies = [
  "astroport",
  "cosmwasm-std",
@@ -1139,7 +1139,6 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "sha2 0.10.8",
  "thiserror",
 ]
 
@@ -1785,9 +1784,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.119"
+version = "1.0.120"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8eddb61f0697cc3989c5d64b452f5488e2b8a60fd7d5076a3045076ffef8cb0"
+checksum = "4e0d21c9a8cae1235ad58a00c11cb40d4b1e5c784f1ef2c537876ed6ffd8b7c5"
 dependencies = [
  "itoa",
  "ryu",

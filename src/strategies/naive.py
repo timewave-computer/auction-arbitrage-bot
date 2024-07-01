@@ -389,10 +389,7 @@ async def listen_routes_with_depth_dfs(
         if end not in denom_cache:
             try:
                 denom_infos = await denom_info(
-                    prev_pool.backend.chain_id,
-                    end,
-                    ctx.http_session,
-                    ctx.endpoints,
+                    prev_pool.backend.chain_id, end, ctx.http_session, ctx.denom_map
                 )
 
                 denom_cache[end] = {
