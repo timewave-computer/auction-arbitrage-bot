@@ -1129,7 +1129,7 @@ dependencies = [
 [[package]]
 name = "localic-utils"
 version = "0.1.0"
-source = "git+https://github.com/timewave-computer/localic-utils?branch=dowlandaiello/feature-sharedrepo#d26c3953c477b779910a4acb3f258935d92c68ab"
+source = "git+https://github.com/timewave-computer/localic-utils?branch=dowlandaiello/feature-sharedrepo#52f0f79e28e3218622ca93adc786405d006190e3"
 dependencies = [
  "astroport",
  "cosmwasm-std",
