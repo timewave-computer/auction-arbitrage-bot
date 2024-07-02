@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn StdError>> {
             .send()?;
         ctx.build_tx_mint_tokenfactory_token()
             .with_denom(format!("factory/{OWNER_ADDR}/{token}").as_str())
-            .with_amount(100000000000000000)
+            .with_amount(10000000000000000000000)
             .send()?;
     }
 
