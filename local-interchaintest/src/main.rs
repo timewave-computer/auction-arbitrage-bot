@@ -28,8 +28,8 @@ const TEST_MNEMONIC: &str = "south excuse merit payment amazing trash salon core
 const ARBFILE_PATH: &str = "../arbs.json";
 
 /// The address that should principally own all contracts
-const OWNER_ADDR: &str = "neutron1kuf2kxwuv2p8k3gnpja7mzf05zvep0cyuy7mxg";
-const OSMO_OWNER_ADDR: &str = "osmo1kuf2kxwuv2p8k3gnpja7mzf05zvep0cysqyf2a";
+const OSMO_OWNER_ADDR: &str = "osmo1hj5fveer5cjtn4wd6wstzugjfdxzl0xpwhpz63";
+const OWNER_ADDR: &str = "neutron1hj5fveer5cjtn4wd6wstzugjfdxzl0xpznmsky";
 
 fn main() -> Result<(), Box<dyn StdError>> {
     let mut ctx = TestContextBuilder::default()
@@ -146,7 +146,7 @@ fn main() -> Result<(), Box<dyn StdError>> {
             .with_chain_name("neutron")
             .with_recipient(OSMO_OWNER_ADDR)
             .with_denom(&token_b)
-            .with_amount((scale * weight_a) as u128)
+            .with_amount((scale * weight_b) as u128)
             .send()?;
 
         let ibc_denom_a = ctx
