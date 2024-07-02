@@ -1105,7 +1105,7 @@ dependencies = [
 [[package]]
 name = "localic-std"
 version = "0.0.1"
-source = "git+https://github.com/strangelove-ventures/interchaintest.git?branch=main#7362f311855da8809c518b5aae3d29edfdc56670"
+source = "git+https://github.com/strangelove-ventures/interchaintest.git?branch=main#2aba342441d572222eb5b25fc07271a568903e16"
 dependencies = [
  "cosmwasm-std",
  "reqwest",
@@ -1129,7 +1129,7 @@ dependencies = [
 [[package]]
 name = "localic-utils"
 version = "0.1.0"
-source = "git+https://github.com/timewave-computer/localic-utils?branch=dowlandaiello/feature-sharedrepo#a991fc2314fb651e3ffb1c959056c93cfa1d0346"
+source = "git+https://github.com/timewave-computer/localic-utils?branch=dowlandaiello/feature-sharedrepo#f5b280052fd63a157e94f6ac31b841cbe3af760c"
 dependencies = [
  "astroport",
  "cosmwasm-std",
