@@ -11,6 +11,7 @@ use std::{
     collections::HashMap,
     error::Error as StdError,
     fs::OpenOptions,
+    panic,
     path::Path,
     process::{self, Command},
     sync::Arc,
@@ -32,6 +33,12 @@ const OSMO_OWNER_ADDR: &str = "osmo1hj5fveer5cjtn4wd6wstzugjfdxzl0xpwhpz63";
 const OWNER_ADDR: &str = "neutron1hj5fveer5cjtn4wd6wstzugjfdxzl0xpznmsky";
 
 fn main() -> Result<(), Box<dyn StdError>> {
+    let orig_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |panic_info| {
+        orig_hook(panic_info);
+        process::exit(1);
+    }));
+
     let mut ctx = TestContextBuilder::default()
         .with_artifacts_dir("contracts")
         .with_unwrap_raw_logs(true)
