@@ -145,6 +145,19 @@ fn main() -> Result<(), Box<dyn StdError>> {
         ctx.build_tx_transfer()
             .with_chain_name("neutron")
             .with_recipient(OSMO_OWNER_ADDR)
+            .with_denom(&token_a)
+            .with_amount((scale * weight_a) as u128)
+            .send()?;
+
+        ctx.build_tx_transfer()
+            .with_chain_name("neutron")
+            .with_recipient(OSMO_OWNER_ADDR)
+            .with_denom(&token_b)
+            .with_amount((scale * weight_b) as u128)
+            .send()?;
+        ctx.build_tx_transfer()
+            .with_chain_name("neutron")
+            .with_recipient(OSMO_OWNER_ADDR)
             .with_denom(&token_b)
             .with_amount((scale * weight_b) as u128)
             .send()?;
