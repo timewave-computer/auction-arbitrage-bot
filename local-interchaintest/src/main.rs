@@ -76,6 +76,14 @@ fn main() -> Result<(), Box<dyn StdError>> {
         vec![denom_map_entry_for("untrn", "neutron", "osmosis", &mut ctx)
             .expect("Failed to get denom map entry for untrn")],
     );
+
+    ctx.build_tx_transfer()
+        .with_chain_name("osmosis")
+        .with_recipient(OWNER_ADDR)
+        .with_denom(&denom_map["untrn"][0]["denom"].clone())
+        .with_amount(1)
+        .send()?;
+
     denom_map.insert(
         denom_map["untrn"][0]["denom"].clone(),
         vec![denom_map_entry_for(
@@ -205,6 +213,20 @@ fn main() -> Result<(), Box<dyn StdError>> {
                     .expect("Failed to get denom map entry for untrn"),
             ],
         );
+
+        ctx.build_tx_transfer()
+            .with_chain_name("osmosis")
+            .with_recipient(OWNER_ADDR)
+            .with_denom(&ibc_denom_a)
+            .with_amount(1)
+            .send()?;
+        ctx.build_tx_transfer()
+            .with_chain_name("osmosis")
+            .with_recipient(OWNER_ADDR)
+            .with_denom(&ibc_denom_b)
+            .with_amount(1)
+            .send()?;
+
         denom_map.insert(
             String::from(ibc_denom_a.clone()),
             vec![
