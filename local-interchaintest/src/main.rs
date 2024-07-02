@@ -12,7 +12,6 @@ use std::{
     error::Error as StdError,
     fs::OpenOptions,
     path::Path,
-    process::ExitStatus,
     process::{self, Command},
     sync::Arc,
 };
@@ -23,7 +22,7 @@ mod util;
 const TEST_TOKENS: [&str; 2] = ["bruhtoken", "amoguscoin"];
 
 /// Test wallet mnemonic
-const TEST_MNEMONIC: &str = "south excuse merit payment amazing trash salon core cloth wine claw father fiscal anger entry hawk equip cream key inner away outdoor despair air";
+const TEST_MNEMONIC: &str = "decorate bright ozone fork gallery riot bus exhaust worth way bone indoor calm squirrel merry zero scheme cotton until shop any excess stage laundry";
 
 /// Path to a file where found arbs are stored
 const ARBFILE_PATH: &str = "../arbs.json";
