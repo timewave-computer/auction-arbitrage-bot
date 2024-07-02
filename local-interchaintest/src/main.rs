@@ -44,8 +44,13 @@ fn main() -> Result<(), Box<dyn StdError>> {
     // Mapping of denoms to their matching denoms, chain id's, channel id's, and ports
     let mut denom_map: HashMap<String, Vec<HashMap<String, String>>> = Default::default();
 
-    fn denom_map_entry_for(denom: &str, ctx: &mut TestContext) -> Option<HashMap<String, String>> {
-        let trace = ctx.get_ibc_trace(denom, "neutron", "osmosis")?;
+    fn denom_map_entry_for(
+        denom: &str,
+        src_chain: &str,
+        dest_chain: &str,
+        ctx: &mut TestContext,
+    ) -> Option<HashMap<String, String>> {
+        let trace = ctx.get_ibc_trace(denom, src_chain, dest_chain)?;
 
         let mut ent = HashMap::new();
         ent.insert("chain_id".into(), "localosmosis-1".into());
@@ -67,8 +72,18 @@ fn main() -> Result<(), Box<dyn StdError>> {
 
     denom_map.insert(
         String::from("untrn"),
-        vec![denom_map_entry_for("untrn", &mut ctx)
+        vec![denom_map_entry_for("untrn", "neutron", "osmosis", &mut ctx)
             .expect("Failed to get denom map entry for untrn")],
+    );
+    denom_map.insert(
+        denom_map["untrn"][0]["denom"].clone(),
+        vec![denom_map_entry_for(
+            &denom_map["untrn"][0]["denom"],
+            "osmosis",
+            "neutron",
+            &mut ctx,
+        )
+        .expect("Failed to get denom map entry for untrn osmosis denom")],
     );
 
     // Create tokens w tokenfactory for all test tokens
@@ -177,13 +192,31 @@ fn main() -> Result<(), Box<dyn StdError>> {
 
         denom_map.insert(
             String::from(token_a.clone()),
-            vec![denom_map_entry_for(&token_a, &mut ctx)
-                .expect("Failed to get denom map entry for untrn")],
+            vec![
+                denom_map_entry_for(&token_a, "neutron", "osmosis", &mut ctx)
+                    .expect("Failed to get denom map entry for untrn"),
+            ],
         );
         denom_map.insert(
             String::from(token_b.clone()),
-            vec![denom_map_entry_for(&token_b, &mut ctx)
-                .expect("Failed to get denom map entry for untrn")],
+            vec![
+                denom_map_entry_for(&token_b, "neutron", "osmosis", &mut ctx)
+                    .expect("Failed to get denom map entry for untrn"),
+            ],
+        );
+        denom_map.insert(
+            String::from(ibc_denom_a.clone()),
+            vec![
+                denom_map_entry_for(&ibc_denom_a, "osmosis", "neutron", &mut ctx)
+                    .expect("Failed to get denom map entry for untrn"),
+            ],
+        );
+        denom_map.insert(
+            String::from(ibc_denom_b.clone()),
+            vec![
+                denom_map_entry_for(&ibc_denom_b, "osmosis", "neutron", &mut ctx)
+                    .expect("Failed to get denom map entry for untrn"),
+            ],
         );
 
         ctx.build_tx_create_osmo_pool()
