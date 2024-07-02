@@ -12,6 +12,7 @@ use std::{
     error::Error as StdError,
     fs::OpenOptions,
     path::Path,
+    process::ExitStatus,
     process::{self, Command},
     sync::Arc,
 };
@@ -381,7 +382,9 @@ fn main() -> Result<(), Box<dyn StdError>> {
     })?;
 
     watcher.watch(Path::new(ARBFILE_PATH), RecursiveMode::NonRecursive)?;
-    proc_handle.wait()?;
+    let exit_status = proc_handle.wait()?;
+
+    assert!(exit_status.success());
 
     Ok(())
 }
