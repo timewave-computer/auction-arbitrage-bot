@@ -382,6 +382,18 @@ fn main() -> Result<(), Box<dyn StdError>> {
                             .as_u64()
                     })
                     .sum();
+                let auction_profit: u64 = arbs
+                    .into_iter()
+                    .filter_map(|arb_str| arb_str.as_str())
+                    .filter_map(|arb_str| serde_json::from_str::<Value>(arb_str).ok())
+                    .filter(|arb| {
+                        arb.get("route")
+                            .and_then(|route| route.as_str())
+                            .map(|route| route.contains("auction"))
+                            .unwrap_or_default()
+                    })
+                    .filter_map(|arb| arb.get("realized_profit")?.as_number()?.as_u64())
+                    .sum();
                 let non_atomic_profit: u64 = arbs
                     .into_iter()
                     .filter_map(|arb_str| arb_str.as_str())
@@ -396,9 +408,11 @@ fn main() -> Result<(), Box<dyn StdError>> {
                     .sum();
 
                 println!("ARB BOT PROFIT: {profit}");
+                println!("AUCTION BOT PROFIT: {auction_profit}");
                 println!("OSMO BOT PROFIT: {non_atomic_profit}");
 
                 assert!(profit > 0);
+                assert!(auction_profit > 0);
                 assert!(non_atomic_profit > 0);
 
                 proc_handle_watcher.kill().expect("failed to kill arb bot");
