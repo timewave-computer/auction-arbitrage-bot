@@ -4,7 +4,7 @@ use std::{collections::HashMap, error::Error, fs::OpenOptions, io::Write};
 pub(crate) fn create_deployment_file(
     astroport_factory_address: &str,
     auctions_manager_address: &str,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut f = OpenOptions::new()
         .create(true)
         .truncate(true)
@@ -58,7 +58,7 @@ pub(crate) fn create_deployment_file(
     Ok(())
 }
 
-pub(crate) fn create_arbs_file() -> Result<(), Box<dyn Error>> {
+pub(crate) fn create_arbs_file() -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut f = OpenOptions::new()
         .create(true)
         .truncate(true)
@@ -70,7 +70,7 @@ pub(crate) fn create_arbs_file() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub(crate) fn create_netconfig() -> Result<(), Box<dyn Error>> {
+pub(crate) fn create_netconfig() -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut f = OpenOptions::new()
         .create(true)
         .truncate(true)
@@ -96,15 +96,15 @@ pub(crate) fn create_netconfig() -> Result<(), Box<dyn Error>> {
 }
 
 pub(crate) fn create_denom_file(
-    denoms: HashMap<String, Vec<HashMap<String, String>>>,
-) -> Result<(), Box<dyn Error>> {
+    denoms: &HashMap<String, Vec<HashMap<String, String>>>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut f = OpenOptions::new()
         .create(true)
         .truncate(true)
         .write(true)
         .open("../denoms.json")?;
 
-    f.write_all(serde_json::to_string(&denoms)?.as_bytes())?;
+    f.write_all(serde_json::to_string(denoms)?.as_bytes())?;
 
     Ok(())
 }

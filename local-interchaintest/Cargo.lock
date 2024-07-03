@@ -1207,7 +1207,6 @@ dependencies = [
  "serde",
  "serde_json",
  "shared_child",
- "thiserror",
 ]
 
 [[package]]
