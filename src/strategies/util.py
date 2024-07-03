@@ -595,9 +595,11 @@ async def quantities_for_route_profit(
                     int(await leg.backend.simulate_swap_asset_a(prev_amt))
                 )
 
+                pool_liquidity = await leg.backend.balance_asset_b()
+
                 if (
-                    Decimal(quantities[-1])
-                    / Decimal(await leg.backend.balance_asset_b())
+                    pool_liquidity == 0
+                    or Decimal(quantities[-1]) / Decimal(pool_liquidity)
                     > MAX_POOL_LIQUIDITY_TRADE
                 ):
                     break
@@ -606,8 +608,11 @@ async def quantities_for_route_profit(
 
             quantities.append(int(await leg.backend.simulate_swap_asset_b(prev_amt)))
 
+            pool_liquidity = await leg.backend.balance_asset_a()
+
             if (
-                Decimal(quantities[-1]) / Decimal(await leg.backend.balance_asset_a())
+                pool_liquidity == 0
+                or Decimal(quantities[-1]) / Decimal(pool_liquidity)
                 > MAX_POOL_LIQUIDITY_TRADE
             ):
                 break
