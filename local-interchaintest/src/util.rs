@@ -1,5 +1,19 @@
 use std::{collections::HashMap, error::Error, fs::OpenOptions, io::Write};
 
+/// Creates an error representing a failed assertion.
+pub fn assert_err(
+    message: impl AsRef<str>,
+    cond: bool,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if !cond {
+        let message_str = message.as_ref();
+
+        return Err(format!("Assertion failed ({message_str}): {cond}").into());
+    }
+
+    Ok(())
+}
+
 /// Creates an arb bot contract address file.
 pub(crate) fn create_deployment_file(
     astroport_factory_address: &str,

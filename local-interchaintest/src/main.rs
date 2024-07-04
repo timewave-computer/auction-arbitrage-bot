@@ -120,7 +120,7 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                 setup::with_arb_bot_output(Box::new(|arbfile: Value| {
                     let arbs = arbfile.as_array().expect("no arbs in arbfile");
 
-                    assert!(!arbs.is_empty());
+                    util::assert_err("!arbs.is_empty", !arbs.is_empty())?;
 
                     let profit: u64 = arbs
                         .into_iter()
@@ -149,6 +149,8 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     println!("ARB BOT PROFIT: {profit}");
                     println!("AUCTION BOT PROFIT: {auction_profit}");
 
+                    util::assert_err("profit > 0", profit > 0)?;
+                    util::assert_err("auction_profit > 0", auction_profit > 0)?;
                     assert!(profit > 0);
                     assert!(auction_profit > 0);
 
