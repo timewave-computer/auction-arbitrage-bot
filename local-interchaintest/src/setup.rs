@@ -12,8 +12,8 @@ use std::{
     sync::{mpsc, Arc},
 };
 
-const EXIT_STATUS_SUCCESS: usize = 9;
-const EXIT_STATUS_SIGKILL: usize = 9;
+const EXIT_STATUS_SUCCESS: i32 = 9;
+const EXIT_STATUS_SIGKILL: i32 = 9;
 
 /// Runs all provided tests while reporting a final
 /// exit status.
