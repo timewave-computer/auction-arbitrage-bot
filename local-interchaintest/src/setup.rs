@@ -190,10 +190,10 @@ impl<'a> TestRunner<'a> {
         for ((name, description), status) in self.test_statuses.iter() {
             match status {
                 Ok(_) => {
-                    println!("SUCCESS {name} - {description}");
+                    println!("✅🤑 SUCCESS {name} - {description}");
                 }
                 Err(e) => {
-                    eprintln!("FAILURE {name} - {description}: {:?}", e);
+                    eprintln!("❌ඞ FAILURE {name} - {description}: {:?}", e);
                 }
             }
         }
