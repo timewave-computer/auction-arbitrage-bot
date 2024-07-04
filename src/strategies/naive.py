@@ -187,7 +187,9 @@ async def eval_route(
 ) -> Optional[tuple[Route, list[Leg]]]:
     r = ctx.queue_route(route, 0, 0, [])
 
-    ctx.log_route(r, "info", "Evaluating route for profitability", [])
+    ctx.log_route(
+        r, "info", "Evaluating route for profitability: %s", [fmt_route(route)]
+    )
 
     state = ctx.state
 
