@@ -282,7 +282,7 @@ async def denom_info(
                     denom_info["chain_id"],
                 )
             ]
-            for denom_info in denom_map[src_denom]
+            for denom_info in denom_map.get(src_denom, [])
         ]
 
     head = {"accept": "application/json", "content-type": "application/json"}
@@ -343,7 +343,7 @@ async def denom_info_on_chain(
                 denom_info["channel_id"],
                 denom_info["chain_id"],
             )
-            for denom_info in denom_map[src_denom]
+            for denom_info in denom_map.get(src_denom, [])
             if denom_info["chain_id"] == dest_chain
         ][:1]
 
