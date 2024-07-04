@@ -75,8 +75,8 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                 ctx.build_tx_fund_pool()
                     .with_denom_a(&bruhtoken)
                     .with_denom_b(&amoguscoin)
-                    .with_amount_denom_a(1500000)
-                    .with_amount_denom_b(1000000)
+                    .with_amount_denom_a(15000000)
+                    .with_amount_denom_b(10000000)
                     .with_liq_token_receiver(OWNER_ADDR)
                     .with_slippage_tolerance(Decimal::percent(50))
                     .send()?;
@@ -88,8 +88,8 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                 ctx.build_tx_fund_pool()
                     .with_denom_a(&untrn)
                     .with_denom_b(&amoguscoin)
-                    .with_amount_denom_a(1000000)
-                    .with_amount_denom_b(1000000)
+                    .with_amount_denom_a(10000000)
+                    .with_amount_denom_b(10000000)
                     .with_liq_token_receiver(OWNER_ADDR)
                     .with_slippage_tolerance(Decimal::percent(50))
                     .send()?;
