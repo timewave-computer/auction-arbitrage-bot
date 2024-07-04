@@ -136,13 +136,8 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     let auction_profit: u64 = arbs
                         .into_iter()
                         .filter_map(|arb_str| arb_str.as_str())
+                        .filter(|arb_str| arb_str.contains("auction"))
                         .filter_map(|arb_str| serde_json::from_str::<Value>(arb_str).ok())
-                        .filter(|arb| {
-                            arb.get("route")
-                                .and_then(|route| route.as_str())
-                                .map(|route| route.contains("auction"))
-                                .unwrap_or_default()
-                        })
                         .filter_map(|arb| arb.get("realized_profit")?.as_number()?.as_u64())
                         .sum();
 

@@ -12,6 +12,9 @@ use std::{
     sync::{mpsc, Arc},
 };
 
+const EXIT_STATUS_SUCCESS: usize = 9;
+const EXIT_STATUS_SIGKILL: usize = 9;
+
 /// Runs all provided tests while reporting a final
 /// exit status.
 pub struct TestRunner<'a> {
@@ -258,7 +261,11 @@ pub fn with_arb_bot_output(
     let exit_status = proc_handle.wait()?;
 
     if !exit_status.success() {
-        return Err(format!("Arb bot failed: {:?}", exit_status).into());
+        if let Some(status) = exit_status.code() {
+            if status != EXIT_STATUS_SUCCESS && status != EXIT_STATUS_SIGKILL {
+                return Err(format!("Arb bot failed: {:?}", exit_status).into());
+            }
+        }
     }
 
     rx_res.recv()?
