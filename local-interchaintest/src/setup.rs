@@ -1,9 +1,5 @@
 use super::{util, ARBFILE_PATH, OSMO_OWNER_ADDR, OWNER_ADDR, TEST_MNEMONIC, TEST_TOKENS};
-use itertools::Itertools;
-use localic_utils::{
-    types::contract::MinAmount, utils::test_context::TestContext, NEUTRON_CHAIN_NAME,
-    OSMOSIS_CHAIN_NAME,
-};
+use localic_utils::{types::contract::MinAmount, utils::test_context::TestContext};
 use notify::{Event, EventKind, RecursiveMode, Result as NotifyResult, Watcher};
 use serde_json::Value;
 use shared_child::SharedChild;
@@ -133,17 +129,6 @@ impl<'a> TestRunner<'a> {
             .map(|token| format!("factory/{OWNER_ADDR}/{token}"))
             .collect::<Vec<String>>();
         token_denoms.push("untrn".to_owned());
-
-        let token_pairs = token_denoms
-            .iter()
-            .cloned()
-            .permutations(2)
-            .unique_by(|tokens| {
-                let mut to_sort = tokens.clone();
-                to_sort.sort();
-
-                to_sort
-            });
 
         // Setup astroport
         ctx.build_tx_create_token_registry()
