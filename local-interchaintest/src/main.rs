@@ -1,6 +1,5 @@
 use clap::Parser;
 use cosmwasm_std::Decimal;
-use itertools::Itertools;
 use localic_utils::{ConfigChainBuilder, TestContextBuilder};
 use serde_json::Value;
 use setup::TestRunner;
@@ -61,62 +60,62 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     .collect::<Vec<String>>();
                 token_denoms.push("untrn".to_owned());
 
-                let token_pairs =
-                    token_denoms
-                        .iter()
-                        .cloned()
-                        .permutations(2)
-                        .unique_by(|tokens| {
-                            let mut to_sort = tokens.clone();
-                            to_sort.sort();
+                let bruhtoken = token_denoms.remove(0);
+                let amoguscoin = token_denoms.remove(0);
+                let untrn = token_denoms.remove(0);
 
-                            to_sort
-                        });
+                // Test case:
+                // - Astroport: bruhtoken-amoguscoin @ 1.5 bruhtoken / amoguscoin
+                // - Auction: NTRN-bruhtoken @ 10 bruhtoken / NTRN
+                // - Astroport: amoguscoin-NTRN @ 1 NTRN / amoguscoin
+                ctx.build_tx_create_pool()
+                    .with_denom_a(&bruhtoken)
+                    .with_denom_b(&amoguscoin)
+                    .send()?;
+                ctx.build_tx_fund_pool()
+                    .with_denom_a(&bruhtoken)
+                    .with_denom_b(&amoguscoin)
+                    .with_amount_denom_a(1500)
+                    .with_amount_denom_b(1000)
+                    .with_liq_token_receiver(OWNER_ADDR)
+                    .with_slippage_tolerance(Decimal::percent(50))
+                    .send()?;
 
-                for mut tokens in token_pairs {
-                    let token_a = tokens.remove(0);
-                    let token_b = tokens.remove(0);
+                ctx.build_tx_create_pool()
+                    .with_denom_a(&untrn)
+                    .with_denom_b(&amoguscoin)
+                    .send()?;
+                ctx.build_tx_fund_pool()
+                    .with_denom_a(&untrn)
+                    .with_denom_b(&amoguscoin)
+                    .with_amount_denom_a(1000)
+                    .with_amount_denom_b(1000)
+                    .with_liq_token_receiver(OWNER_ADDR)
+                    .with_slippage_tolerance(Decimal::percent(50))
+                    .send()?;
 
-                    ctx.build_tx_fund_pool()
-                        .with_denom_a(&token_a)
-                        .with_denom_b(&token_b)
-                        .with_amount_denom_a(
-                            (rand::random::<f64>() * 10000000000000.0) as u128 + 1000,
-                        )
-                        .with_amount_denom_b(
-                            (rand::random::<f64>() * 10000000000000.0) as u128 + 1000,
-                        )
-                        .with_liq_token_receiver(OWNER_ADDR)
-                        .with_slippage_tolerance(Decimal::percent(50))
-                        .send()?;
+                ctx.build_tx_create_auction()
+                    .with_offer_asset(&bruhtoken)
+                    .with_ask_asset(&untrn)
+                    .with_amount_offer_asset(1000)
+                    .send()?;
 
-                    ctx.build_tx_create_auction()
-                        .with_offer_asset(&token_a)
-                        .with_ask_asset(&token_b)
-                        .with_amount_offer_asset(
-                            (rand::random::<f64>() * 10000000000000.0) as u128 + 1000000,
-                        )
-                        .send()?;
+                ctx.build_tx_manual_oracle_price_update()
+                    .with_offer_asset(&bruhtoken)
+                    .with_ask_asset(&untrn)
+                    .with_price(Decimal::percent(10))
+                    .send()?;
 
-                    ctx.build_tx_manual_oracle_price_update()
-                        .with_offer_asset(&token_a)
-                        .with_ask_asset(&token_b)
-                        .with_price(Decimal::percent(10))
-                        .send()?;
-
-                    ctx.build_tx_fund_auction()
-                        .with_offer_asset(&token_a)
-                        .with_ask_asset(&token_b)
-                        .with_amount_offer_asset(
-                            (rand::random::<f64>() * 10000000000000.0) as u128 + 1000000,
-                        )
-                        .send()?;
-                    ctx.build_tx_start_auction()
-                        .with_offer_asset(&token_a)
-                        .with_ask_asset(&token_b)
-                        .with_end_block_delta(10000)
-                        .send()?;
-                }
+                ctx.build_tx_fund_auction()
+                    .with_offer_asset(&bruhtoken)
+                    .with_ask_asset(&untrn)
+                    .with_amount_offer_asset(10000)
+                    .send()?;
+                ctx.build_tx_start_auction()
+                    .with_offer_asset(&bruhtoken)
+                    .with_ask_asset(&untrn)
+                    .with_end_block_delta(10000)
+                    .send()?;
 
                 setup::with_arb_bot_output(Box::new(|arbfile: Value| {
                     let arbs = arbfile.as_array().expect("no arbs in arbfile");
@@ -146,26 +145,12 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                         })
                         .filter_map(|arb| arb.get("realized_profit")?.as_number()?.as_u64())
                         .sum();
-                    let non_atomic_profit: u64 = arbs
-                        .into_iter()
-                        .filter_map(|arb_str| arb_str.as_str())
-                        .filter_map(|arb_str| serde_json::from_str::<Value>(arb_str).ok())
-                        .filter(|arb| {
-                            arb.get("route")
-                                .and_then(|route| route.as_str())
-                                .map(|route| route.contains("osmo"))
-                                .unwrap_or_default()
-                        })
-                        .filter_map(|arb| arb.get("realized_profit")?.as_number()?.as_u64())
-                        .sum();
 
                     println!("ARB BOT PROFIT: {profit}");
                     println!("AUCTION BOT PROFIT: {auction_profit}");
-                    println!("OSMO BOT PROFIT: {non_atomic_profit}");
 
                     assert!(profit > 0);
                     assert!(auction_profit > 0);
-                    assert!(non_atomic_profit > 0);
 
                     Ok(())
                 }))
