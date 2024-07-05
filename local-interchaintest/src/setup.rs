@@ -7,7 +7,7 @@ use serde_json::Value;
 use shared_child::SharedChild;
 use std::{
     borrow::BorrowMut,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     error::Error,
     fs::OpenOptions,
     path::Path,
@@ -24,6 +24,7 @@ pub struct TestRunner<'a> {
     test_statuses: Arc<Mutex<HashMap<(String, String), TestResult>>>,
     cached: bool,
     denom_map: HashMap<String, Vec<HashMap<String, String>>>,
+    created_denoms: HashSet<String>,
     test_ctx: &'a mut TestContext,
 }
 
@@ -33,6 +34,7 @@ impl<'a> TestRunner<'a> {
             test_statuses: Default::default(),
             cached,
             denom_map: Default::default(),
+            created_denoms: Default::default(),
             test_ctx: ctx,
         }
     }
@@ -52,6 +54,9 @@ impl<'a> TestRunner<'a> {
             test.denoms
                 .iter()
                 .filter(|denom| denom.contains("factory"))
+                .filter(|denom| !self.created_denoms.contains(*denom))
+                .collect::<Vec<_>>()
+                .into_iter()
                 .try_for_each(|token| {
                     self.test_ctx
                         .build_tx_create_tokenfactory_token()
@@ -61,7 +66,11 @@ impl<'a> TestRunner<'a> {
                                 .nth(2)
                                 .expect("Improperly formatted tokenfactory denom"),
                         )
-                        .send()
+                        .send()?;
+                    self.created_denoms.insert(token.clone());
+
+                    let res: Result<(), Box<dyn Error + Send + Sync>> = Ok(());
+                    res
                 })?;
         }
 
