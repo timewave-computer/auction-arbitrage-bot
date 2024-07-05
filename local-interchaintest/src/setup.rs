@@ -71,55 +71,7 @@ impl<'a> TestRunner<'a> {
 
         let ctx = &mut self.test_ctx;
 
-        fn denom_map_entry_for<'a>(
-            denom: &str,
-            src_chain: &'a str,
-            dest_chain: &'a str,
-            ctx: &mut TestContext,
-        ) -> Option<HashMap<String, String>> {
-            let trace = ctx.get_ibc_trace(denom, src_chain, dest_chain)?;
-
-            let mut ent = HashMap::new();
-            ent.insert("chain_id".into(), "localosmosis-1".into());
-            ent.insert("channel_id".into(), trace.channel_id);
-            ent.insert("port_id".into(), "transfer".into());
-            ent.insert("denom".into(), trace.dest_denom);
-
-            Some(ent)
-        }
-
         ctx.build_tx_upload_contracts().send()?;
-
-        ctx.build_tx_transfer()
-            .with_chain_name("neutron")
-            .with_recipient(OSMO_OWNER_ADDR)
-            .with_denom("untrn")
-            .with_amount(1000000)
-            .send()?;
-
-        self.denom_map.insert(
-            String::from("untrn"),
-            vec![denom_map_entry_for("untrn", "neutron", "osmosis", ctx)
-                .expect("Failed to get denom map entry for untrn")],
-        );
-
-        ctx.build_tx_transfer()
-            .with_chain_name("osmosis")
-            .with_recipient(OWNER_ADDR)
-            .with_denom(&self.denom_map["untrn"][0]["denom"].clone())
-            .with_amount(1)
-            .send()?;
-
-        self.denom_map.insert(
-            self.denom_map["untrn"][0]["denom"].clone(),
-            vec![denom_map_entry_for(
-                &self.denom_map["untrn"][0]["denom"],
-                "osmosis",
-                "neutron",
-                ctx,
-            )
-            .expect("Failed to get denom map entry for untrn osmosis denom")],
-        );
 
         // Setup astroport
         ctx.build_tx_create_token_registry()
