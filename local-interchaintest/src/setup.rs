@@ -1,15 +1,18 @@
-use super::{util, ARBFILE_PATH, OSMO_OWNER_ADDR, OWNER_ADDR, TEST_MNEMONIC, TEST_TOKENS};
+use super::{util, ARBFILE_PATH, OSMO_OWNER_ADDR, OWNER_ADDR, TEST_MNEMONIC};
+use cosmwasm_std::Decimal;
+use derive_builder::Builder;
 use localic_utils::{types::contract::MinAmount, utils::test_context::TestContext};
 use notify::{Event, EventKind, RecursiveMode, Result as NotifyResult, Watcher};
 use serde_json::Value;
 use shared_child::SharedChild;
 use std::{
+    borrow::BorrowMut,
     collections::HashMap,
     error::Error,
     fs::OpenOptions,
     path::Path,
     process::Command,
-    sync::{mpsc, Arc},
+    sync::{mpsc, Arc, Mutex},
 };
 
 const EXIT_STATUS_SUCCESS: i32 = 9;
@@ -18,7 +21,7 @@ const EXIT_STATUS_SIGKILL: i32 = 9;
 /// Runs all provided tests while reporting a final
 /// exit status.
 pub struct TestRunner<'a> {
-    test_statuses: HashMap<(&'a str, &'a str), Result<(), Box<dyn Error + Send + Sync>>>,
+    test_statuses: Arc<Mutex<HashMap<(String, String), TestResult>>>,
     cached: bool,
     denom_map: HashMap<String, Vec<HashMap<String, String>>>,
     test_ctx: &'a mut TestContext,
@@ -38,31 +41,30 @@ impl<'a> TestRunner<'a> {
     /// including:
     /// - Creating tokenfactory tokens
     pub fn start(&mut self) -> Result<&mut Self, Box<dyn Error + Send + Sync>> {
-        if self.cached {
-            return Ok(self);
-        }
-
-        // Perform cold start setup
-        // Create tokens w tokenfactory for all test tokens
-        TEST_TOKENS.into_iter().try_for_each(|token| {
-            self.test_ctx
-                .build_tx_create_tokenfactory_token()
-                .with_subdenom(token)
-                .send()
-        })?;
-
         Ok(self)
     }
 
     /// Runs a test with access to the test context with some metadata.
-    pub fn run(
-        &mut self,
-        test: Box<
-            dyn Fn(&mut TestContext) -> Result<(), Box<dyn Error + Send + Sync>> + Send + Sync,
-        >,
-        name: &'a str,
-        description: &'a str,
-    ) -> Result<&mut Self, Box<dyn Error + Send + Sync>> {
+    pub fn run(&mut self, mut test: Test) -> Result<&mut Self, Box<dyn Error + Send + Sync>> {
+        if !self.cached {
+            // Perform cold start setup
+            // Create tokens w tokenfactory for all test tokens
+            test.denoms
+                .iter()
+                .filter(|denom| denom.contains("factory"))
+                .try_for_each(|token| {
+                    self.test_ctx
+                        .build_tx_create_tokenfactory_token()
+                        .with_subdenom(
+                            token
+                                .split('/')
+                                .nth(1)
+                                .expect("Improperly formatted tokenfactory denom"),
+                        )
+                        .send()
+                })?;
+        }
+
         // Perform hot start setup
         // Mapping of denoms to their matching denoms, chain id's, channel id's, and ports
         self.denom_map = Default::default();
@@ -119,20 +121,6 @@ impl<'a> TestRunner<'a> {
             .expect("Failed to get denom map entry for untrn osmosis denom")],
         );
 
-        // Create tokens w tokenfactory for all test tokens
-        for token in TEST_TOKENS.into_iter() {
-            ctx.build_tx_mint_tokenfactory_token()
-                .with_denom(format!("factory/{OWNER_ADDR}/{token}").as_str())
-                .with_amount(10000000000000000000000)
-                .send()?;
-        }
-
-        let mut token_denoms = TEST_TOKENS
-            .into_iter()
-            .map(|token| format!("factory/{OWNER_ADDR}/{token}"))
-            .collect::<Vec<String>>();
-        token_denoms.push("untrn".to_owned());
-
         // Setup astroport
         ctx.build_tx_create_token_registry()
             .with_owner(OWNER_ADDR)
@@ -141,7 +129,8 @@ impl<'a> TestRunner<'a> {
             .with_owner(OWNER_ADDR)
             .send()?;
 
-        let min_tokens = token_denoms
+        let min_tokens = test
+            .denoms
             .iter()
             .map(|token| {
                 (
@@ -176,8 +165,18 @@ impl<'a> TestRunner<'a> {
         util::create_netconfig()?;
         util::create_denom_file(&self.denom_map)?;
 
-        self.test_statuses
-            .insert((name, description), test(self.test_ctx));
+        let statuses = self.test_statuses.clone();
+
+        test.setup(self.test_ctx)?;
+
+        with_arb_bot_output(Arc::new(Box::new(move |arbfile: Value| {
+            statuses.lock().expect("Failed to lock statuses").insert(
+                (test.name.clone(), test.description.clone()),
+                (*test.test)(arbfile),
+            );
+
+            Ok(())
+        })))?;
 
         Ok(self)
     }
@@ -185,8 +184,13 @@ impl<'a> TestRunner<'a> {
     /// Produces a single result representing any failure that may
     /// have occurred in any test.
     /// Logs successes to stdout, and failures to stderr.
-    pub fn join(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        for ((name, description), status) in self.test_statuses.iter() {
+    pub fn join(&mut self) -> TestResult {
+        for ((name, description), status) in self
+            .test_statuses
+            .lock()
+            .expect("Failed to lock test statuses")
+            .iter()
+        {
             match status {
                 Ok(_) => {
                     println!("✅ 🤑 SUCCESS {name} - {description}");
@@ -199,6 +203,8 @@ impl<'a> TestRunner<'a> {
 
         if let Some(e) = self
             .test_statuses
+            .lock()
+            .expect("Failed to lock test statuses")
             .drain()
             .filter_map(|res| res.1.err())
             .next()
@@ -210,9 +216,162 @@ impl<'a> TestRunner<'a> {
     }
 }
 
-pub fn with_arb_bot_output(
-    test: Box<dyn Fn(Value) -> Result<(), Box<dyn Error + Send + Sync>> + Send>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+/// A test that receives arb bot executable output.
+pub type TestFn = Box<dyn Fn(Value) -> TestResult + Send + Sync>;
+pub type OwnedTestFn = Arc<TestFn>;
+pub type TestResult = Result<(), Box<dyn Error + Send + Sync>>;
+
+/// Defines a test case. A test case is characterized by its
+/// pools, and the balances associated with each pool,
+/// and its auctions, and the price associated with each auction.
+#[derive(Builder)]
+#[builder(setter(into, strip_option, prefix = "with"), pattern = "owned")]
+pub struct Test {
+    /// Test metadata
+    name: String,
+    description: String,
+
+    /// Fully qualified denoms (i.e., factory/neutronxyz/tokenabc or untrn or ibc/xyz)
+    denoms: Vec<String>,
+
+    /// How much of a given subdenom acc0 owns
+    tokenfactory_token_balances_acc0: HashMap<String, u128>,
+
+    /// (Denom a, denom b) or (offer asset, ask asset) -> pool
+    pools: HashMap<(String, String), Vec<Pool>>,
+
+    /// The test that should be run with the arb bot output
+    test: OwnedTestFn,
+}
+
+impl Test {
+    pub fn setup(
+        &mut self,
+        ctx: &mut TestContext,
+    ) -> Result<&mut Self, Box<dyn Error + Send + Sync>> {
+        self.tokenfactory_token_balances_acc0
+            .iter()
+            .try_for_each(|(token, balance)| {
+                ctx.build_tx_mint_tokenfactory_token()
+                    .with_denom(format!("factory/{OWNER_ADDR}/{token}").as_str())
+                    .with_amount(*balance)
+                    .send()
+            })?;
+
+        self.pools
+            .iter()
+            .try_for_each(|((denom_a, denom_b), pools)| {
+                pools.iter().try_for_each(|pool_spec| match pool_spec {
+                    Pool::Astroport(spec) => {
+                        ctx.build_tx_create_pool()
+                            .with_denom_a(denom_a.clone())
+                            .with_denom_b(&denom_b.clone())
+                            .send()?;
+                        ctx.build_tx_fund_pool()
+                            .with_denom_a(&denom_a.clone())
+                            .with_denom_b(&denom_b.clone())
+                            .with_amount_denom_a(spec.balance_asset_a)
+                            .with_amount_denom_b(spec.balance_asset_b)
+                            .with_liq_token_receiver(OWNER_ADDR)
+                            .with_slippage_tolerance(Decimal::percent(50))
+                            .send()
+                    }
+                    Pool::Auction(spec) => {
+                        ctx.build_tx_create_auction()
+                            .with_offer_asset(denom_a)
+                            .with_ask_asset(denom_b)
+                            .with_amount_offer_asset(spec.balance_offer_asset)
+                            .send()?;
+
+                        ctx.build_tx_manual_oracle_price_update()
+                            .with_offer_asset(denom_a)
+                            .with_ask_asset(denom_b)
+                            .with_price(spec.price)
+                            .send()?;
+
+                        ctx.build_tx_fund_auction()
+                            .with_offer_asset(denom_a)
+                            .with_ask_asset(denom_b)
+                            .with_amount_offer_asset(spec.balance_offer_asset)
+                            .send()?;
+                        ctx.build_tx_start_auction()
+                            .with_offer_asset(denom_a)
+                            .with_ask_asset(denom_b)
+                            .with_end_block_delta(10000)
+                            .send()
+                    }
+                })
+            })?;
+
+        Ok(self)
+    }
+}
+
+impl TestBuilder {
+    pub fn with_denom(
+        mut self,
+        denom: impl Into<String> + AsRef<str> + Clone,
+        balance: u128,
+    ) -> Self {
+        self.borrow_mut()
+            .denoms
+            .get_or_insert_with(Default::default)
+            .push(denom.clone().into());
+
+        if denom.as_ref().contains("factory") {
+            self.borrow_mut()
+                .tokenfactory_token_balances_acc0
+                .get_or_insert_with(Default::default)
+                .insert(denom.into(), balance);
+        }
+
+        self
+    }
+
+    pub fn with_pool(
+        mut self,
+        denom_a: impl Into<String>,
+        denom_b: impl Into<String>,
+        pool: Pool,
+    ) -> Self {
+        self.pools
+            .get_or_insert_with(Default::default)
+            .entry((denom_a.into(), denom_b.into()))
+            .or_default()
+            .push(pool);
+
+        self
+    }
+}
+
+/// A pool that should be tested against.
+#[derive(Clone)]
+pub enum Pool {
+    Astroport(AstroportPool),
+    Auction(AuctionPool),
+}
+
+/// Represents an astroport xyk pool.
+#[derive(Builder, Clone)]
+#[builder(setter(into, strip_option, prefix = "with"))]
+pub struct AstroportPool {
+    pub asset_a: String,
+    pub asset_b: String,
+    pub balance_asset_a: u128,
+    pub balance_asset_b: u128,
+}
+
+/// Represents a valence auction.
+#[derive(Builder, Clone)]
+#[builder(setter(into, strip_option, prefix = "with"))]
+pub struct AuctionPool {
+    pub offer_asset: String,
+    pub ask_asset: String,
+    pub balance_offer_asset: u128,
+    pub price: Decimal,
+}
+
+pub fn with_arb_bot_output(test: OwnedTestFn) -> TestResult {
     let mut cmd = Command::new("python");
     cmd.current_dir("..")
         .arg("main.py")
@@ -233,31 +392,30 @@ pub fn with_arb_bot_output(
     let proc_handle_watcher = proc_handle.clone();
     let (tx_res, rx_res) = mpsc::channel();
 
+    let test_handle = test.clone();
+
     // Wait until the arbs.json file has been produced
     let mut watcher = notify::recommended_watcher(move |res: NotifyResult<Event>| {
         let e = res.expect("failed to watch arbs.json");
 
         // An arb was found
-        match e.kind {
-            EventKind::Modify(_) => {
-                let f = OpenOptions::new()
-                    .read(true)
-                    .open(ARBFILE_PATH)
-                    .expect("failed to open arbs.json");
+        if let EventKind::Modify(_) = e.kind {
+            let f = OpenOptions::new()
+                .read(true)
+                .open(ARBFILE_PATH)
+                .expect("failed to open arbs.json");
 
-                if f.metadata().expect("can't get arbs metadata").len() == 0 {
-                    return;
-                }
-
-                let arbfile: Value =
-                    serde_json::from_reader(&f).expect("failed to deserialize arbs.json");
-
-                let res = test(arbfile);
-
-                proc_handle_watcher.kill().expect("failed to kill arb bot");
-                tx_res.send(res).expect("failed to send test results");
+            if f.metadata().expect("can't get arbs metadata").len() == 0 {
+                return;
             }
-            _ => {}
+
+            let arbfile: Value =
+                serde_json::from_reader(&f).expect("failed to deserialize arbs.json");
+
+            let res = test_handle(arbfile);
+
+            proc_handle_watcher.kill().expect("failed to kill arb bot");
+            tx_res.send(res).expect("failed to send test results");
         }
     })?;
 
