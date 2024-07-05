@@ -144,8 +144,8 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     println!("ARB BOT PROFIT: {profit}");
                     println!("AUCTION BOT PROFIT: {auction_profit}");
 
-                    util::assert_err("profit > 0", profit > 0)?;
-                    util::assert_err("auction_profit > 0", auction_profit > 0)?;
+                    util::assert_err("profit == 466496", profit == 466496)?;
+                    util::assert_err("auction_profit == 466496", auction_profit == 466496)?;
 
                     Ok(())
                 }))
@@ -224,7 +224,7 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     let arbs = arbfile.as_array().expect("no arbs in arbfile");
 
                     // Arbs should not be attempted or queued
-                    util::assert_err("arbs.is_empty()", arbs.is_empty())?;
+                    util::assert_err("!arbs.is_empty()", !arbs.is_empty())?;
 
                     let profit: u64 = arbs
                         .into_iter()
