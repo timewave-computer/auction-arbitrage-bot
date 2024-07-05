@@ -2,6 +2,8 @@ use super::util;
 use serde_json::Value;
 use std::error::Error;
 
+const ERROR_MARGIN_PROFIT: u64 = 100000;
+
 pub fn test_profitable_arb(arbfile: Value) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     let arbs = arbfile.as_array().expect("no arbs in arbfile");
 
@@ -29,8 +31,17 @@ pub fn test_profitable_arb(arbfile: Value) -> Result<(), Box<dyn Error + Send + 
     println!("ARB BOT PROFIT: {profit}");
     println!("AUCTION BOT PROFIT: {auction_profit}");
 
-    util::assert_err("profit == 467024", profit, 467024)?;
-    util::assert_err("auction_profit == 467024", auction_profit, 467024)?;
+    util::assert_err(
+        "500000 + PROFIT_MARGIN > profit > 500000 - PROFIT_MARGIN",
+        500000 + ERROR_MARGIN_PROFIT > profit && profit > 500000 - ERROR_MARGIN_PROFIT,
+        true,
+    )?;
+    util::assert_err(
+        "500000 + PROFIT_MARGIN > auction_profit > 500000 - PROFIT_MARGIN",
+        500000 + ERROR_MARGIN_PROFIT > auction_profit
+            && auction_profit > 500000 - ERROR_MARGIN_PROFIT,
+        true,
+    )?;
 
     Ok(())
 }

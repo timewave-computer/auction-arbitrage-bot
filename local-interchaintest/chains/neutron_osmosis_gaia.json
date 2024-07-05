@@ -82,6 +82,14 @@
         "1317": "1317",
         "9090": "9090"
       },
+      "config_file_overrides": [
+        {
+          "file": "config/config.toml",
+          "paths": {
+            "consensus.create_empty_blocks": false
+          }
+        }
+      ],
       "genesis": {
         "modify": [
           {
