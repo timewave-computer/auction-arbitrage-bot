@@ -164,7 +164,6 @@ impl<'a> TestRunner<'a> {
 
         util::create_deployment_file(
             ctx.get_astroport_factory()?
-                .remove(0)
                 .contract_addr
                 .expect("missing deployed astroport factory")
                 .as_str(),
@@ -198,7 +197,12 @@ impl<'a> TestRunner<'a> {
             }
         }
 
-        if let Some((_, Err(e))) = self.test_statuses.drain().next() {
+        if let Some(e) = self
+            .test_statuses
+            .drain()
+            .filter_map(|res| res.1.err())
+            .next()
+        {
             return Err(e);
         }
 
