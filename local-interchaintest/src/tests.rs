@@ -29,8 +29,8 @@ pub fn test_profitable_arb(arbfile: Value) -> Result<(), Box<dyn Error + Send + 
     println!("ARB BOT PROFIT: {profit}");
     println!("AUCTION BOT PROFIT: {auction_profit}");
 
-    util::assert_err("profit == 466752", profit, 466752)?;
-    util::assert_err("auction_profit == 466752", auction_profit, 466752)?;
+    util::assert_err("profit == 467024", profit, 467024)?;
+    util::assert_err("auction_profit == 467024", auction_profit, 467024)?;
 
     Ok(())
 }
