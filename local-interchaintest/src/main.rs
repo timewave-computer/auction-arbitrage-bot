@@ -120,7 +120,7 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                 setup::with_arb_bot_output(Box::new(|arbfile: Value| {
                     let arbs = arbfile.as_array().expect("no arbs in arbfile");
 
-                    util::assert_err("!arbs.is_empty", !arbs.is_empty())?;
+                    util::assert_err("!arbs.is_empty()", !arbs.is_empty())?;
 
                     let profit: u64 = arbs
                         .into_iter()
@@ -146,14 +146,107 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
 
                     util::assert_err("profit > 0", profit > 0)?;
                     util::assert_err("auction_profit > 0", auction_profit > 0)?;
-                    assert!(profit > 0);
-                    assert!(auction_profit > 0);
 
                     Ok(())
                 }))
             }),
             "Profitable auction arb",
             "The arbitrage bot should execute an auction arbitrage route successfully.",
+        )?
+        .run(
+            Box::new(|ctx| {
+                let mut token_denoms = TEST_TOKENS
+                    .into_iter()
+                    .map(|token| format!("factory/{OWNER_ADDR}/{token}"))
+                    .collect::<Vec<String>>();
+                token_denoms.push("untrn".to_owned());
+
+                let bruhtoken = token_denoms.remove(0);
+                let amoguscoin = token_denoms.remove(0);
+                let untrn = token_denoms.remove(0);
+
+                // Test case:
+                // - Astroport: bruhtoken-amoguscoin @ 1.5 bruhtoken / amoguscoin
+                // - Auction: NTRN-bruhtoken @ 0.1 bruhtoken / NTRN
+                // - Astroport: amoguscoin-NTRN @ 1 NTRN / amoguscoin
+                //
+                // No arb should be executed, since this is not profitable.
+                ctx.build_tx_create_pool()
+                    .with_denom_a(&bruhtoken)
+                    .with_denom_b(&amoguscoin)
+                    .send()?;
+                ctx.build_tx_fund_pool()
+                    .with_denom_a(&bruhtoken)
+                    .with_denom_b(&amoguscoin)
+                    .with_amount_denom_a(15000000)
+                    .with_amount_denom_b(10000000)
+                    .with_liq_token_receiver(OWNER_ADDR)
+                    .with_slippage_tolerance(Decimal::percent(50))
+                    .send()?;
+
+                ctx.build_tx_create_pool()
+                    .with_denom_a(&untrn)
+                    .with_denom_b(&amoguscoin)
+                    .send()?;
+                ctx.build_tx_fund_pool()
+                    .with_denom_a(&untrn)
+                    .with_denom_b(&amoguscoin)
+                    .with_amount_denom_a(10000000)
+                    .with_amount_denom_b(10000000)
+                    .with_liq_token_receiver(OWNER_ADDR)
+                    .with_slippage_tolerance(Decimal::percent(50))
+                    .send()?;
+
+                ctx.build_tx_create_auction()
+                    .with_offer_asset(&bruhtoken)
+                    .with_ask_asset(&untrn)
+                    .with_amount_offer_asset(1000000)
+                    .send()?;
+
+                ctx.build_tx_manual_oracle_price_update()
+                    .with_offer_asset(&bruhtoken)
+                    .with_ask_asset(&untrn)
+                    .with_price(Decimal::percent(1000))
+                    .send()?;
+
+                ctx.build_tx_fund_auction()
+                    .with_offer_asset(&bruhtoken)
+                    .with_ask_asset(&untrn)
+                    .with_amount_offer_asset(10000000)
+                    .send()?;
+                ctx.build_tx_start_auction()
+                    .with_offer_asset(&bruhtoken)
+                    .with_ask_asset(&untrn)
+                    .with_end_block_delta(10000)
+                    .send()?;
+
+                setup::with_arb_bot_output(Box::new(|arbfile: Value| {
+                    let arbs = arbfile.as_array().expect("no arbs in arbfile");
+
+                    // Arbs should not be attempted or queued
+                    util::assert_err("arbs.is_empty()", arbs.is_empty())?;
+
+                    let profit: u64 = arbs
+                        .into_iter()
+                        .filter_map(|arb_str| arb_str.as_str())
+                        .filter_map(|arb_str| {
+                            serde_json::from_str::<Value>(arb_str)
+                                .ok()?
+                                .get("realized_profit")?
+                                .as_number()?
+                                .as_u64()
+                        })
+                        .sum();
+
+                    println!("ARB BOT PROFIT: {profit}");
+
+                    util::assert_err("profit == 0", profit == 0)?;
+
+                    Ok(())
+                }))
+            }),
+            "Unprofitable auction arb",
+            "The arbitrage bot should not execute an auction arbitrage route when it is not profitable.",
         )?
         .join()
 }
