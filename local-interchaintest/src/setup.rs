@@ -58,7 +58,7 @@ impl<'a> TestRunner<'a> {
                         .with_subdenom(
                             token
                                 .split('/')
-                                .nth(1)
+                                .nth(2)
                                 .expect("Improperly formatted tokenfactory denom"),
                         )
                         .send()

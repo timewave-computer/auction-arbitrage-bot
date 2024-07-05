@@ -51,11 +51,16 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
 
     TestRunner::new(&mut ctx, args.cached)
         .start()?
+        // Test case (profitable arb):
+        //
+        // - Astroport: bruhtoken-amoguscoin @1.5 bruhtoken/amoguscoin
+        // - Auction: NTRN-bruhtoken @ 10 bruhtoken/NTRN
+        // - Astroport: amoguscoin-NTRN @ 1 NTRN/amoguscoin
         .run(
             TestBuilder::default()
                 .with_name("Profitable Arb")
                 .with_description("The arbitrage bot should execute a profitable arb successfully")
-                .with_denom("untrn", 10000000)
+                .with_denom("untrn", 10000000000)
                 .with_denom(bruhtoken, 10000000000)
                 .with_denom(amoguscoin, 10000000000)
                 .with_pool(
@@ -97,6 +102,11 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                 .with_test(Box::new(tests::test_profitable_arb) as TestFn)
                 .build()?,
         )?
+        // Test case (unprofitable arb):
+        //
+        // - Astroport: bruhtoken-amoguscoin @1.5 bruhtoken/amoguscoin
+        // - Auction: NTRN-bruhtoken @ 0.1 bruhtoken/NTRN
+        // - Astroport: amoguscoin-NTRN @ 1 NTRN/amoguscoin
         .run(
             TestBuilder::default()
                 .with_name("Unprofitable Arb")
