@@ -205,7 +205,7 @@ impl Test {
             .iter()
             .try_for_each(|(token, balance)| {
                 ctx.build_tx_mint_tokenfactory_token()
-                    .with_denom(format!("factory/{OWNER_ADDR}/{token}").as_str())
+                    .with_denom(token)
                     .with_amount(*balance)
                     .send()
             })?;
