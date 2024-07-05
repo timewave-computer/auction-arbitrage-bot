@@ -1,4 +1,4 @@
-use super::{util, ARBFILE_PATH, OSMO_OWNER_ADDR, OWNER_ADDR, TEST_MNEMONIC};
+use super::{util, ARBFILE_PATH, OWNER_ADDR, TEST_MNEMONIC};
 use cosmwasm_std::Decimal;
 use derive_builder::Builder;
 use localic_utils::{types::contract::MinAmount, utils::test_context::TestContext};
