@@ -1,14 +1,15 @@
-use std::{collections::HashMap, error::Error, fs::OpenOptions, io::Write};
+use std::{collections::HashMap, error::Error, fmt::Debug, fs::OpenOptions, io::Write};
 
 /// Creates an error representing a failed assertion.
-pub fn assert_err(
+pub fn assert_err<T: Debug + PartialEq>(
     message: impl AsRef<str>,
-    cond: bool,
+    lhs: T,
+    rhs: T,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    if !cond {
+    if lhs != rhs {
         let message_str = message.as_ref();
 
-        return Err(format!("Assertion failed ({message_str}): {cond}").into());
+        return Err(format!("Assertion failed ({message_str}): {:?} == {:?}", lhs, rhs).into());
     }
 
     Ok(())
