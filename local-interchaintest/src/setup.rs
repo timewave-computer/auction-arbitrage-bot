@@ -258,6 +258,7 @@ impl Test {
                         ctx.build_tx_start_auction()
                             .with_offer_asset(denom_a)
                             .with_ask_asset(denom_b)
+                            .with_start_block(0)
                             .with_end_block_delta(10000)
                             .send()
                     }
