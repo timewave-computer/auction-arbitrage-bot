@@ -152,5 +152,107 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                 .with_test(Box::new(tests::test_unprofitable_arb) as TestFn)
                 .build()?,
         )?
+        // Test case (astroport arb):
+        //
+        // - Astroport: bruhtoken-amoguscoin @1.5 bruhtoken/amoguscoin
+        // - Auction: NTRN-bruhtoken @ 1 bruhtoken/NTRN
+        // - Astroport: amoguscoin-NTRN @ 1 NTRN/amoguscoin
+        .run(
+            TestBuilder::default()
+                .with_name("Astro-Profitable Arb")
+                .with_description("The arbitrage bot execute a slightly profitable arb only due to astroport price differences")
+                .with_denom("untrn", 10000000)
+                .with_denom(bruhtoken, 10000000000)
+                .with_denom(amoguscoin, 10000000000)
+                .with_pool(
+                    bruhtoken,
+                    amoguscoin,
+                    Pool::Astroport(
+                        AstroportPoolBuilder::default()
+                            .with_asset_a(bruhtoken)
+                            .with_asset_b(amoguscoin)
+                            .with_balance_asset_a(15000000u128)
+                            .with_balance_asset_b(10000000u128)
+                            .build()?,
+                    ),
+                )
+                .with_pool(
+                    untrn,
+                    amoguscoin,
+                    Pool::Astroport(
+                        AstroportPoolBuilder::default()
+                            .with_asset_a(untrn)
+                            .with_asset_b(amoguscoin)
+                            .with_balance_asset_a(10000000u128)
+                            .with_balance_asset_b(10000000u128)
+                            .build()?,
+                    ),
+                )
+                .with_pool(
+                    bruhtoken,
+                    untrn,
+                    Pool::Auction(
+                        AuctionPoolBuilder::default()
+                            .with_offer_asset(bruhtoken)
+                            .with_ask_asset(untrn)
+                            .with_balance_offer_asset(10000000u128)
+                            .with_price(Decimal::percent(100))
+                            .build()?,
+                    ),
+                )
+                .with_test(Box::new(tests::test_unprofitable_arb) as TestFn)
+                .build()?,
+        )?
+        // Test case (auction arb):
+        //
+        // - Auction: NTRN-bruhtoken @ 1 bruhtoken/NTRN
+        // - Auction: bruhtoken-amoguscoin @ 1.5 amoguscoin/bruhtoken
+        // - Auction: amoguscoin-NTRN @ 1 NTRN/amoguscoin
+        .run(
+            TestBuilder::default()
+                .with_name("Auction-Profitable Arb")
+                .with_description("The arbitrage bot execute a slightly profitable arb only due to auction price differences")
+                .with_denom("untrn", 10000000)
+                .with_denom(bruhtoken, 10000000000)
+                .with_denom(amoguscoin, 10000000000)
+                .with_pool(
+                    untrn,
+                    bruhtoken,
+                    Pool::Auction(
+                        AuctionPoolBuilder::default()
+                            .with_offer_asset(bruhtoken)
+                            .with_ask_asset(untrn)
+                            .with_balance_offer_asset(10000000000u128)
+                            .with_price(Decimal::percent(100))
+                            .build()?,
+                    ),
+                )
+		.with_pool(
+                    bruhtoken,
+                    untrn,
+                    Pool::Auction(
+                        AuctionPoolBuilder::default()
+                            .with_offer_asset(amoguscoin)
+                            .with_ask_asset(bruhtoken)
+                            .with_balance_offer_asset(10000000000u128)
+                            .with_price(Decimal::percent(150))
+                            .build()?,
+                    ),
+                )
+		.with_pool(
+                    bruhtoken,
+                    untrn,
+                    Pool::Auction(
+                        AuctionPoolBuilder::default()
+                            .with_offer_asset(untrn)
+                            .with_ask_asset(amoguscoin)
+                            .with_balance_offer_asset(10000000000u128)
+                            .with_price(Decimal::percent(100))
+                            .build()?,
+                    ),
+                )
+                .with_test(Box::new(tests::test_unprofitable_arb) as TestFn)
+                .build()?,
+        )?
         .join()
 }
