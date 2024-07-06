@@ -59,9 +59,9 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
             TestBuilder::default()
                 .with_name("Profitable Arb")
                 .with_description("The arbitrage bot should execute a profitable arb successfully")
-                .with_denom("untrn", 10000000000)
-                .with_denom(bruhtoken, 10000000000)
-                .with_denom(amoguscoin, 10000000000)
+                .with_denom("untrn", 100000000000)
+                .with_denom(bruhtoken, 100000000000)
+                .with_denom(amoguscoin, 100000000000)
                 .with_pool(
                     bruhtoken,
                     amoguscoin,
@@ -110,9 +110,9 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
             TestBuilder::default()
                 .with_name("Unprofitable Arb")
                 .with_description("The arbitrage bot should not execute an unprofitable arb")
-                .with_denom("untrn", 10000000)
-                .with_denom(bruhtoken, 10000000000)
-                .with_denom(amoguscoin, 10000000000)
+                .with_denom("untrn", 100000000000)
+                .with_denom(bruhtoken, 100000000000)
+                .with_denom(amoguscoin, 100000000000)
                 .with_pool(
                     bruhtoken,
                     amoguscoin,
@@ -161,9 +161,9 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
             TestBuilder::default()
                 .with_name("Astro-Profitable Arb")
                 .with_description("The arbitrage bot execute a slightly profitable arb only due to astroport price differences")
-                .with_denom("untrn", 10000000)
-                .with_denom(bruhtoken, 10000000000)
-                .with_denom(amoguscoin, 10000000000)
+                .with_denom("untrn", 100000000000)
+                .with_denom(bruhtoken, 100000000000)
+                .with_denom(amoguscoin, 100000000000)
                 .with_pool(
                     bruhtoken,
                     amoguscoin,
@@ -212,9 +212,9 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
             TestBuilder::default()
                 .with_name("Auction-Profitable Arb")
                 .with_description("The arbitrage bot execute a slightly profitable arb only due to auction price differences")
-                .with_denom("untrn", 10000000)
-                .with_denom(bruhtoken, 10000000000)
-                .with_denom(amoguscoin, 10000000000)
+.with_denom("untrn", 100000000000)
+                .with_denom(bruhtoken, 100000000000)
+                .with_denom(amoguscoin, 100000000000)
                 .with_pool(
                     untrn,
                     bruhtoken,
@@ -227,7 +227,7 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                             .build()?,
                     ),
                 )
-		.with_pool(
+                .with_pool(
                     bruhtoken,
                     untrn,
                     Pool::Auction(
@@ -239,7 +239,7 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                             .build()?,
                     ),
                 )
-		.with_pool(
+                .with_pool(
                     bruhtoken,
                     untrn,
                     Pool::Auction(
