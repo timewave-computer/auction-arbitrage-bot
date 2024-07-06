@@ -16,6 +16,7 @@ const ARBFILE_PATH: &str = "../arbs.json";
 
 /// The address that should principally own all contracts
 const OWNER_ADDR: &str = "neutron1hj5fveer5cjtn4wd6wstzugjfdxzl0xpznmsky";
+const OSMO_OWNER_ADDR: &str = "osmo1hj5fveer5cjtn4wd6wstzugjfdxzl0xpwhpz63";
 
 #[derive(Parser, Debug)]
 struct Args {

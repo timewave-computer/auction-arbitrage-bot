@@ -1,4 +1,4 @@
-use super::{util, ARBFILE_PATH, OWNER_ADDR, TEST_MNEMONIC};
+use super::{util, ARBFILE_PATH, OSMO_OWNER_ADDR, OWNER_ADDR, TEST_MNEMONIC};
 use cosmwasm_std::Decimal;
 use derive_builder::Builder;
 use localic_utils::{types::contract::MinAmount, utils::test_context::TestContext};
@@ -128,7 +128,7 @@ impl<'a> TestRunner<'a> {
 
         let statuses = self.test_statuses.clone();
 
-        test.setup(self.test_ctx)?;
+        test.setup(self, self.test_ctx)?;
 
         with_arb_bot_output(Arc::new(Box::new(move |arbfile: Value| {
             statuses.lock().expect("Failed to lock statuses").insert(
@@ -208,6 +208,7 @@ pub struct Test {
 impl Test {
     pub fn setup(
         &mut self,
+        runner: &mut TestRunner,
         ctx: &mut TestContext,
     ) -> Result<&mut Self, Box<dyn Error + Send + Sync>> {
         self.tokenfactory_token_balances_acc0
@@ -235,6 +236,55 @@ impl Test {
                             .with_amount_denom_b(spec.balance_asset_b)
                             .with_liq_token_receiver(OWNER_ADDR)
                             .with_slippage_tolerance(Decimal::percent(50))
+                            .send()
+                    }
+                    Pool::Osmosis(spec) => {
+                        let funds_a = spec.denom_funds.get(denom_a).unwrap_or_default();
+                        let funds_b = spec.denom_funds.get(denom_b).unwrap_or_default();
+
+                        // Transfer requisite funds to osmosis
+                        ctx.build_tx_transfer()
+                            .with_chain_name("neutron")
+                            .with_recipient(OSMO_OWNER_ADDR)
+                            .with_denom(&denom_a)
+                            .with_amount(funds_a)
+                            .send()?;
+                        ctx.build_tx_transfer()
+                            .with_chain_name("neutron")
+                            .with_recipient(OSMO_OWNER_ADDR)
+                            .with_denom(&denom_b)
+                            .with_amount(funds_b)
+                            .send()?;
+
+                        // Create the osmo pool and join it
+                        let ibc_denom_a = ctx.get_ibc_denom(&denom_a, "neutron", "osmosis")?;
+                        let ibc_denom_b = ctx.get_ibc_denom(&denom_b, "neutron", "osmosis")?;
+
+                        // (denom, neutron) -> denom'
+                        // (denom', osmo) -> denom
+                        runner.denom_map.insert((denom_a, "osmosis"), ibc_denom_a);
+                        runner.denom_map.insert((ibc_denom_a, "neutron"), denom_a);
+
+                        // (denom, neutron) -> denom'
+                        // (denom', osmo) -> denom
+                        runner.denom_map.insert((denom_b, "osmosis"), ibc_denom_b);
+                        runner.denom_map.insert((ibc_denom_b, "neutron"), denom_b);
+
+                        ctx.build_tx_create_osmo_pool()
+                            .with_weight(&ibc_denom_a, funds_a)
+                            .with_weight(&ibc_bruhtoken, funds_b)
+                            .with_initial_deposit(&ibc_neutron, funds_a)
+                            .with_initial_deposit(&ibc_bruhtoken, funds_b)
+                            .send()?;
+
+                        let pool_id = ctx.get_osmo_pool(&ibc_denom_a, &ibc_denom_b)?;
+
+                        // Fund the pool
+                        ctx.build_tx_fund_osmo_pool()
+                            .with_pool_id(pool_id)
+                            .with_max_amount_in(&ibc_denom_a, funds_a)
+                            .with_max_amount_in(&ibc_denom_b, funds_b)
+                            .with_share_amount_out(1000000000000)
                             .send()
                     }
                     Pool::Auction(spec) => {
@@ -310,6 +360,7 @@ impl TestBuilder {
 #[derive(Clone)]
 pub enum Pool {
     Astroport(AstroportPool),
+    Osmosis(OmsosisPool),
     Auction(AuctionPool),
 }
 
@@ -321,6 +372,27 @@ pub struct AstroportPool {
     pub asset_b: String,
     pub balance_asset_a: u128,
     pub balance_asset_b: u128,
+}
+
+/// Represents an osmosis gamm pool.
+#[derive(Builder, Clone)]
+#[builder(setter(into, strip_option, prefix = "with"))]
+pub struct OsmosisPool {
+    denom_funds: HashMap<String, u128>,
+}
+
+impl OsomsisPoolBuilder {
+    pub fn with_funds(denom: impl Into<String>, funds: u128) -> &mut Self {
+        self.denom_funds.insert(denom.into(), funds);
+
+        self
+    }
+
+    pub fn build(&mut self) -> OsmosisPool {
+        OsmosisPool {
+            denom_funds: self.denom_funds.unwrap_or_default(),
+        }
+    }
 }
 
 /// Represents a valence auction.
