@@ -235,7 +235,7 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                             .with_offer_asset(amoguscoin)
                             .with_ask_asset(bruhtoken)
                             .with_balance_offer_asset(10000000000u128)
-                            .with_price(Decimal::percent(150))
+                            .with_price(Decimal::percent(90))
                             .build()?,
                     ),
                 )
