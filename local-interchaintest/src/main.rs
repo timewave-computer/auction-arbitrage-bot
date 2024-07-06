@@ -276,11 +276,11 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                 .with_denom("osmosis", bruhtoken, 100000000000)
                 .with_denom("osmosis", amoguscoin, 100000000000)
                 .with_pool(
-                    untrn_osmo,
+                    untrn_osmo.clone(),
                     uosmo,
                     Pool::Osmosis(
                         OsmosisPoolBuilder::default()
-                            .with_funds(untrn_osmo, 10000000u128)
+                            .with_funds(untrn_osmo.clone(), 10000000u128)
                             .with_funds(uosmo, 10000000u128)
                             .build(),
                     ),
