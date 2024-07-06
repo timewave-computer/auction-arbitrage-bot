@@ -1,4 +1,8 @@
-use super::{util, ARBFILE_PATH, OSMO_OWNER_ADDR, OWNER_ADDR, TEST_MNEMONIC};
+use super::{
+    util::{self, DenomMapEntry},
+    ARBFILE_PATH, OSMO_OWNER_ADDR, OWNER_ADDR, TEST_MNEMONIC,
+};
+use clap::Parser;
 use cosmwasm_std::Decimal;
 use derive_builder::Builder;
 use localic_utils::{types::contract::MinAmount, utils::test_context::TestContext};
@@ -19,7 +23,7 @@ const EXIT_STATUS_SUCCESS: i32 = 9;
 const EXIT_STATUS_SIGKILL: i32 = 9;
 
 #[derive(Parser, Debug)]
-struct Args {
+pub struct Args {
     #[arg(short, long, default_value_t = false)]
     cached: bool,
 
@@ -33,7 +37,8 @@ struct Args {
 pub struct TestRunner<'a> {
     test_statuses: Arc<Mutex<HashMap<(String, String), TestResult>>>,
     cli_args: Args,
-    denom_map: HashMap<String, Vec<HashMap<String, String>>>,
+    /// Mapping from (src_denom, dest_chain) -> dest_denom
+    denom_map: HashMap<(String, String), DenomMapEntry>,
     created_denoms: HashSet<String>,
     test_ctx: &'a mut TestContext,
 }
@@ -58,7 +63,7 @@ impl<'a> TestRunner<'a> {
 
     /// Runs a test with access to the test context with some metadata.
     pub fn run(&mut self, mut test: Test) -> Result<&mut Self, Box<dyn Error + Send + Sync>> {
-        if !self.cli_args.tests.is_empty() && !self.cli_args.contains(test.name) {
+        if !self.cli_args.tests.is_empty() && !self.cli_args.tests.contains(&test.name) {
             return Ok(self);
         }
 
@@ -142,7 +147,7 @@ impl<'a> TestRunner<'a> {
 
         let statuses = self.test_statuses.clone();
 
-        test.setup(self, self.test_ctx)?;
+        test.setup(&mut self.denom_map, self.test_ctx)?;
 
         with_arb_bot_output(Arc::new(Box::new(move |arbfile: Value| {
             statuses.lock().expect("Failed to lock statuses").insert(
@@ -209,8 +214,9 @@ pub struct Test {
     /// Fully qualified denoms (i.e., factory/neutronxyz/tokenabc or untrn or ibc/xyz)
     denoms: Vec<String>,
 
-    /// How much of a given subdenom acc0 owns
-    tokenfactory_token_balances_acc0: HashMap<String, u128>,
+    /// How much of a given subdenom acc0 owns on a given chain
+    /// (chain, token) -> balance
+    tokenfactory_token_balances_acc0: HashMap<(String, String), u128>,
 
     /// (Denom a, denom b) or (offer asset, ask asset) -> pool
     pools: HashMap<(String, String), Vec<Pool>>,
@@ -222,17 +228,24 @@ pub struct Test {
 impl Test {
     pub fn setup(
         &mut self,
-        runner: &mut TestRunner,
+        denom_map: &mut HashMap<(String, String), DenomMapEntry>,
         ctx: &mut TestContext,
     ) -> Result<&mut Self, Box<dyn Error + Send + Sync>> {
-        self.tokenfactory_token_balances_acc0
-            .iter()
-            .try_for_each(|(token, balance)| {
-                ctx.build_tx_mint_tokenfactory_token()
+        self.tokenfactory_token_balances_acc0.iter().try_for_each(
+            |((chain, token), balance)| {
+                let mut builder = ctx.build_tx_mint_tokenfactory_token();
+                builder
                     .with_denom(token)
                     .with_amount(*balance)
-                    .send()
-            })?;
+                    .with_chain_name(chain);
+
+                if chain == "osmosis" {
+                    builder.with_recipient_addr(OSMO_OWNER_ADDR);
+                }
+
+                builder.send()
+            },
+        )?;
 
         self.pools
             .iter()
@@ -253,42 +266,91 @@ impl Test {
                             .send()
                     }
                     Pool::Osmosis(spec) => {
-                        let funds_a = spec.denom_funds.get(denom_a).unwrap_or_default();
-                        let funds_b = spec.denom_funds.get(denom_b).unwrap_or_default();
+                        let funds_a = spec.denom_funds.get(denom_a).unwrap_or(&0);
+                        let funds_b = spec.denom_funds.get(denom_b).unwrap_or(&0);
 
                         // Transfer requisite funds to osmosis
                         ctx.build_tx_transfer()
                             .with_chain_name("neutron")
                             .with_recipient(OSMO_OWNER_ADDR)
                             .with_denom(&denom_a)
-                            .with_amount(funds_a)
+                            .with_amount(*funds_a)
                             .send()?;
                         ctx.build_tx_transfer()
                             .with_chain_name("neutron")
                             .with_recipient(OSMO_OWNER_ADDR)
                             .with_denom(&denom_b)
-                            .with_amount(funds_b)
+                            .with_amount(*funds_b)
                             .send()?;
 
                         // Create the osmo pool and join it
-                        let ibc_denom_a = ctx.get_ibc_denom(&denom_a, "neutron", "osmosis")?;
-                        let ibc_denom_b = ctx.get_ibc_denom(&denom_b, "neutron", "osmosis")?;
+                        let trace_a = ctx
+                            .get_ibc_trace(denom_a, "neutron", "osmosis")
+                            .expect(&format!("Missing IBC trace for {denom_a}"));
+                        let trace_b = ctx
+                            .get_ibc_trace(denom_b, "neutron", "osmosis")
+                            .expect(&format!("Missing IBC trace for {denom_b}"));
+
+                        let ibc_denom_a = trace_a.dest_denom.clone();
+                        let ibc_denom_b = trace_b.dest_denom.clone();
+
+                        let trace_a_counter = ctx
+                            .get_ibc_trace(&ibc_denom_a, "osmosis", "neutron")
+                            .expect(&format!("Missing IBC trace for {denom_a}"));
+                        let trace_b_counter = ctx
+                            .get_ibc_trace(&ibc_denom_b, "osmosis", "neutron")
+                            .expect(&format!("Missing IBC trace for {denom_b}"));
+
+                        let neutron = ctx.get_chain("neutron");
+                        let osmosis = ctx.get_chain("osmosis");
 
                         // (denom, neutron) -> denom'
                         // (denom', osmo) -> denom
-                        runner.denom_map.insert((denom_a, "osmosis"), ibc_denom_a);
-                        runner.denom_map.insert((ibc_denom_a, "neutron"), denom_a);
+                        denom_map.insert(
+                            (denom_a.clone(), "osmosis".into()),
+                            DenomMapEntry {
+                                chain_id: osmosis.rb.chain_id.clone(),
+                                denom: ibc_denom_a.clone(),
+                                channel_id: trace_a.channel_id,
+                                port_id: trace_a.port_id,
+                            },
+                        );
+                        denom_map.insert(
+                            (ibc_denom_a.clone(), "neutron".into()),
+                            DenomMapEntry {
+                                chain_id: neutron.rb.chain_id.clone(),
+                                denom: denom_a.clone(),
+                                channel_id: trace_a_counter.channel_id,
+                                port_id: trace_a_counter.port_id,
+                            },
+                        );
 
                         // (denom, neutron) -> denom'
                         // (denom', osmo) -> denom
-                        runner.denom_map.insert((denom_b, "osmosis"), ibc_denom_b);
-                        runner.denom_map.insert((ibc_denom_b, "neutron"), denom_b);
+                        denom_map.insert(
+                            (denom_b.clone(), "osmosis".into()),
+                            DenomMapEntry {
+                                chain_id: osmosis.rb.chain_id.clone(),
+                                denom: ibc_denom_b.clone(),
+                                channel_id: trace_b.channel_id,
+                                port_id: trace_b.port_id,
+                            },
+                        );
+                        denom_map.insert(
+                            (ibc_denom_b.clone(), "neutron".into()),
+                            DenomMapEntry {
+                                chain_id: neutron.rb.chain_id.clone(),
+                                denom: denom_b.clone(),
+                                channel_id: trace_b_counter.channel_id,
+                                port_id: trace_b_counter.port_id,
+                            },
+                        );
 
                         ctx.build_tx_create_osmo_pool()
-                            .with_weight(&ibc_denom_a, funds_a)
-                            .with_weight(&ibc_bruhtoken, funds_b)
-                            .with_initial_deposit(&ibc_neutron, funds_a)
-                            .with_initial_deposit(&ibc_bruhtoken, funds_b)
+                            .with_weight(&ibc_denom_a, *funds_a as u64)
+                            .with_weight(&ibc_denom_b, *funds_b as u64)
+                            .with_initial_deposit(&ibc_denom_a, *funds_a as u64)
+                            .with_initial_deposit(&ibc_denom_b, *funds_b as u64)
                             .send()?;
 
                         let pool_id = ctx.get_osmo_pool(&ibc_denom_a, &ibc_denom_b)?;
@@ -296,8 +358,8 @@ impl Test {
                         // Fund the pool
                         ctx.build_tx_fund_osmo_pool()
                             .with_pool_id(pool_id)
-                            .with_max_amount_in(&ibc_denom_a, funds_a)
-                            .with_max_amount_in(&ibc_denom_b, funds_b)
+                            .with_max_amount_in(&ibc_denom_a, *funds_a as u64)
+                            .with_max_amount_in(&ibc_denom_b, *funds_b as u64)
                             .with_share_amount_out(1000000000000)
                             .send()
                     }
@@ -336,6 +398,7 @@ impl Test {
 impl TestBuilder {
     pub fn with_denom(
         mut self,
+        chain: impl Into<String> + AsRef<str> + Clone,
         denom: impl Into<String> + AsRef<str> + Clone,
         balance: u128,
     ) -> Self {
@@ -348,7 +411,7 @@ impl TestBuilder {
             self.borrow_mut()
                 .tokenfactory_token_balances_acc0
                 .get_or_insert_with(Default::default)
-                .insert(denom.into(), balance);
+                .insert((chain.into(), denom.into()), balance);
         }
 
         self
@@ -374,7 +437,7 @@ impl TestBuilder {
 #[derive(Clone)]
 pub enum Pool {
     Astroport(AstroportPool),
-    Osmosis(OmsosisPool),
+    Osmosis(OsmosisPool),
     Auction(AuctionPool),
 }
 
@@ -390,21 +453,24 @@ pub struct AstroportPool {
 
 /// Represents an osmosis gamm pool.
 #[derive(Builder, Clone)]
-#[builder(setter(into, strip_option, prefix = "with"))]
+#[builder(setter(into, strip_option, prefix = "with"), build_fn(skip))]
 pub struct OsmosisPool {
+    #[builder(default = "HashMap::new()")]
     denom_funds: HashMap<String, u128>,
 }
 
-impl OsomsisPoolBuilder {
-    pub fn with_funds(denom: impl Into<String>, funds: u128) -> &mut Self {
-        self.denom_funds.insert(denom.into(), funds);
+impl OsmosisPoolBuilder {
+    pub fn with_funds(&mut self, denom: impl Into<String>, funds: u128) -> &mut Self {
+        self.denom_funds
+            .get_or_insert_with(Default::default)
+            .insert(denom.into(), funds);
 
         self
     }
 
     pub fn build(&mut self) -> OsmosisPool {
         OsmosisPool {
-            denom_funds: self.denom_funds.unwrap_or_default(),
+            denom_funds: self.denom_funds.clone().unwrap_or_default(),
         }
     }
 }

@@ -1,4 +1,13 @@
+use serde::Serialize;
 use std::{collections::HashMap, error::Error, fmt::Debug, fs::OpenOptions, io::Write};
+
+#[derive(Serialize)]
+pub struct DenomMapEntry {
+    pub chain_id: String,
+    pub denom: String,
+    pub channel_id: String,
+    pub port_id: String,
+}
 
 /// Creates an error representing a failed assertion.
 pub fn assert_err<T: Debug + PartialEq>(
@@ -111,7 +120,7 @@ pub(crate) fn create_netconfig() -> Result<(), Box<dyn Error + Send + Sync>> {
 }
 
 pub(crate) fn create_denom_file(
-    denoms: &HashMap<String, Vec<HashMap<String, String>>>,
+    denoms: &HashMap<(String, String), DenomMapEntry>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut f = OpenOptions::new()
         .create(true)
@@ -119,7 +128,15 @@ pub(crate) fn create_denom_file(
         .write(true)
         .open("../denoms.json")?;
 
-    f.write_all(serde_json::to_string(denoms)?.as_bytes())?;
+    let denoms_for_src =
+        denoms
+            .iter()
+            .fold(HashMap::new(), |mut acc, ((src_denom, _), dest_denom)| {
+                acc.insert(src_denom, vec![dest_denom]);
+                acc
+            });
+
+    f.write_all(serde_json::to_string(&denoms_for_src)?.as_bytes())?;
 
     Ok(())
 }
