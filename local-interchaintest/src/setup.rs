@@ -18,21 +18,31 @@ use std::{
 const EXIT_STATUS_SUCCESS: i32 = 9;
 const EXIT_STATUS_SIGKILL: i32 = 9;
 
+#[derive(Parser, Debug)]
+struct Args {
+    #[arg(short, long, default_value_t = false)]
+    cached: bool,
+
+    /// Names of tests to run
+    #[arg(short, long)]
+    tests: Vec<String>,
+}
+
 /// Runs all provided tests while reporting a final
 /// exit status.
 pub struct TestRunner<'a> {
     test_statuses: Arc<Mutex<HashMap<(String, String), TestResult>>>,
-    cached: bool,
+    cli_args: Args,
     denom_map: HashMap<String, Vec<HashMap<String, String>>>,
     created_denoms: HashSet<String>,
     test_ctx: &'a mut TestContext,
 }
 
 impl<'a> TestRunner<'a> {
-    pub fn new(ctx: &'a mut TestContext, cached: bool) -> Self {
+    pub fn new(ctx: &'a mut TestContext, cli_args: Args) -> Self {
         Self {
             test_statuses: Default::default(),
-            cached,
+            cli_args,
             denom_map: Default::default(),
             created_denoms: Default::default(),
             test_ctx: ctx,
@@ -48,7 +58,11 @@ impl<'a> TestRunner<'a> {
 
     /// Runs a test with access to the test context with some metadata.
     pub fn run(&mut self, mut test: Test) -> Result<&mut Self, Box<dyn Error + Send + Sync>> {
-        if !self.cached {
+        if !self.cli_args.tests.is_empty() && !self.cli_args.contains(test.name) {
+            return Ok(self);
+        }
+
+        if !self.cli_args.cached {
             // Perform cold start setup
             // Create tokens w tokenfactory for all test tokens
             test.denoms

@@ -1,7 +1,9 @@
 use clap::Parser;
 use cosmwasm_std::Decimal;
 use localic_utils::{ConfigChainBuilder, TestContextBuilder};
-use setup::{AstroportPoolBuilder, AuctionPoolBuilder, Pool, TestBuilder, TestFn, TestRunner};
+use setup::{
+    Args, AstroportPoolBuilder, AuctionPoolBuilder, Pool, TestBuilder, TestFn, TestRunner,
+};
 use std::{error::Error as StdError, panic, process};
 
 mod setup;
@@ -17,12 +19,6 @@ const ARBFILE_PATH: &str = "../arbs.json";
 /// The address that should principally own all contracts
 const OWNER_ADDR: &str = "neutron1hj5fveer5cjtn4wd6wstzugjfdxzl0xpznmsky";
 const OSMO_OWNER_ADDR: &str = "osmo1hj5fveer5cjtn4wd6wstzugjfdxzl0xpwhpz63";
-
-#[derive(Parser, Debug)]
-struct Args {
-    #[arg(short, long, default_value_t = false)]
-    cached: bool,
-}
 
 fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
     let orig_hook = panic::take_hook();
