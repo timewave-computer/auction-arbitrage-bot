@@ -337,20 +337,6 @@ impl Test {
                         let funds_a = spec.denom_funds.get(denom_a).unwrap_or(&0);
                         let funds_b = spec.denom_funds.get(denom_b).unwrap_or(&0);
 
-                        // Transfer requisite funds to osmosis
-                        ctx.build_tx_transfer()
-                            .with_chain_name("neutron")
-                            .with_recipient(OSMO_OWNER_ADDR)
-                            .with_denom(&denom_a.to_string())
-                            .with_amount(*funds_a)
-                            .send()?;
-                        ctx.build_tx_transfer()
-                            .with_chain_name("neutron")
-                            .with_recipient(OSMO_OWNER_ADDR)
-                            .with_denom(&denom_b.to_string())
-                            .with_amount(*funds_b)
-                            .send()?;
-
                         // Create the osmo pool and join it
                         let trace_a = ctx
                             .get_ibc_trace(denom_a.to_string(), "neutron", "osmosis")
