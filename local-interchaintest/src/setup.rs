@@ -13,6 +13,7 @@ use std::{
     borrow::BorrowMut,
     collections::{HashMap, HashSet},
     error::Error,
+    fmt::{self, Display, Formatter},
     fs::OpenOptions,
     path::Path,
     process::Command,
@@ -21,6 +22,39 @@ use std::{
 
 const EXIT_STATUS_SUCCESS: i32 = 9;
 const EXIT_STATUS_SIGKILL: i32 = 9;
+
+/// A lazily evaluated denom hash,
+/// based on an src chain, a dest chain
+/// and a base denom. If the dest chain
+/// and base chain are the same,
+/// no hash is created.
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+pub enum Denom {
+    /// A denom with no dest chain
+    Local {
+        base_chain: String,
+        base_denom: String,
+    },
+    /// A denom representing a transfer
+    Interchain {
+        base_denom: String,
+        base_chain: String,
+        dest_chain: String,
+    },
+}
+
+impl Display for Denom {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Local { base_denom, .. } => {
+                write!(f, "{}", base_denom)
+            }
+            Self::Interchain { base_denom, .. } => {
+                write!(f, "{}", base_denom)
+            }
+        }
+    }
+}
 
 #[derive(Parser, Debug)]
 pub struct Args {
@@ -216,10 +250,10 @@ pub struct Test {
 
     /// How much of a given subdenom acc0 owns on a given chain
     /// (chain, token) -> balance
-    tokenfactory_token_balances_acc0: HashMap<(String, String), u128>,
+    tokenfactory_token_balances_acc0: HashMap<Denom, u128>,
 
     /// (Denom a, denom b) or (offer asset, ask asset) -> pool
-    pools: HashMap<(String, String), Vec<Pool>>,
+    pools: HashMap<(Denom, Denom), Vec<Pool>>,
 
     /// The test that should be run with the arb bot output
     test: OwnedTestFn,
@@ -232,18 +266,52 @@ impl Test {
         ctx: &mut TestContext,
     ) -> Result<&mut Self, Box<dyn Error + Send + Sync>> {
         self.tokenfactory_token_balances_acc0.iter().try_for_each(
-            |((chain, token), balance)| {
-                let mut builder = ctx.build_tx_mint_tokenfactory_token();
-                builder
-                    .with_denom(token)
-                    .with_amount(*balance)
-                    .with_chain_name(chain);
+            |(denom, balance)| match denom {
+                Denom::Interchain {
+                    base_denom,
+                    base_chain,
+                    dest_chain,
+                } => {
+                    // First mint the token, and then transfer it to the destination
+                    // chain
+                    let mut builder = ctx.build_tx_mint_tokenfactory_token();
 
-                if chain == "osmosis" {
-                    builder.with_recipient_addr(OSMO_OWNER_ADDR);
+                    builder
+                        .with_denom(base_denom)
+                        .with_amount(*balance)
+                        .with_chain_name(base_chain);
+
+                    if base_chain == "osmosis" {
+                        builder.with_recipient_addr(OSMO_OWNER_ADDR);
+                    }
+
+                    builder.send()?;
+
+                    let admin_addr = ctx.get_chain(dest_chain).admin_addr.to_owned();
+
+                    ctx.build_tx_transfer()
+                        .with_amount(*balance)
+                        .with_chain_name(base_chain)
+                        .with_recipient(&admin_addr)
+                        .with_denom(&base_denom)
+                        .send()
                 }
+                Denom::Local {
+                    base_chain,
+                    base_denom,
+                } => {
+                    let mut builder = ctx.build_tx_mint_tokenfactory_token();
+                    builder
+                        .with_denom(base_denom)
+                        .with_amount(*balance)
+                        .with_chain_name(base_chain);
 
-                builder.send()
+                    if base_chain == "osmosis" {
+                        builder.with_recipient_addr(OSMO_OWNER_ADDR);
+                    }
+
+                    builder.send()
+                }
             },
         )?;
 
@@ -253,12 +321,12 @@ impl Test {
                 pools.iter().try_for_each(|pool_spec| match pool_spec {
                     Pool::Astroport(spec) => {
                         ctx.build_tx_create_pool()
-                            .with_denom_a(denom_a.clone())
-                            .with_denom_b(&denom_b.clone())
+                            .with_denom_a(denom_a.to_string())
+                            .with_denom_b(&denom_b.to_string())
                             .send()?;
                         ctx.build_tx_fund_pool()
-                            .with_denom_a(&denom_a.clone())
-                            .with_denom_b(&denom_b.clone())
+                            .with_denom_a(&denom_a.to_string())
+                            .with_denom_b(&denom_b.to_string())
                             .with_amount_denom_a(spec.balance_asset_a)
                             .with_amount_denom_b(spec.balance_asset_b)
                             .with_liq_token_receiver(OWNER_ADDR)
@@ -273,22 +341,22 @@ impl Test {
                         ctx.build_tx_transfer()
                             .with_chain_name("neutron")
                             .with_recipient(OSMO_OWNER_ADDR)
-                            .with_denom(&denom_a)
+                            .with_denom(&denom_a.to_string())
                             .with_amount(*funds_a)
                             .send()?;
                         ctx.build_tx_transfer()
                             .with_chain_name("neutron")
                             .with_recipient(OSMO_OWNER_ADDR)
-                            .with_denom(&denom_b)
+                            .with_denom(&denom_b.to_string())
                             .with_amount(*funds_b)
                             .send()?;
 
                         // Create the osmo pool and join it
                         let trace_a = ctx
-                            .get_ibc_trace(denom_a, "neutron", "osmosis")
+                            .get_ibc_trace(denom_a.to_string(), "neutron", "osmosis")
                             .expect(&format!("Missing IBC trace for {denom_a}"));
                         let trace_b = ctx
-                            .get_ibc_trace(denom_b, "neutron", "osmosis")
+                            .get_ibc_trace(denom_b.to_string(), "neutron", "osmosis")
                             .expect(&format!("Missing IBC trace for {denom_b}"));
 
                         let ibc_denom_a = trace_a.dest_denom.clone();
@@ -307,7 +375,7 @@ impl Test {
                         // (denom, neutron) -> denom'
                         // (denom', osmo) -> denom
                         denom_map.insert(
-                            (denom_a.clone(), "osmosis".into()),
+                            (denom_a.to_string(), "osmosis".into()),
                             DenomMapEntry {
                                 chain_id: osmosis.rb.chain_id.clone(),
                                 denom: ibc_denom_a.clone(),
@@ -319,7 +387,7 @@ impl Test {
                             (ibc_denom_a.clone(), "neutron".into()),
                             DenomMapEntry {
                                 chain_id: neutron.rb.chain_id.clone(),
-                                denom: denom_a.clone(),
+                                denom: denom_a.to_string(),
                                 channel_id: trace_a_counter.channel_id,
                                 port_id: trace_a_counter.port_id,
                             },
@@ -328,10 +396,10 @@ impl Test {
                         // (denom, neutron) -> denom'
                         // (denom', osmo) -> denom
                         denom_map.insert(
-                            (denom_b.clone(), "osmosis".into()),
+                            (denom_b.to_string(), "osmosis".into()),
                             DenomMapEntry {
                                 chain_id: osmosis.rb.chain_id.clone(),
-                                denom: ibc_denom_b.clone(),
+                                denom: ibc_denom_b.to_string(),
                                 channel_id: trace_b.channel_id,
                                 port_id: trace_b.port_id,
                             },
@@ -340,7 +408,7 @@ impl Test {
                             (ibc_denom_b.clone(), "neutron".into()),
                             DenomMapEntry {
                                 chain_id: neutron.rb.chain_id.clone(),
-                                denom: denom_b.clone(),
+                                denom: denom_b.to_string(),
                                 channel_id: trace_b_counter.channel_id,
                                 port_id: trace_b_counter.port_id,
                             },
@@ -365,25 +433,25 @@ impl Test {
                     }
                     Pool::Auction(spec) => {
                         ctx.build_tx_create_auction()
-                            .with_offer_asset(denom_a)
-                            .with_ask_asset(denom_b)
+                            .with_offer_asset(&denom_a.to_string())
+                            .with_ask_asset(&denom_b.to_string())
                             .with_amount_offer_asset(spec.balance_offer_asset)
                             .send()?;
 
                         ctx.build_tx_manual_oracle_price_update()
-                            .with_offer_asset(denom_a)
-                            .with_ask_asset(denom_b)
+                            .with_offer_asset(&denom_a.to_string())
+                            .with_ask_asset(&denom_b.to_string())
                             .with_price(spec.price)
                             .send()?;
 
                         ctx.build_tx_fund_auction()
-                            .with_offer_asset(denom_a)
-                            .with_ask_asset(denom_b)
+                            .with_offer_asset(&denom_a.to_string())
+                            .with_ask_asset(&denom_b.to_string())
                             .with_amount_offer_asset(spec.balance_offer_asset)
                             .send()?;
                         ctx.build_tx_start_auction()
-                            .with_offer_asset(denom_a)
-                            .with_ask_asset(denom_b)
+                            .with_offer_asset(&denom_a.to_string())
+                            .with_ask_asset(&denom_b.to_string())
                             .with_start_block(0)
                             .with_end_block_delta(10000)
                             .send()
@@ -396,36 +464,26 @@ impl Test {
 }
 
 impl TestBuilder {
-    pub fn with_denom(
-        mut self,
-        chain: impl Into<String> + AsRef<str> + Clone,
-        denom: impl Into<String> + AsRef<str> + Clone,
-        balance: u128,
-    ) -> Self {
+    pub fn with_denom(mut self, denom: Denom, balance: u128) -> Self {
         self.borrow_mut()
             .denoms
             .get_or_insert_with(Default::default)
-            .push(denom.clone().into());
+            .push(denom.to_string().into());
 
-        if denom.as_ref().contains("factory") {
+        if denom.to_string().contains("factory") {
             self.borrow_mut()
                 .tokenfactory_token_balances_acc0
                 .get_or_insert_with(Default::default)
-                .insert((chain.into(), denom.into()), balance);
+                .insert(denom, balance);
         }
 
         self
     }
 
-    pub fn with_pool(
-        mut self,
-        denom_a: impl Into<String>,
-        denom_b: impl Into<String>,
-        pool: Pool,
-    ) -> Self {
+    pub fn with_pool(mut self, denom_a: Denom, denom_b: Denom, pool: Pool) -> Self {
         self.pools
             .get_or_insert_with(Default::default)
-            .entry((denom_a.into(), denom_b.into()))
+            .entry((denom_a, denom_b))
             .or_default()
             .push(pool);
 
@@ -445,8 +503,8 @@ pub enum Pool {
 #[derive(Builder, Clone)]
 #[builder(setter(into, strip_option, prefix = "with"))]
 pub struct AstroportPool {
-    pub asset_a: String,
-    pub asset_b: String,
+    pub asset_a: Denom,
+    pub asset_b: Denom,
     pub balance_asset_a: u128,
     pub balance_asset_b: u128,
 }
@@ -456,11 +514,11 @@ pub struct AstroportPool {
 #[builder(setter(into, strip_option, prefix = "with"), build_fn(skip))]
 pub struct OsmosisPool {
     #[builder(default = "HashMap::new()")]
-    denom_funds: HashMap<String, u128>,
+    denom_funds: HashMap<Denom, u128>,
 }
 
 impl OsmosisPoolBuilder {
-    pub fn with_funds(&mut self, denom: impl Into<String>, funds: u128) -> &mut Self {
+    pub fn with_funds(&mut self, denom: Denom, funds: u128) -> &mut Self {
         self.denom_funds
             .get_or_insert_with(Default::default)
             .insert(denom.into(), funds);
@@ -479,8 +537,8 @@ impl OsmosisPoolBuilder {
 #[derive(Builder, Clone)]
 #[builder(setter(into, strip_option, prefix = "with"))]
 pub struct AuctionPool {
-    pub offer_asset: String,
-    pub ask_asset: String,
+    pub offer_asset: Denom,
+    pub ask_asset: Denom,
     pub balance_offer_asset: u128,
     pub price: Decimal,
 }

@@ -2,8 +2,8 @@ use clap::Parser;
 use cosmwasm_std::Decimal;
 use localic_utils::{ConfigChainBuilder, TestContextBuilder};
 use setup::{
-    Args, AstroportPoolBuilder, AuctionPoolBuilder, OsmosisPoolBuilder, Pool, TestBuilder, TestFn,
-    TestRunner,
+    Args, AstroportPoolBuilder, AuctionPoolBuilder, Denom, OsmosisPoolBuilder, Pool, TestBuilder,
+    TestFn, TestRunner,
 };
 use std::{error::Error as StdError, panic, process};
 
@@ -39,22 +39,36 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         .with_transfer_channel("osmosis", "neutron")
         .build()?;
 
-    let bruhtoken_owned = format!("factory/{OWNER_ADDR}/bruhtoken");
-    let amoguscoin_owned = format!("factory/{OWNER_ADDR}/amoguscoin");
+    let bruhtoken = Denom::Local {
+        base_chain: String::from("neutron"),
+        base_denom: format!("factory/{OWNER_ADDR}/bruhtoken"),
+    };
+    let amoguscoin = Denom::Local {
+        base_chain: String::from("neutron"),
+        base_denom: format!("factory/{OWNER_ADDR}/amoguscoin"),
+    };
+    let untrn = Denom::Local {
+        base_chain: String::from("neutron"),
+        base_denom: String::from("untrn"),
+    };
 
-    let bruhtoken = &bruhtoken_owned;
-    let amoguscoin = &amoguscoin_owned;
-    let untrn = "untrn";
-
-    let bruhtoken_owned_osmo = format!("factory/{OSMO_OWNER_ADDR}/bruhtoken");
-    let amoguscoin_owned_osmo = format!("factory/{OSMO_OWNER_ADDR}/amoguscoin");
-
-    let bruhtoken_osmo = &bruhtoken_owned_osmo;
-    let amoguscoin_osmo = &amoguscoin_owned_osmo;
-    let uosmo = "uosmo";
-    let untrn_osmo = ctx
-        .get_ibc_denom(untrn, "neutron", "osmosis")
-        .expect("Missing IBC denom for untrn");
+    let bruhtoken_osmo = Denom::Local {
+        base_chain: String::from("osmosis"),
+        base_denom: format!("factory/{OWNER_ADDR}/bruhtoken"),
+    };
+    let amoguscoin_osmo = Denom::Local {
+        base_chain: String::from("osmosis"),
+        base_denom: format!("factory/{OWNER_ADDR}/amoguscoin"),
+    };
+    let untrn_osmo = Denom::Interchain {
+        base_denom: String::from("untrn"),
+        base_chain: String::from("neutron"),
+        dest_chain: String::from("osmosis"),
+    };
+    let uosmo = Denom::Local {
+        base_chain: String::from("osmosis"),
+        base_denom: String::from("uosmo"),
+    };
 
     TestRunner::new(&mut ctx, args)
         .start()?
@@ -67,40 +81,40 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
             TestBuilder::default()
                 .with_name("Profitable Arb")
                 .with_description("The arbitrage bot should execute a profitable arb successfully")
-                .with_denom("neutron", "untrn", 100000000000)
-                .with_denom("neutron", bruhtoken, 100000000000)
-                .with_denom("neutron", amoguscoin, 100000000000)
+                .with_denom(untrn.clone(), 100000000000)
+                .with_denom(bruhtoken.clone(), 100000000000)
+                .with_denom(amoguscoin.clone(), 100000000000)
                 .with_pool(
-                    bruhtoken,
-                    amoguscoin,
+                    bruhtoken.clone(),
+                    amoguscoin.clone(),
                     Pool::Astroport(
                         AstroportPoolBuilder::default()
-                            .with_asset_a(bruhtoken)
-                            .with_asset_b(amoguscoin)
+                            .with_asset_a(bruhtoken.clone())
+                            .with_asset_b(amoguscoin.clone())
                             .with_balance_asset_a(15000000u128)
                             .with_balance_asset_b(10000000u128)
                             .build()?,
                     ),
                 )
                 .with_pool(
-                    untrn,
-                    amoguscoin,
+                    untrn.clone(),
+                    amoguscoin.clone(),
                     Pool::Astroport(
                         AstroportPoolBuilder::default()
-                            .with_asset_a(untrn)
-                            .with_asset_b(amoguscoin)
+                            .with_asset_a(untrn.clone())
+                            .with_asset_b(amoguscoin.clone())
                             .with_balance_asset_a(10000000u128)
                             .with_balance_asset_b(10000000u128)
                             .build()?,
                     ),
                 )
                 .with_pool(
-                    bruhtoken,
-                    untrn,
+                    bruhtoken.clone(),
+                    untrn.clone(),
                     Pool::Auction(
                         AuctionPoolBuilder::default()
-                            .with_offer_asset(bruhtoken)
-                            .with_ask_asset(untrn)
+                            .with_offer_asset(bruhtoken.clone())
+                            .with_ask_asset(untrn.clone())
                             .with_balance_offer_asset(100000000u128)
                             .with_price(Decimal::percent(10))
                             .build()?,
@@ -118,40 +132,40 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
             TestBuilder::default()
                 .with_name("Unprofitable Arb")
                 .with_description("The arbitrage bot should not execute an unprofitable arb")
-                .with_denom("neutron", "untrn", 100000000000)
-                .with_denom("neutron", bruhtoken, 100000000000)
-                .with_denom("neutron", amoguscoin, 100000000000)
+                .with_denom(untrn.clone(), 100000000000)
+                .with_denom(bruhtoken.clone(), 100000000000)
+                .with_denom(amoguscoin.clone(), 100000000000)
                 .with_pool(
-                    bruhtoken,
-                    amoguscoin,
+                    bruhtoken.clone(),
+                    amoguscoin.clone(),
                     Pool::Astroport(
                         AstroportPoolBuilder::default()
-                            .with_asset_a(bruhtoken)
-                            .with_asset_b(amoguscoin)
+                            .with_asset_a(bruhtoken.clone())
+                            .with_asset_b(amoguscoin.clone())
                             .with_balance_asset_a(15000000u128)
                             .with_balance_asset_b(10000000u128)
                             .build()?,
                     ),
                 )
                 .with_pool(
-                    untrn,
-                    amoguscoin,
+                    untrn.clone(),
+                    amoguscoin.clone(),
                     Pool::Astroport(
                         AstroportPoolBuilder::default()
-                            .with_asset_a(untrn)
-                            .with_asset_b(amoguscoin)
+                            .with_asset_a(untrn.clone())
+                            .with_asset_b(amoguscoin.clone())
                             .with_balance_asset_a(10000000u128)
                             .with_balance_asset_b(10000000u128)
                             .build()?,
                     ),
                 )
                 .with_pool(
-                    bruhtoken,
-                    untrn,
+                    bruhtoken.clone(),
+                    untrn.clone(),
                     Pool::Auction(
                         AuctionPoolBuilder::default()
-                            .with_offer_asset(bruhtoken)
-                            .with_ask_asset(untrn)
+                            .with_offer_asset(bruhtoken.clone())
+                            .with_ask_asset(untrn.clone())
                             .with_balance_offer_asset(10000000u128)
                             .with_price(Decimal::percent(1000))
                             .build()?,
@@ -169,40 +183,40 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
             TestBuilder::default()
                 .with_name("Astro-Profitable Arb")
                 .with_description("The arbitrage bot execute a slightly profitable arb only due to astroport price differences")
-                .with_denom("neutron", "untrn", 100000000000)
-                .with_denom("neutron", bruhtoken, 100000000000)
-                .with_denom("neutron", amoguscoin, 100000000000)
+                .with_denom(untrn.clone(), 100000000000)
+                .with_denom(bruhtoken.clone(), 100000000000)
+                .with_denom(amoguscoin.clone(), 100000000000)
                 .with_pool(
-                    bruhtoken,
-                    amoguscoin,
+                    bruhtoken.clone(),
+                    amoguscoin.clone(),
                     Pool::Astroport(
                         AstroportPoolBuilder::default()
-                            .with_asset_a(bruhtoken)
-                            .with_asset_b(amoguscoin)
+                            .with_asset_a(bruhtoken.clone())
+                            .with_asset_b(amoguscoin.clone())
                             .with_balance_asset_a(15000000u128)
                             .with_balance_asset_b(10000000u128)
                             .build()?,
                     ),
                 )
                 .with_pool(
-                    untrn,
-                    amoguscoin,
+                    untrn.clone(),
+                    amoguscoin.clone(),
                     Pool::Astroport(
                         AstroportPoolBuilder::default()
-                            .with_asset_a(untrn)
-                            .with_asset_b(amoguscoin)
+                            .with_asset_a(untrn.clone())
+                            .with_asset_b(amoguscoin.clone())
                             .with_balance_asset_a(10000000u128)
                             .with_balance_asset_b(10000000u128)
                             .build()?,
                     ),
                 )
                 .with_pool(
-                    bruhtoken,
-                    untrn,
+                    bruhtoken.clone(),
+                    untrn.clone(),
                     Pool::Auction(
                         AuctionPoolBuilder::default()
-                            .with_offer_asset(bruhtoken)
-                            .with_ask_asset(untrn)
+                            .with_offer_asset(bruhtoken.clone())
+                            .with_ask_asset(untrn.clone())
                             .with_balance_offer_asset(10000000u128)
                             .with_price(Decimal::percent(100))
                             .build()?,
@@ -220,40 +234,40 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
             TestBuilder::default()
                 .with_name("Auction-Profitable Arb")
                 .with_description("The arbitrage bot execute a slightly profitable arb only due to auction price differences")
-                .with_denom("neutron", "untrn", 100000000000)
-                .with_denom("neutron", bruhtoken, 100000000000)
-                .with_denom("neutron", amoguscoin, 100000000000)
+                .with_denom(untrn.clone(), 100000000000)
+                .with_denom(bruhtoken.clone(), 100000000000)
+                .with_denom(amoguscoin.clone(), 100000000000)
                 .with_pool(
-                    untrn,
-                    bruhtoken,
+                    untrn.clone(),
+                    bruhtoken.clone(),
                     Pool::Auction(
                         AuctionPoolBuilder::default()
-                            .with_offer_asset(bruhtoken)
-                            .with_ask_asset(untrn)
+                            .with_offer_asset(bruhtoken.clone())
+                            .with_ask_asset(untrn.clone())
                             .with_balance_offer_asset(10000000000u128)
                             .with_price(Decimal::percent(100))
                             .build()?,
                     ),
                 )
                 .with_pool(
-                    bruhtoken,
-                    untrn,
+                    bruhtoken.clone(),
+                    untrn.clone(),
                     Pool::Auction(
                         AuctionPoolBuilder::default()
-                            .with_offer_asset(amoguscoin)
-                            .with_ask_asset(bruhtoken)
+                            .with_offer_asset(amoguscoin.clone())
+                            .with_ask_asset(bruhtoken.clone())
                             .with_balance_offer_asset(10000000000u128)
                             .with_price(Decimal::percent(90))
                             .build()?,
                     ),
                 )
                 .with_pool(
-                    bruhtoken,
-                    untrn,
+                    bruhtoken.clone(),
+                    untrn.clone(),
                     Pool::Auction(
                         AuctionPoolBuilder::default()
-                            .with_offer_asset(untrn)
-                            .with_ask_asset(amoguscoin)
+                            .with_offer_asset(untrn.clone())
+                            .with_ask_asset(amoguscoin.clone())
                             .with_balance_offer_asset(10000000000u128)
                             .with_price(Decimal::percent(100))
                             .build()?,
@@ -272,56 +286,57 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
             TestBuilder::default()
                 .with_name("Osmosis Arb")
                 .with_description("The arbitrage bot execute a slightly profitable arb only due to osmosis price differences")
-                .with_denom("osmosis", "uosmo", 100000000000)
-                .with_denom("osmosis", bruhtoken, 100000000000)
-                .with_denom("osmosis", amoguscoin, 100000000000)
+                .with_denom(untrn_osmo.clone(), 100000000000)
+                .with_denom(uosmo.clone(), 100000000000)
+                .with_denom(bruhtoken.clone(), 100000000000)
+                .with_denom(amoguscoin.clone(), 100000000000)
                 .with_pool(
                     untrn_osmo.clone(),
-                    uosmo,
+                    uosmo.clone(),
                     Pool::Osmosis(
                         OsmosisPoolBuilder::default()
                             .with_funds(untrn_osmo.clone(), 10000000u128)
-                            .with_funds(uosmo, 10000000u128)
+                            .with_funds(uosmo.clone(), 10000000u128)
                             .build(),
                     ),
                 )
                 .with_pool(
-                    uosmo,
-                    bruhtoken_osmo,
+                    uosmo.clone(),
+                    bruhtoken_osmo.clone(),
                     Pool::Osmosis(
                         OsmosisPoolBuilder::default()
-                            .with_funds(uosmo, 10000000u128)
-                            .with_funds(bruhtoken_osmo, 10000000u128)
+                            .with_funds(uosmo.clone(), 10000000u128)
+                            .with_funds(bruhtoken_osmo.clone(), 10000000u128)
                             .build(),
                     ),
                 )
                 .with_pool(
-                    amoguscoin_osmo,
-                    bruhtoken_osmo,
+                    amoguscoin_osmo.clone(),
+                    bruhtoken_osmo.clone(),
                     Pool::Osmosis(
                         OsmosisPoolBuilder::default()
-                            .with_funds(amoguscoin_osmo, 15000000u128)
-                            .with_funds(bruhtoken_osmo, 10000000u128)
+                            .with_funds(amoguscoin_osmo.clone(), 15000000u128)
+                            .with_funds(bruhtoken_osmo.clone(), 10000000u128)
                             .build(),
                     ),
                 )
                 .with_pool(
-                    bruhtoken_osmo,
-                    uosmo,
+                    bruhtoken_osmo.clone(),
+                    uosmo.clone(),
                     Pool::Osmosis(
                         OsmosisPoolBuilder::default()
-                            .with_funds(amoguscoin_osmo, 10000000u128)
-                            .with_funds(bruhtoken_osmo, 10000000u128)
+                            .with_funds(amoguscoin_osmo.clone(), 10000000u128)
+                            .with_funds(bruhtoken_osmo.clone(), 10000000u128)
                             .build(),
                     ),
                 )
                 .with_pool(
-                    bruhtoken,
-                    untrn,
+                    bruhtoken.clone(),
+                    untrn.clone(),
                     Pool::Auction(
                         AuctionPoolBuilder::default()
-                            .with_offer_asset(untrn)
-                            .with_ask_asset(amoguscoin)
+                            .with_offer_asset(untrn.clone())
+                            .with_ask_asset(amoguscoin.clone())
                             .with_balance_offer_asset(10000000000u128)
                             .with_price(Decimal::percent(100))
                             .build()?,
