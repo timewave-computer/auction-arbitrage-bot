@@ -4,18 +4,22 @@
   networking.networkmanager.enable = true;  # Easiest to use and most distros use this by default.
   services.automatic-timezoned.enable = true;
 
-  programs.zsh = {
-    enable = true;
-    syntaxHighlighting.enable = true;
-    ohMyZsh = {
-      enable = true;
-      plugins = [ "git" ];
-    };
+  boot.loader.systemd-boot.enable = true;
+
+  fileSystems."/" = {
+    device = "/dev/disk/by-uuid/00000000-0000-0000-0000-000000000000";
+    fsType = "btrfs";
   };
 
   # Use flakes
   nix.settings = {
     experimental-features = [ "nix-command" "flakes" ];
+  };
+
+  users.users.runner = {
+    isSystemUser = true;
+    home = "/home/runner";
+    group = "wheel";
   };
 
   # List packages installed in system profile. To search, run:
@@ -26,7 +30,6 @@
     git
     feh
     killall
-    zsh-syntax-highlighting
     python3
     gnumake
     black

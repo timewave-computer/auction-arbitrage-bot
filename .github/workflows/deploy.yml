@@ -1,0 +1,15 @@
+name: Deploy
+
+on: [push]
+
+jobs:
+  deploy:
+    name: deploy arb bot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install nix
+        uses: cachix/install-nix-action@v27
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Compile protobuf
+        run: nix develop --command nixos-rebuild switch --target-host root@34.121.54.8 --flake flake.nix

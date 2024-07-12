@@ -8,10 +8,18 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    deploy-rs.url = "github:serokell/deploy-rs";
+    local-ic = {
+      url = "path:local-interchaintest/flake.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    local-interchaintest = {
+      url = "path:local-interchaintest/flake.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, rust-overlay, deploy-rs }:
+  outputs = { self, nixpkgs, flake-utils, rust-overlay, local-ic
+    , local-interchaintest }@inputs:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
@@ -37,79 +45,34 @@
             (skipCheckTests aiohttp)
             (skipCheckTests aiodns)
           ]);
-        nativeBuildInputs = with pkgs.buildPackages; [
-          gnumake
-          protobuf
-          protoc-gen-go
-          protoc-gen-go-grpc
-          mypy-protobuf
-          black
-          grpc
-          grpc_cli
-          ruff
-          rust-bin.stable.latest.default
-          pkg-config
-        ];
-        buildInputs = with pkgs; [ openssl ];
-      in rec {
-        packages.local-ic = let
-          repo = pkgs.fetchFromGitHub {
-            owner = "strangelove-ventures";
-            repo = "interchaintest";
-            rev = "v8.5.0";
-            hash = "sha256-NKp0CFPA593UNG/GzMQh7W/poz1/dESrqlRG8VQVxUk=";
-          };
-        in pkgs.buildGoModule rec {
-          pname = "local-ic";
-          version = "8.5.0";
-          src = repo;
-          proxyVendor = true;
-          subPackages = [ "local-interchain/cmd/local-ic" ];
-          vendorHash = "sha256-NWq2/gLMYZ7T5Q8niqFRJRrfnkb0CjipwPQa4g3nCac=";
-        };
-
-        packages.local-interchaintest = pkgs.rustPlatform.buildRustPackage {
-          name = "local-interchaintest";
-          src = ./local-interchaintest;
-          nativeBuildInputs = nativeBuildInputs;
-          buildInputs = buildInputs ++ [ packages.local-ic ];
-          cargoSha256 = pkgs.lib.fakeHash;
-          cargoLock = {
-            lockFile = ./local-interchaintest/Cargo.lock;
-            outputHashes = {
-              "localic-std-0.0.1" = "sha256-v2+BGy7aH63B5jR8/oR0CSHOUBgNdfk+8JgNKfOFaq0=";
-              "localic-utils-0.1.0" = "sha256-1Xg2XSJXqWfCJ4MB6ElrsVYpztXSzAl7HFAZ12QRhfo=";
-            };
-          };
-        };
-
+      in {
         devShells.default = pkgs.mkShell {
-          nativeBuildInputs = nativeBuildInputs;
-          buildInputs = buildInputs;
-          packages = [ pythonWithPackages packages.local-ic ];
+          nativeBuildInputs = with pkgs.buildPackages; [
+            gnumake
+            protobuf
+            protoc-gen-go
+            protoc-gen-go-grpc
+            mypy-protobuf
+            black
+            grpc
+            grpc_cli
+            ruff
+            rust-bin.stable.latest.default
+            pkg-config
+            pkgs.deploy-rs
+          ];
+          buildInputs = with pkgs; [ openssl ];
+          packages = [ pythonWithPackages local-ic ];
           shellHook = ''
             export PYTHONPATH=src:build/gen
           '';
         };
       }) // {
-        deploy.nodes.testrunner = {
-          hostname = "34.121.54.8";
-          profiles = {
-            system = {
-              user = "root";
-              path = deploy-rs.lib.x86_64-linux.activate.nixos
-                self.nixosConfigurations.testrunner;
-            };
+        nixosConfigurations."arbbot-test-runner.us-central1-a.c.arb-bot-429100.internal" =
+          nixpkgs.lib.nixosSystem {
+            system = "x86_64-linux";
+            specialArgs = { inherit inputs; };
+            modules = [ ./test_runner_conf.nix ];
           };
-        };
-
-        nixosConfigurations.testrunner = nixpkgs.lib.nixosSystem {
-          system = "x86_64-linux";
-          modules = [ ./test_runner_conf.nix ];
-          defaultPackage = import ./test_runner.nix nixpkgs;
-        };
-
-        checks = builtins.mapAttrs
-          (system: deployLib: deployLib.deployChecks self.deploy) deploy-rs.lib;
       };
 }
