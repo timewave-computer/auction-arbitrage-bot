@@ -43,6 +43,68 @@ pub enum Denom {
     },
 }
 
+impl Denom {
+    /// Transfers some quantity of the denom to the denom's destination chain, yielding
+    /// the "normalized" IBC denom (i.e., the one native to the destination chain).
+    pub fn normalize(
+        &self,
+        amount: u128,
+        ctx: &mut TestContext,
+    ) -> Result<(String, Option<(DenomMapEntry, DenomMapEntry)>), Error> {
+        match Self {
+            Local {
+                base_chain,
+                base_denom,
+            } => Ok((base_denom, None)),
+            Interchain {
+                base_denom,
+                base_chain,
+                dest_chain,
+            } => {
+                let admin_addr = ctx.get_chain(dest_chain).admin_addr.to_owned();
+
+                ctx.build_tx_transfer()
+                    .with_amount(amount)
+                    .with_chain_name(base_chain)
+                    .with_recipient(&admin_addr)
+                    .with_denom(&base_denom)
+                    .send()?;
+
+                let trace_a = ctx
+                    .get_ibc_trace(base_denom, base_chain, dest_chain)
+                    .expect(&format!("Missing IBC trace for {denom_a}"));
+
+                let ibc_denom_a = trace_a.dest_denom.clone();
+
+                let trace_a_counter = ctx
+                    .get_ibc_trace(&ibc_denom_a, base_chain, dest_chain)
+                    .expect(&format!("Missing IBC trace for {denom_a}"));
+
+                let src_chain = ctx.get_chain(base_chain);
+                let dest_chain = ctx.get_chain(dest_chain);
+
+                Ok((
+                    ibc_denom_a,
+                    Some((
+                        DenomMapEntry {
+                            chain_id: dest_chain.rb.chain_id.clone(),
+                            denom: ibc_denom_a.clone(),
+                            channel_id: trace_a.channel_id,
+                            port_id: trace_a.port_id,
+                        },
+                        DenomMapEntry {
+                            chain_id: src_chain.rb.chain_id.clone(),
+                            denom: denom_a.to_string(),
+                            channel_id: trace_a_counter.channel_id,
+                            port_id: trace_a_counter.port_id,
+                        },
+                    )),
+                ))
+            }
+        }
+    }
+}
+
 impl Display for Denom {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
@@ -338,73 +400,28 @@ impl Test {
                         let funds_b = spec.denom_funds.get(denom_b).unwrap_or(&0);
 
                         // Create the osmo pool and join it
-                        let trace_a = ctx
-                            .get_ibc_trace(denom_a.to_string(), "neutron", "osmosis")
-                            .expect(&format!("Missing IBC trace for {denom_a}"));
-                        let trace_b = ctx
-                            .get_ibc_trace(denom_b.to_string(), "neutron", "osmosis")
-                            .expect(&format!("Missing IBC trace for {denom_b}"));
+                        let (norm_denom_a, denom_map_ent_1) = denom_a.normalize(funds_a, ctx)?;
+                        let (norm_denom_b, denom_map_ent_2) = denom_b.normalize(funds_b, ctx)?;
 
-                        let ibc_denom_a = trace_a.dest_denom.clone();
-                        let ibc_denom_b = trace_b.dest_denom.clone();
+                        if let Some((map_ent_a_1, map_ent_a_2)) = denom_map_ent_1 {
+                            // (denom, neutron) -> denom'
+                            // (denom', osmo) -> denom
+                            denom_map.insert((denom_a.to_string(), "osmosis".into()), map_ent_a_1);
+                            denom_map.insert((norm_denom_a.clone(), "neutron".into()), map_ent_a_2);
+                        }
 
-                        let trace_a_counter = ctx
-                            .get_ibc_trace(&ibc_denom_a, "osmosis", "neutron")
-                            .expect(&format!("Missing IBC trace for {denom_a}"));
-                        let trace_b_counter = ctx
-                            .get_ibc_trace(&ibc_denom_b, "osmosis", "neutron")
-                            .expect(&format!("Missing IBC trace for {denom_b}"));
-
-                        let neutron = ctx.get_chain("neutron");
-                        let osmosis = ctx.get_chain("osmosis");
-
-                        // (denom, neutron) -> denom'
-                        // (denom', osmo) -> denom
-                        denom_map.insert(
-                            (denom_a.to_string(), "osmosis".into()),
-                            DenomMapEntry {
-                                chain_id: osmosis.rb.chain_id.clone(),
-                                denom: ibc_denom_a.clone(),
-                                channel_id: trace_a.channel_id,
-                                port_id: trace_a.port_id,
-                            },
-                        );
-                        denom_map.insert(
-                            (ibc_denom_a.clone(), "neutron".into()),
-                            DenomMapEntry {
-                                chain_id: neutron.rb.chain_id.clone(),
-                                denom: denom_a.to_string(),
-                                channel_id: trace_a_counter.channel_id,
-                                port_id: trace_a_counter.port_id,
-                            },
-                        );
-
-                        // (denom, neutron) -> denom'
-                        // (denom', osmo) -> denom
-                        denom_map.insert(
-                            (denom_b.to_string(), "osmosis".into()),
-                            DenomMapEntry {
-                                chain_id: osmosis.rb.chain_id.clone(),
-                                denom: ibc_denom_b.to_string(),
-                                channel_id: trace_b.channel_id,
-                                port_id: trace_b.port_id,
-                            },
-                        );
-                        denom_map.insert(
-                            (ibc_denom_b.clone(), "neutron".into()),
-                            DenomMapEntry {
-                                chain_id: neutron.rb.chain_id.clone(),
-                                denom: denom_b.to_string(),
-                                channel_id: trace_b_counter.channel_id,
-                                port_id: trace_b_counter.port_id,
-                            },
-                        );
+                        if let Some((map_ent_b_1, map_ent_b_2)) = denom_map_ent_2 {
+                            // (denom, neutron) -> denom'
+                            // (denom', osmo) -> denom
+                            denom_map.insert((denom_b.to_string(), "osmosis".into()), map_ent_b_1);
+                            denom_map.insert((norm_denom_b.clone(), "neutron".into()), map_ent_b_2);
+                        }
 
                         ctx.build_tx_create_osmo_pool()
-                            .with_weight(&ibc_denom_a, *funds_a as u64)
-                            .with_weight(&ibc_denom_b, *funds_b as u64)
-                            .with_initial_deposit(&ibc_denom_a, *funds_a as u64)
-                            .with_initial_deposit(&ibc_denom_b, *funds_b as u64)
+                            .with_weight(&norm_denom_a, *funds_a as u64)
+                            .with_weight(&norm_denom_b, *funds_b as u64)
+                            .with_initial_deposit(&norm_denom_a, *funds_a as u64)
+                            .with_initial_deposit(&norm_denom_b, *funds_b as u64)
                             .send()?;
 
                         let pool_id = ctx.get_osmo_pool(&ibc_denom_a, &ibc_denom_b)?;
@@ -412,8 +429,8 @@ impl Test {
                         // Fund the pool
                         ctx.build_tx_fund_osmo_pool()
                             .with_pool_id(pool_id)
-                            .with_max_amount_in(&ibc_denom_a, *funds_a as u64)
-                            .with_max_amount_in(&ibc_denom_b, *funds_b as u64)
+                            .with_max_amount_in(&norm_denom_a, *funds_a as u64)
+                            .with_max_amount_in(&norm_denom_b, *funds_b as u64)
                             .with_share_amount_out(1000000000000)
                             .send()
                     }
