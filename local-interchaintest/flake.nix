@@ -32,8 +32,8 @@
         packages.local-interchaintest = pkgs.rustPlatform.buildRustPackage {
           name = "local-interchaintest";
           src = ./.;
-          nativeBuildInputs = [ ];
-          buildInputs = [ packages.local-ic ];
+          nativeBuildInputs = [ pkgs.libiconv pkgs.pkg-config ];
+          buildInputs = [ pkgs.openssl packages.local-ic ];
           cargoSha256 = nixpkgs.lib.fakeHash;
           cargoLock = {
             lockFile = ./Cargo.lock;
