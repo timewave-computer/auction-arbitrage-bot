@@ -35,8 +35,7 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         .with_unwrap_raw_logs(true)
         .with_chain(ConfigChainBuilder::default_neutron().build()?)
         .with_chain(ConfigChainBuilder::default_osmosis().build()?)
-        .with_transfer_channel("neutron", "osmosis")
-        .with_transfer_channel("osmosis", "neutron")
+        .with_transfer_channels("neutron", "osmosis")
         .build()?;
 
     let bruhtoken = Denom::Local {

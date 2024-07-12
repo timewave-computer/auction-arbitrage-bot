@@ -68,19 +68,19 @@
           vendorHash = "sha256-NWq2/gLMYZ7T5Q8niqFRJRrfnkb0CjipwPQa4g3nCac=";
         };
 
-        packages.local-interchaintest = pkgs.stdenv.mkDerivation {
-          src = ./local-interchaintest;
+        packages.local-interchaintest = pkgs.rustPlatform.buildRustPackage {
           name = "local-interchaintest";
+          src = ./local-interchaintest;
           nativeBuildInputs = nativeBuildInputs;
-          buildInputs = buildInputs;
-          buildPhase = ''
-            cargo build --release
-          '';
-          installPhase = ''
-            mkdir -p $out/bin
-            cp target/release/local-interchaintest $out/bin/local-interchaintest
-            chmod +x $out
-          '';
+          buildInputs = buildInputs ++ [ packages.local-ic ];
+          cargoSha256 = pkgs.lib.fakeHash;
+          cargoLock = {
+            lockFile = ./local-interchaintest/Cargo.lock;
+            outputHashes = {
+              "localic-std-0.0.1" = "sha256-v2+BGy7aH63B5jR8/oR0CSHOUBgNdfk+8JgNKfOFaq0=";
+              "localic-utils-0.1.0" = "sha256-1Xg2XSJXqWfCJ4MB6ElrsVYpztXSzAl7HFAZ12QRhfo=";
+            };
+          };
         };
 
         devShells.default = pkgs.mkShell {

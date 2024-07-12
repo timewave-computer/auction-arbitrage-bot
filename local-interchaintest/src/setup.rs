@@ -50,53 +50,54 @@ impl Denom {
         &self,
         amount: u128,
         ctx: &mut TestContext,
-    ) -> Result<(String, Option<(DenomMapEntry, DenomMapEntry)>), Error> {
-        match Self {
-            Local {
-                base_chain,
-                base_denom,
-            } => Ok((base_denom, None)),
-            Interchain {
+    ) -> Result<(String, Option<(DenomMapEntry, DenomMapEntry)>), Box<dyn Error + Send + Sync>>
+    {
+        match self {
+            Self::Local { base_denom, .. } => Ok((base_denom.to_owned(), None)),
+            Self::Interchain {
                 base_denom,
                 base_chain,
                 dest_chain,
             } => {
-                let admin_addr = ctx.get_chain(dest_chain).admin_addr.to_owned();
+                let admin_addr = ctx.get_chain(&dest_chain).admin_addr.to_owned();
 
                 ctx.build_tx_transfer()
                     .with_amount(amount)
-                    .with_chain_name(base_chain)
+                    .with_chain_name(&base_chain)
                     .with_recipient(&admin_addr)
                     .with_denom(&base_denom)
                     .send()?;
 
                 let trace_a = ctx
-                    .get_ibc_trace(base_denom, base_chain, dest_chain)
-                    .expect(&format!("Missing IBC trace for {denom_a}"));
+                    .transfer_channel_ids
+                    .get(&(base_chain.clone(), dest_chain.clone()))
+                    .expect(&format!("Missing IBC trace for {base_denom}"))
+                    .clone();
 
-                let ibc_denom_a = trace_a.dest_denom.clone();
+                let ibc_denom_a = ctx.get_ibc_denom(base_denom, base_chain, dest_chain);
 
                 let trace_a_counter = ctx
-                    .get_ibc_trace(&ibc_denom_a, base_chain, dest_chain)
-                    .expect(&format!("Missing IBC trace for {denom_a}"));
+                    .transfer_channel_ids
+                    .get(&(dest_chain.clone(), base_chain.clone()))
+                    .expect(&format!("Missing IBC trace for {base_denom}"));
 
-                let src_chain = ctx.get_chain(base_chain);
-                let dest_chain = ctx.get_chain(dest_chain);
+                let src_chain = ctx.get_chain(&base_chain);
+                let dest_chain = ctx.get_chain(&dest_chain);
 
                 Ok((
-                    ibc_denom_a,
+                    ibc_denom_a.clone(),
                     Some((
                         DenomMapEntry {
                             chain_id: dest_chain.rb.chain_id.clone(),
                             denom: ibc_denom_a.clone(),
-                            channel_id: trace_a.channel_id,
-                            port_id: trace_a.port_id,
+                            channel_id: trace_a.to_owned(),
+                            port_id: "transfer".to_owned(),
                         },
                         DenomMapEntry {
                             chain_id: src_chain.rb.chain_id.clone(),
-                            denom: denom_a.to_string(),
-                            channel_id: trace_a_counter.channel_id,
-                            port_id: trace_a_counter.port_id,
+                            denom: base_denom.to_string(),
+                            channel_id: trace_a_counter.to_owned(),
+                            port_id: "transfer".to_owned(),
                         },
                     )),
                 ))
@@ -229,7 +230,8 @@ impl<'a> TestRunner<'a> {
 
         util::create_deployment_file(
             ctx.get_astroport_factory()?
-                .contract_addr
+                .get(0)
+                .and_then(|c| c.contract_addr.as_ref())
                 .expect("missing deployed astroport factory")
                 .as_str(),
             ctx.get_auctions_manager()?
@@ -400,8 +402,10 @@ impl Test {
                         let funds_b = spec.denom_funds.get(denom_b).unwrap_or(&0);
 
                         // Create the osmo pool and join it
-                        let (norm_denom_a, denom_map_ent_1) = denom_a.normalize(funds_a, ctx)?;
-                        let (norm_denom_b, denom_map_ent_2) = denom_b.normalize(funds_b, ctx)?;
+                        let (norm_denom_a, denom_map_ent_1) =
+                            denom_a.normalize(*funds_a, ctx).unwrap();
+                        let (norm_denom_b, denom_map_ent_2) =
+                            denom_b.normalize(*funds_b, ctx).unwrap();
 
                         if let Some((map_ent_a_1, map_ent_a_2)) = denom_map_ent_1 {
                             // (denom, neutron) -> denom'
@@ -424,7 +428,7 @@ impl Test {
                             .with_initial_deposit(&norm_denom_b, *funds_b as u64)
                             .send()?;
 
-                        let pool_id = ctx.get_osmo_pool(&ibc_denom_a, &ibc_denom_b)?;
+                        let pool_id = ctx.get_osmo_pool(&norm_denom_a, &norm_denom_b)?;
 
                         // Fund the pool
                         ctx.build_tx_fund_osmo_pool()
@@ -455,7 +459,6 @@ impl Test {
                         ctx.build_tx_start_auction()
                             .with_offer_asset(&denom_a.to_string())
                             .with_ask_asset(&denom_b.to_string())
-                            .with_start_block(0)
                             .with_end_block_delta(10000)
                             .send()
                     }
