@@ -34,7 +34,7 @@
           src = ./.;
           nativeBuildInputs = [ pkgs.libiconv pkgs.pkg-config ];
           buildInputs = [ pkgs.openssl packages.local-ic ];
-          cargoSha256 = nixpkgs.lib.fakeHash;
+          cargoSha256 = "sha256-XAjcq0XKl4UcrfAGLmBdQbmWqNjTIbF3q70vOZSO5gQ=";
           cargoLock = {
             lockFile = ./Cargo.lock;
             outputHashes = {
