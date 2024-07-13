@@ -46,6 +46,11 @@
             (skipCheckTests aiodns)
           ]);
       in {
+        apps.default = {
+          type = "app";
+          program = "${pkgs.python3}/bin/python3 main.py";
+        };
+
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs.buildPackages; [
             gnumake

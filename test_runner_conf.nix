@@ -22,6 +22,13 @@
     group = "wheel";
   };
 
+  systemd.services.arbbot = {
+    enable = true;
+
+    serviceConfig = {
+    };
+  };
+
   # List packages installed in system profile. To search, run:
   # $ nix search wget
   environment.systemPackages = with pkgs; [
