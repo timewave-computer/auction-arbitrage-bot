@@ -9,11 +9,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     local-ic = {
-      url = "path:local-interchaintest/flake.nix";
+      url = "git+file:.?dir=local-interchaintest";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     local-interchaintest = {
-      url = "path:local-interchaintest/flake.nix";
+      url = "git+file:.?dir=local-interchaintest";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -45,12 +45,7 @@
             (skipCheckTests aiohttp)
             (skipCheckTests aiodns)
           ]);
-      in {
-        apps.default = {
-          type = "app";
-          program = "${pkgs.python3}/bin/python3 main.py";
-        };
-
+      in rec {
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs.buildPackages; [
             gnumake
@@ -67,7 +62,7 @@
             pkgs.deploy-rs
           ];
           buildInputs = with pkgs; [ openssl ];
-          packages = [ pythonWithPackages local-ic ];
+          packages = [ pythonWithPackages ];
           shellHook = ''
             export PYTHONPATH=src:build/gen
           '';

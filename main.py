@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """
 Implements a command-line interface for running arbitrage strategies.
 """

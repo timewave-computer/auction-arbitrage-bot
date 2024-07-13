@@ -45,5 +45,8 @@
             };
           };
         };
+
+        nixModules.local-ic = packages.local-ic;
+        nixModules.local-interchaintest = packages.local-interchaintest;
       });
 }

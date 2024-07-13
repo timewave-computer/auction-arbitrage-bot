@@ -26,6 +26,7 @@
     enable = true;
 
     serviceConfig = {
+      ExecStart = "nix develop git+https://github.com/timewave-computer/auction-arbitrage-bot?ref=feature-localinterchaintest --command python main.py --base_denom untrn";
     };
   };
 
