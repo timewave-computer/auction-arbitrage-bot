@@ -71,7 +71,7 @@
         nixosConfigurations."arbbot-test-runner.us-central1-a.c.arb-bot-429100.internal" =
           nixpkgs.lib.nixosSystem {
             system = "x86_64-linux";
-            specialArgs = { inherit inputs; };
+            specialArgs = { inherit inputs; inherit self; };
             modules = [ ./test_runner_conf.nix ];
           };
       };

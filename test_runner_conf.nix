@@ -1,68 +1,52 @@
-{ config, lib, pkgs, inputs, ... }:
+{ self, config, lib, pkgs, inputs, ... }:
 
 {
-  networking.networkmanager.enable = true;  # Easiest to use and most distros use this by default.
+  imports = [ <nixpkgs/nixos/modules/virtualisation/google-compute-image.nix> ];
+
+  networking.networkmanager.enable =
+    true; # Easiest to use and most distros use this by default.
   services.automatic-timezoned.enable = true;
 
-  boot.loader.systemd-boot.enable = true;
-
-  fileSystems."/" = {
-    device = "/dev/disk/by-uuid/00000000-0000-0000-0000-000000000000";
-    fsType = "btrfs";
-  };
-
   # Use flakes
-  nix.settings = {
-    experimental-features = [ "nix-command" "flakes" ];
-  };
+  nix.settings = { experimental-features = [ "nix-command" "flakes" ]; };
 
-  users.users.runner = {
-    isSystemUser = true;
-    home = "/home/runner";
-    group = "wheel";
-  };
+  environment.systemPackages = [ pkgs.git self ];
 
   systemd.services.arbbot = {
     enable = true;
-
+    wantedBy = [ "multi-user.target" ];
     serviceConfig = {
-      ExecStart = "nix develop git+https://github.com/timewave-computer/auction-arbitrage-bot?ref=feature-localinterchaintest --command python main.py --base_denom untrn";
+      After = "repo-update.service";
+      ExecStart =
+        "/run/current-system/sw/bin/nix develop --command main.py --base_denom untrn";
+      WorkingDirectory = self;
     };
   };
 
-  # List packages installed in system profile. To search, run:
-  # $ nix search wget
-  environment.systemPackages = with pkgs; [
-    wget
-    emacs
-    git
-    feh
-    killall
-    python3
-    gnumake
-    black
-    nixfmt-classic
-    go_1_21
-    libgcc
-    gcc
-    lsof
-    cargo
-    rustc
-    rust-analyzer
-    rustfmt
-    docker-compose
-    zip
-    unzip
-  ];
+  systemd.services.local-ic = {
+    enable = true;
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      After = "repo-update.service";
+      ExecStart =
+        "/run/current-system/sw/bin/nix run flake.nix#local-ic -- neutron_osmosis_gaia --api-port 42069";
+      WorkingDirectory = "${self}/local-interchaintest";
+    };
+  };
+
+  systemd.services.local-interchaintest = {
+    enable = true;
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      After = "local-ic.service";
+      ExecStart =
+        "/run/current-system/sw/bin/nix run flake.nix#local-interchaintest";
+      WorkingDirectory = "${self}/local-interchaintest";
+    };
+  };
 
   # Enable the OpenSSH daemon.
   services.openssh.enable = true;
-
-  virtualisation.docker.enable = true;
-  virtualisation.docker.rootless = {
-    enable = true;
-    setSocketVariable = true;
-  };
 
   system.stateVersion = "23.11";
 }
