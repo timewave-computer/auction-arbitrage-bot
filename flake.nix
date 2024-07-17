@@ -42,17 +42,29 @@
             types-pytz
             types-setuptools
             mypy
+            pytest-cov
             (skipCheckTests aiohttp)
             (skipCheckTests aiodns)
           ]);
       in rec {
+        packages.protobuf-client-code = pkgs.stdenv.mkDerivation {
+          name = "protobuf-client-code";
+          pname = "protobuf-client-code";
+          version = "0.1.0";
+          src = ./.;
+          buildInputs = with pkgs.buildPackages; [ gnumake protobuf protoc-gen-go protoc-gen-go-grpc mypy-protobuf ];
+          buildPhase = ''
+            make proto
+          '';
+          installPhase = ''
+            mkdir -p $out/build
+            cp -r build $out/build
+          '';
+        };
+
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs.buildPackages; [
             gnumake
-            protobuf
-            protoc-gen-go
-            protoc-gen-go-grpc
-            mypy-protobuf
             black
             grpc
             grpc_cli
@@ -61,7 +73,7 @@
             pkg-config
             pkgs.deploy-rs
           ];
-          buildInputs = with pkgs; [ openssl ];
+          buildInputs = with pkgs; [ openssl packages.protobuf-client-code ];
           packages = [ pythonWithPackages ];
           shellHook = ''
             export PYTHONPATH=src:build/gen

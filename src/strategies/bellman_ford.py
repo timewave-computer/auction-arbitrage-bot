@@ -21,7 +21,6 @@ from src.strategies.util import (
 from src.util import (
     DISCOVERY_CONCURRENCY_FACTOR,
     denom_info_on_chain,
-    int_to_decimal,
     try_multiple_clients,
 )
 from cosmpy.crypto.address import Address
@@ -176,7 +175,7 @@ async def pair_provider_edge(
                     ),
                     provider,
                 ),
-                int_to_decimal(await provider.exchange_rate()),
+                await provider.exchange_rate(),
             ),
         )
 

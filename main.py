@@ -418,7 +418,10 @@ async def main() -> None:
 
             async def event_loop() -> None:
                 while True:
-                    await sched.poll()
+                    try:
+                        await sched.poll()
+                    except Exception:
+                        continue
 
             def daemon() -> None:
                 loop = asyncio.get_event_loop()

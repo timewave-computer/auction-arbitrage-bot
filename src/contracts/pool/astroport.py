@@ -155,9 +155,9 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
                 self.contracts,
                 {
                     "reverse_simulation": {
-                        "offer_asset_info": token_to_asset_info(asset_b),
+                        "offer_asset_info": token_to_asset_info(asset_a),
                         "ask_asset": {
-                            "info": token_to_asset_info(asset_a),
+                            "info": token_to_asset_info(asset_b),
                             "amount": str(amount),
                         },
                     }

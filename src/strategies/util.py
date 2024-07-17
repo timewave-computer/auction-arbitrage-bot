@@ -17,7 +17,6 @@ from src.contracts.pool.astroport import (
 )
 
 from src.util import (
-    int_to_decimal,
     IBC_TRANSFER_TIMEOUT_SEC,
     IBC_TRANSFER_POLL_INTERVAL_SEC,
     try_multiple_rest_endpoints,
@@ -581,9 +580,7 @@ async def quantities_for_route_profit(
 
                 quantities.append(
                     min(
-                        int(
-                            int_to_decimal(await leg.backend.exchange_rate()) * prev_amt
-                        ),
+                        int(await leg.backend.exchange_rate() * prev_amt),
                         await leg.backend.remaining_asset_b(),
                     )
                 )
@@ -646,7 +643,7 @@ async def route_base_denom_profit(
             if await leg.backend.remaining_asset_b() == 0:
                 return 0
 
-            exchange_rates.append(int_to_decimal(await leg.backend.exchange_rate()))
+            exchange_rates.append(await leg.backend.exchange_rate())
 
             continue
 

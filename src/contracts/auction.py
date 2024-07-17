@@ -15,7 +15,6 @@ from src.util import (
     custom_neutron_network_config,
     WithContract,
     ContractInfo,
-    decimal_to_int,
     try_query_multiple,
     try_multiple_clients,
     try_exec_multiple_fatal,
@@ -54,7 +53,7 @@ class AuctionProvider(WithContract):
         self.grpc_channels = grpc_channels
         self.swap_fee = 50000
 
-    async def exchange_rate(self) -> int:
+    async def exchange_rate(self) -> Decimal:
         """
         Gets the number of asset_b required to purchase a single asset_a.
         """
@@ -64,11 +63,11 @@ class AuctionProvider(WithContract):
         )
 
         if not auction_info:
-            return 0
+            return Decimal(0)
 
         # No swap is possible since the auction is closed
         if auction_info["status"] != "started":
-            return 0
+            return Decimal(0)
 
         # Calculate prices manually by following the
         # pricing curve to the given block
@@ -77,7 +76,7 @@ class AuctionProvider(WithContract):
         )
 
         if not current_block_height:
-            return 0
+            return Decimal(0)
 
         start_price = Decimal(auction_info["start_price"])
         end_price = Decimal(auction_info["end_price"])
@@ -94,13 +93,16 @@ class AuctionProvider(WithContract):
             price_delta_per_block * (current_block_height - start_block)
         )
 
-        return decimal_to_int(Decimal(1) / current_price)
+        return Decimal(1) / current_price
 
     async def reverse_simulate_swap_asset_b(self, amount: int) -> int:
         """
         Gets the amount of asset a required to return a specified amount of asset b.
         """
         rate = await self.exchange_rate()
+
+        if rate == 0:
+            return 0
 
         return int(Decimal(amount) // Decimal(rate))
 

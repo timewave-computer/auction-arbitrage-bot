@@ -169,7 +169,24 @@ async def test_astroport_provider() -> None:
             )
         )
 
-        await list(list(pools.values())[0].values())[0].simulate_swap_asset_a(1000)
+        for base in pools.values():
+            for pool in base.values():
+                if (await pool.balance_asset_a()) <= 0 or (
+                    await pool.balance_asset_b()
+                ) <= 0:
+                    continue
+
+                in_a = await pool.simulate_swap_asset_a(10)
+                assert in_a >= 0
+
+                in_b = await pool.simulate_swap_asset_b(10)
+                assert in_b >= 0
+
+                assert (await pool.reverse_simulate_swap_asset_a(in_a)) >= 0
+                assert (await pool.reverse_simulate_swap_asset_b(in_b)) >= 0
+
+                break
+            break
 
 
 @pytest.mark.asyncio
@@ -204,6 +221,25 @@ async def test_osmosis_provider() -> None:
 
         # At least one pool must have some assets to swap
         await list(list(pools.values())[0].values())[0].simulate_swap_asset_a(1000)
+
+        for base in pools.values():
+            for pool in base.values():
+                if (await pool.balance_asset_a()) <= 0 or (
+                    await pool.balance_asset_b()
+                ) <= 0:
+                    continue
+
+                in_a = await pool.simulate_swap_asset_a(10)
+                assert in_a >= 0
+
+                in_b = await pool.simulate_swap_asset_b(10)
+                assert in_b >= 0
+
+                assert (await pool.reverse_simulate_swap_asset_a(in_a)) >= 0
+                assert (await pool.reverse_simulate_swap_asset_b(in_b)) >= 0
+
+                break
+            break
 
 
 @pytest.mark.asyncio

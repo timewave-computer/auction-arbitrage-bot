@@ -2,6 +2,7 @@
 Tests that the auction directory and providers work as expected.
 """
 
+from decimal import Decimal
 from src.contracts.auction import AuctionDirectory, AuctionProvider
 from src.util import DISCOVERY_CONCURRENCY_FACTOR
 from tests.util import deployments
@@ -68,6 +69,22 @@ async def test_auction_provider() -> None:
 
                 price = await auction.exchange_rate()
                 assert price >= 0
+
+                assert (await auction.reverse_simulate_swap_asset_a(1000)) >= 0
+                assert (await auction.reverse_simulate_swap_asset_b(1000)) >= 0
+                assert (await auction.remaining_asset_b()) >= 0
+
+                if price > 0:
+                    liquidity = await auction.remaining_asset_b()
+
+                    assert liquidity > 0
+
+                    liq_estimate = round(
+                        Decimal(await auction.reverse_simulate_swap_asset_b(liquidity))
+                        * price
+                    )
+                    assert liq_estimate - liquidity < 5
+                    assert liquidity - liq_estimate < 5
 
 
 @pytest.mark.asyncio
