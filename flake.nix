@@ -8,24 +8,16 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    local-ic = {
-      url = "git+file:.?dir=local-interchaintest";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    local-interchaintest = {
-      url = "git+file:.?dir=local-interchaintest";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, rust-overlay, local-ic
-    , local-interchaintest }@inputs:
+  outputs = { self, nixpkgs, flake-utils, rust-overlay }@inputs:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
           inherit system;
           overlays = [ rust-overlay.overlays.default ];
         };
+        local-ic = import ./local-interchaintest/packages.nix;
         packageOverrides = pkgs.callPackage ./python-packages.nix { };
         skipCheckTests = drv:
           drv.overridePythonAttrs (old: { doCheck = false; });
@@ -42,7 +34,6 @@
             types-pytz
             types-setuptools
             mypy
-            pytest-cov
             (skipCheckTests aiohttp)
             (skipCheckTests aiodns)
           ]);
@@ -61,6 +52,9 @@
             cp -r build $out/build
           '';
         };
+
+        packages.local-ic = local-ic.local-ic;
+        packages.local-interchaintest = local-ic.local-interchaintest;
 
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs.buildPackages; [
