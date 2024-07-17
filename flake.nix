@@ -17,7 +17,6 @@
           inherit system;
           overlays = [ rust-overlay.overlays.default ];
         };
-        local-ic = import ./local-interchaintest/packages.nix;
         packageOverrides = pkgs.callPackage ./python-packages.nix { };
         skipCheckTests = drv:
           drv.overridePythonAttrs (old: { doCheck = false; });
@@ -43,7 +42,13 @@
           pname = "protobuf-client-code";
           version = "0.1.0";
           src = ./.;
-          buildInputs = with pkgs.buildPackages; [ gnumake protobuf protoc-gen-go protoc-gen-go-grpc mypy-protobuf ];
+          buildInputs = with pkgs.buildPackages; [
+            gnumake
+            protobuf
+            protoc-gen-go
+            protoc-gen-go-grpc
+            mypy-protobuf
+          ];
           buildPhase = ''
             make proto
           '';
@@ -53,8 +58,38 @@
           '';
         };
 
-        packages.local-ic = local-ic.local-ic;
-        packages.local-interchaintest = local-ic.local-interchaintest;
+        packages.local-ic = let
+          repo = pkgs.fetchFromGitHub {
+            owner = "strangelove-ventures";
+            repo = "interchaintest";
+            rev = "v8.5.0";
+            hash = "sha256-NKp0CFPA593UNG/GzMQh7W/poz1/dESrqlRG8VQVxUk=";
+          };
+        in pkgs.buildGoModule rec {
+          pname = "local-ic";
+          version = "8.5.0";
+          src = repo;
+          proxyVendor = true;
+          subPackages = [ "local-interchain/cmd/local-ic" ];
+          vendorHash = "sha256-NWq2/gLMYZ7T5Q8niqFRJRrfnkb0CjipwPQa4g3nCac=";
+        };
+
+        packages.local-interchaintest = pkgs.rustPlatform.buildRustPackage {
+          name = "local-interchaintest";
+          src = ./.;
+          nativeBuildInputs = [ pkgs.libiconv pkgs.pkg-config ];
+          buildInputs = [ pkgs.openssl packages.local-ic ];
+          cargoSha256 = "sha256-XAjcq0XKl4UcrfAGLmBdQbmWqNjTIbF3q70vOZSO5gQ=";
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+            outputHashes = {
+              "localic-std-0.0.1" =
+                "sha256-v2+BGy7aH63B5jR8/oR0CSHOUBgNdfk+8JgNKfOFaq0=";
+              "localic-utils-0.1.0" =
+                "sha256-1Xg2XSJXqWfCJ4MB6ElrsVYpztXSzAl7HFAZ12QRhfo=";
+            };
+          };
+        };
 
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs.buildPackages; [
@@ -77,7 +112,10 @@
         nixosConfigurations."arbbot-test-runner.us-central1-a.c.arb-bot-429100.internal" =
           nixpkgs.lib.nixosSystem {
             system = "x86_64-linux";
-            specialArgs = { inherit inputs; inherit self; };
+            specialArgs = {
+              inherit inputs;
+              inherit self;
+            };
             modules = [ ./test_runner_conf.nix ];
           };
       };
