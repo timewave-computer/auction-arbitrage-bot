@@ -48,8 +48,8 @@
             make proto
           '';
           installPhase = ''
-            mkdir -p $out/build
-            cp -r build $out/build
+            mkdir -p $out
+            cp -r build $out
           '';
         };
 
@@ -70,7 +70,7 @@
           buildInputs = with pkgs; [ openssl packages.protobuf-client-code ];
           packages = [ pythonWithPackages ];
           shellHook = ''
-            export PYTHONPATH=src:build/gen
+            export PYTHONPATH=src:${packages.protobuf-client-code}/build/gen
           '';
         };
       }) // {

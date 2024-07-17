@@ -54,7 +54,7 @@
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {
       After = "local-ic.service";
-      ExecStartPre = "/run/current-system/sw/bin/sleep 60";
+      ExecStartPre = "/run/current-system/sw/bin/sleep 240";
       ExecStart =
         "/run/current-system/sw/bin/nix run flake.nix#local-interchaintest";
       WorkingDirectory = "/root/env/local-interchaintest";

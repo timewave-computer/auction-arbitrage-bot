@@ -10,7 +10,7 @@ from cosmpy.aerial.tx import Transaction, SigningCfg
 from cosmpy.aerial.client import NetworkConfig, LedgerClient
 from cosmpy.crypto.address import Address
 from cosmpy.aerial.tx_helpers import SubmittedTx
-from build.gen.osmosis.poolmanager.v1beta1 import tx_pb2, swap_route_pb2
+from osmosis.poolmanager.v1beta1 import tx_pb2, swap_route_pb2
 from cosmos.base.v1beta1 import coin_pb2
 from src.contracts.pool.provider import PoolProvider, cached_pools
 from src.util import (
