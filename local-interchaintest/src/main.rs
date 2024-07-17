@@ -282,7 +282,7 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         // - Osmo: untrn-uosmo @ 1 untrn/uosmo
         // - Osmo: OSMO-bruhtoken @ 1 bruhtoken/OSMO
         // - Osmo: bruhtoken-amoguscoin @ 1.5 amoguscoin/bruhtoken
-        // - Osmo: amoguscoin-OSMO @ 1 NTRN/amoguscoin
+        // - Osmo: amoguscoin-OSMO @ 1 OSMO/amoguscoin
         .run(
             TestBuilder::default()
                 .with_name("Osmosis Arb")
@@ -322,28 +322,16 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     ),
                 )
                 .with_pool(
-                    bruhtoken_osmo.clone(),
+                    amoguscoin_osmo.clone(),
                     uosmo.clone(),
                     Pool::Osmosis(
                         OsmosisPoolBuilder::default()
                             .with_funds(amoguscoin_osmo.clone(), 10000000u128)
-                            .with_funds(bruhtoken_osmo.clone(), 10000000u128)
+                            .with_funds(uosmo.clone(), 10000000u128)
                             .build(),
                     ),
                 )
-                .with_pool(
-                    bruhtoken.clone(),
-                    untrn.clone(),
-                    Pool::Auction(
-                        AuctionPoolBuilder::default()
-                            .with_offer_asset(untrn.clone())
-                            .with_ask_asset(amoguscoin.clone())
-                            .with_balance_offer_asset(10000000000u128)
-                            .with_price(Decimal::percent(100))
-                            .build()?,
-                    ),
-                )
-                .with_test(Box::new(tests::test_unprofitable_arb) as TestFn)
+                .with_test(Box::new(tests::test_osmo_arb) as TestFn)
                 .build()?,
         )?
         .join()
