@@ -22,7 +22,6 @@ from src.util import (
     try_multiple_rest_endpoints,
     try_multiple_clients_fatal,
     try_multiple_clients,
-    denom_info_on_chain,
     DENOM_QUANTITY_ABORT_ARB,
 )
 from src.scheduler import Ctx
@@ -371,12 +370,12 @@ async def transfer(
     succeeded.
     """
 
+    src_channel_id = prev_leg.backend.chain_transfer_channel_ids[leg.backend.chain_id]
+
     # Create a messate transfering the funds
     msg = tx_pb2.MsgTransfer(  # pylint: disable=no-member
         source_port="transfer",
-        source_channel=prev_leg.backend.chain_transfer_channel_ids[
-            leg.backend.chain_id
-        ],
+        source_channel=src_channel_id,
         sender=str(
             Address(ctx.wallet.public_key(), prefix=prev_leg.backend.chain_prefix)
         ),
@@ -435,8 +434,8 @@ async def transfer(
         ack_resp = await try_multiple_rest_endpoints(
             leg.backend.endpoints,
             (
-                f"/ibc/core/channel/v1/channels/{denom_info.channel}/"
-                f"ports/{denom_info.port}/packet_acks/"
+                f"/ibc/core/channel/v1/channels/{src_channel_id}/"
+                f"ports/transfer/packet_acks/"
                 f"{submitted.response.events['send_packet']['packet_sequence']}"
             ),
             ctx.http_session,
