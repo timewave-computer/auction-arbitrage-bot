@@ -10,20 +10,22 @@ proto: build/gen $(PROTO_SOURCES)
 
 .PHONY: test
 test:
-	PYTHONPATH=src:build/gen python -m pytest tests
+	python -m pytest tests
 
 .PHONY: run
 run:
-	PYTHONPATH=src:build/gen python main.py
+	python main.py
 
 .PHONY: lint
 lint:
 	mypy src --install-types --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs --strict
 	mypy tests --install-types --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs --strict
 	mypy main.py --install-types --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs
+	mypy local-interchaintest/tests --install-types --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs --strict
 	ruff check src
 	ruff check tests
 	ruff check main.py
+	ruff check local-interchaintest/tests
 
 .PHONY: clean
 clean:

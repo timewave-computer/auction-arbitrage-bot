@@ -71,6 +71,11 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         base_denom: String::from("uosmo"),
     };
 
+    // Test case (neutron -> osmosis)
+    tests::test_transfer_osmosis()?;
+
+    // Test case (osmosis -> neutron)
+
     TestRunner::new(&mut ctx, args)
         .start()?
         // Test case (profitable arb):

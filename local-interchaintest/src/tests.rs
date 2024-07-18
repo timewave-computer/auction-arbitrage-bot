@@ -1,8 +1,17 @@
 use super::util;
 use serde_json::Value;
-use std::error::Error;
+use std::{error::Error, process::Command};
 
 const ERROR_MARGIN_PROFIT: u64 = 100000;
+
+pub fn test_transfer_osmosis() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+    Command::new("python")
+        .current_dir("tests")
+        .arg("transfer_osmosis.py")
+        .output()?;
+
+    Ok(())
+}
 
 pub fn test_profitable_arb(arbfile: Value) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     let arbs = arbfile.as_array().expect("no arbs in arbfile");

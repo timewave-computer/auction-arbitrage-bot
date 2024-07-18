@@ -190,7 +190,6 @@ async def exec_arb(
                 await transfer(
                     route_ent,
                     prev_leg.out_asset(),
-                    leg.in_asset(),
                     prev_leg,
                     leg,
                     ctx,
@@ -357,7 +356,6 @@ async def recover_funds(
 async def transfer(
     route: Route,
     denom: str,
-    dest_denom: str,
     prev_leg: Leg,
     leg: Leg,
     ctx: Ctx[Any],
@@ -371,15 +369,51 @@ async def transfer(
     """
 
     src_channel_id = prev_leg.backend.chain_transfer_channel_ids[leg.backend.chain_id]
+    sender_addr = str(
+        Address(ctx.wallet.public_key(), prefix=prev_leg.backend.chain_prefix)
+    )
+    receiver_addr = str(
+        Address(ctx.wallet.public_key(), prefix=leg.backend.chain_prefix)
+    )
+
+    await transfer_raw(
+        denom,
+        prev_leg.backend.chain_id,
+        prev_leg.backend.chain_fee_denom,
+        src_channel_id,
+        leg.backend.chain_id,
+        sender_addr,
+        receiver_addr,
+        ctx,
+        swap_balance,
+    )
+
+
+async def transfer_raw(
+    denom: str,
+    src_chain_id: str,
+    src_chain_fee_denom: str,
+    src_channel_id: str,
+    dest_chain_id: str,
+    sender_addr: str,
+    receiver_addr: str,
+    ctx: Ctx[Any],
+    swap_balance: int,
+    route: Optional[Route] = None,
+) -> None:
+    """
+    Synchronously executes an IBC transfer from one leg in an arbitrage
+    trade to the next, moving `swap_balance` of the asset_b in the source
+    leg to asset_a in the destination leg. Returns true if the transfer
+    succeeded.
+    """
 
     # Create a messate transfering the funds
     msg = tx_pb2.MsgTransfer(  # pylint: disable=no-member
         source_port="transfer",
         source_channel=src_channel_id,
-        sender=str(
-            Address(ctx.wallet.public_key(), prefix=prev_leg.backend.chain_prefix)
-        ),
-        receiver=str(Address(ctx.wallet.public_key(), prefix=leg.backend.chain_prefix)),
+        sender=sender_addr,
+        receiver=receiver_addr,
         timeout_timestamp=time.time_ns() + 600 * 10**9,
     )
     msg.token.CopyFrom(
@@ -389,50 +423,50 @@ async def transfer(
     )
 
     acc = try_multiple_clients_fatal(
-        ctx.clients[prev_leg.backend.chain_id],
-        lambda client: client.query_account(
-            str(Address(ctx.wallet.public_key(), prefix=prev_leg.backend.chain_prefix))
-        ),
+        ctx.clients[src_chain_id],
+        lambda client: client.query_account(str(sender_addr)),
     )
 
     tx = Transaction()
     tx.add_message(msg)
     tx.seal(
         SigningCfg.direct(ctx.wallet.public_key(), acc.sequence),
-        f"100000{prev_leg.backend.chain_fee_denom}",
+        f"100000{src_chain_fee_denom}",
         1000000,
     )
-    tx.sign(ctx.wallet.signer(), prev_leg.backend.chain_id, acc.number)
+    tx.sign(ctx.wallet.signer(), src_chain_id, acc.number)
     tx.complete()
 
     submitted = try_multiple_clients_fatal(
-        ctx.clients[prev_leg.backend.chain_id],
+        ctx.clients[src_chain_id],
         lambda client: client.broadcast_tx(tx),
     ).wait_to_complete()
 
-    ctx.log_route(
-        route,
-        "info",
-        "Submitted IBC transfer from src %s to %s: %s",
-        [
-            prev_leg.backend.chain_id,
-            leg.backend.chain_id,
-            submitted.tx_hash,
-        ],
-    )
+    if route:
+        ctx.log_route(
+            route,
+            "info",
+            "Submitted IBC transfer from src %s to %s: %s",
+            [
+                src_chain_id,
+                dest_chain_id,
+                submitted.tx_hash,
+            ],
+        )
 
     # Continuously check for a package acknowledgement
     # or cancel the arb if the timeout passes
     # Future note: This could be async so other arbs can make
     # progress while this is happening
     async def transfer_or_continue() -> bool:
-        ctx.log_route(
-            route, "info", "Checking IBC transfer status %s", [submitted.tx_hash]
-        )
+        if route:
+            ctx.log_route(
+                route, "info", "Checking IBC transfer status %s", [submitted.tx_hash]
+            )
 
         # Check for a package acknowledgement by querying osmosis
         ack_resp = await try_multiple_rest_endpoints(
-            leg.backend.endpoints,
+            ctx.endpoints[src_chain_id]["http"],
             (
                 f"/ibc/core/channel/v1/channels/{src_channel_id}/"
                 f"ports/transfer/packet_acks/"
@@ -443,12 +477,13 @@ async def transfer(
 
         # try again
         if not ack_resp:
-            ctx.log_route(
-                route,
-                "info",
-                "IBC transfer %s has not yet completed; waiting...",
-                [submitted.tx_hash],
-            )
+            if route:
+                ctx.log_route(
+                    route,
+                    "info",
+                    "IBC transfer %s has not yet completed; waiting...",
+                    [submitted.tx_hash],
+                )
 
             return False
 
