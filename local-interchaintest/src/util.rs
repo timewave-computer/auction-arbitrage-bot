@@ -28,6 +28,8 @@ pub fn assert_err<T: Debug + PartialEq>(
 pub(crate) fn create_deployment_file(
     astroport_factory_address: &str,
     auctions_manager_address: &str,
+    neutron_to_osmosis_channel_id: &str,
+    osmosis_to_neutron_channel_id: &str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut f = OpenOptions::new()
         .create(true)
@@ -43,6 +45,9 @@ pub(crate) fn create_deployment_file(
                         "chain_name": "neutron",
                         "chain_prefix": "neutron",
                         "chain_fee_denom": "untrn",
+                        "chain_transfer_channel_ids": {
+                "localosmosis-1": neutron_to_osmosis_channel_id,
+                        },
                         "directory": {
                             "address": astroport_factory_address,
                             "src": "contracts/astroport_factory.wasm",
@@ -56,7 +61,10 @@ pub(crate) fn create_deployment_file(
                     "localosmosis-1": {
                         "chain_name": "osmosis",
                         "chain_prefix": "osmo",
-                        "chain_fee_denom": "uosmo"
+                        "chain_fee_denom": "uosmo",
+                        "chain_transfer_channel_ids": {
+                            "localneutron-1": osmosis_to_neutron_channel_id,
+                        },
                     }
                 }
             },
@@ -65,6 +73,9 @@ pub(crate) fn create_deployment_file(
                     "chain_name": "neutron",
                     "chain_prefix": "neutron",
                     "chain_fee_denom": "untrn",
+                    "chain_transfer_channel_ids": {
+                        "localosmosis-1": neutron_to_osmosis_channel_id,
+                    },
                     "auctions_manager": {
                         "address": auctions_manager_address,
                         "src": "contracts/auctions_manager.wasm",

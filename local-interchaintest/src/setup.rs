@@ -238,6 +238,16 @@ impl<'a> TestRunner<'a> {
                 .contract_addr
                 .expect("missing deployed astroport factory")
                 .as_str(),
+            &self
+                .denom_map
+                .get(&("untrn".into(), "osmosis".into()))
+                .unwrap()
+                .channel_id,
+            &self
+                .denom_map
+                .get(&("uosmo".into(), "neutron".into()))
+                .unwrap()
+                .channel_id,
         )?;
         util::create_arbs_file()?;
         util::create_netconfig()?;
