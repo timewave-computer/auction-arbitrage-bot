@@ -56,11 +56,6 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         dest_chain: String::from("osmosis"),
         base_denom: format!("factory/{OWNER_ADDR}/bruhtoken"),
     };
-    let amoguscoin_osmo = Denom::Interchain {
-        base_chain: String::from("neutron"),
-        dest_chain: String::from("osmosis"),
-        base_denom: format!("factory/{OWNER_ADDR}/amoguscoin"),
-    };
     let untrn_osmo = Denom::Interchain {
         base_denom: String::from("untrn"),
         base_chain: String::from("neutron"),
