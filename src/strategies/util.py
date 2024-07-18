@@ -504,6 +504,12 @@ async def quantities_for_route_profit(
 
             prev_amt = quantities[-1]
 
+            # TODO: Remove
+            if isinstance(leg.backend, OsmosisPoolProvider):
+                quantities.append(prev_amt * 100)
+
+                continue
+
             if isinstance(leg.backend, AuctionProvider):
                 if leg.in_asset != leg.backend.asset_a:
                     return (0, [])
@@ -571,7 +577,7 @@ async def route_base_denom_profit(
     for leg in route:
         # TODO: Remove
         if isinstance(leg.backend, OsmosisPoolProvider):
-            exchange_rates.append(Decimal(10.0))
+            exchange_rates.append(Decimal(1000000.0))
 
         if isinstance(leg.backend, AuctionProvider):
             if leg.in_asset != leg.backend.asset_a:
