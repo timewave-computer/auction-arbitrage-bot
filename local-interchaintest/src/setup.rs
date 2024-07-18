@@ -247,14 +247,23 @@ impl<'a> TestRunner<'a> {
 
         test.setup(&mut self.denom_map, self.test_ctx)?;
 
-        with_arb_bot_output(Arc::new(Box::new(move |arbfile: Value| {
-            statuses.lock().expect("Failed to lock statuses").insert(
-                (test.name.clone(), test.description.clone()),
-                (*test.test)(arbfile),
-            );
+        if test.run_arbbot {
+            with_arb_bot_output(Arc::new(Box::new(move |arbfile: Option<Value>| {
+                statuses.lock().expect("Failed to lock statuses").insert(
+                    (test.name.clone(), test.description.clone()),
+                    (*test.test)(arbfile),
+                );
 
-            Ok(())
-        })))?;
+                Ok(())
+            })))?;
+
+            return Ok(self);
+        }
+
+        statuses.lock().expect("Failed to lock statuses").insert(
+            (test.name.clone(), test.description.clone()),
+            (*test.test)(None),
+        );
 
         Ok(self)
     }
@@ -295,7 +304,7 @@ impl<'a> TestRunner<'a> {
 }
 
 /// A test that receives arb bot executable output.
-pub type TestFn = Box<dyn Fn(Value) -> TestResult + Send + Sync>;
+pub type TestFn = Box<dyn Fn(Option<Value>) -> TestResult + Send + Sync>;
 pub type OwnedTestFn = Arc<TestFn>;
 pub type TestResult = Result<(), Box<dyn Error + Send + Sync>>;
 
@@ -321,6 +330,17 @@ pub struct Test {
 
     /// The test that should be run with the arb bot output
     test: OwnedTestFn,
+
+    /// Whether the arb bot output should be fed as input to the test
+    run_arbbot: bool,
+}
+
+impl TestBuilder {
+    pub fn with_arbbot(mut self) -> Self {
+        self.run_arbbot = Some(true);
+
+        self
+    }
 }
 
 impl Test {
@@ -509,8 +529,6 @@ pub enum Pool {
 #[derive(Builder, Clone)]
 #[builder(setter(into, strip_option, prefix = "with"))]
 pub struct AstroportPool {
-    pub asset_a: Denom,
-    pub asset_b: Denom,
     pub balance_asset_a: u128,
     pub balance_asset_b: u128,
 }
@@ -543,8 +561,6 @@ impl OsmosisPoolBuilder {
 #[derive(Builder, Clone)]
 #[builder(setter(into, strip_option, prefix = "with"))]
 pub struct AuctionPool {
-    pub offer_asset: Denom,
-    pub ask_asset: Denom,
     pub balance_offer_asset: u128,
     pub price: Decimal,
 }
@@ -590,7 +606,7 @@ pub fn with_arb_bot_output(test: OwnedTestFn) -> TestResult {
             let arbfile: Value =
                 serde_json::from_reader(&f).expect("failed to deserialize arbs.json");
 
-            let res = test_handle(arbfile);
+            let res = test_handle(Some(arbfile));
 
             proc_handle_watcher.kill().expect("failed to kill arb bot");
             tx_res.send(res).expect("failed to send test results");

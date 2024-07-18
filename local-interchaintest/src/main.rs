@@ -71,13 +71,19 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         base_denom: String::from("uosmo"),
     };
 
-    // Test case (neutron -> osmosis)
-    tests::test_transfer_osmosis()?;
-
+    // TODO:
     // Test case (osmosis -> neutron)
 
     TestRunner::new(&mut ctx, args)
         .start()?
+        // Test case (neutron -> osmosis)
+        .run(TestBuilder::default()
+             .with_name("Transfer From Neutron to Osmosis")
+             .with_description("Transfers from Neutron to Osmosis should succeed")
+             .with_denom(untrn.clone(), 100000000000)
+             .with_test(Box::new(tests::test_transfer_osmosis) as TestFn)
+             .build()?
+        )?
         // Test case (profitable arb):
         //
         // - Astroport: bruhtoken-amoguscoin @1.5 bruhtoken/amoguscoin
@@ -95,8 +101,6 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     amoguscoin.clone(),
                     Pool::Astroport(
                         AstroportPoolBuilder::default()
-                            .with_asset_a(bruhtoken.clone())
-                            .with_asset_b(amoguscoin.clone())
                             .with_balance_asset_a(15000000u128)
                             .with_balance_asset_b(10000000u128)
                             .build()?,
@@ -107,8 +111,6 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     amoguscoin.clone(),
                     Pool::Astroport(
                         AstroportPoolBuilder::default()
-                            .with_asset_a(untrn.clone())
-                            .with_asset_b(amoguscoin.clone())
                             .with_balance_asset_a(10000000u128)
                             .with_balance_asset_b(10000000u128)
                             .build()?,
@@ -119,13 +121,12 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     untrn.clone(),
                     Pool::Auction(
                         AuctionPoolBuilder::default()
-                            .with_offer_asset(bruhtoken.clone())
-                            .with_ask_asset(untrn.clone())
                             .with_balance_offer_asset(100000000u128)
                             .with_price(Decimal::percent(10))
                             .build()?,
                     ),
                 )
+                .with_arbbot()
                 .with_test(Box::new(tests::test_profitable_arb) as TestFn)
                 .build()?,
         )?
@@ -146,8 +147,6 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     amoguscoin.clone(),
                     Pool::Astroport(
                         AstroportPoolBuilder::default()
-                            .with_asset_a(bruhtoken.clone())
-                            .with_asset_b(amoguscoin.clone())
                             .with_balance_asset_a(15000000u128)
                             .with_balance_asset_b(10000000u128)
                             .build()?,
@@ -158,8 +157,6 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     amoguscoin.clone(),
                     Pool::Astroport(
                         AstroportPoolBuilder::default()
-                            .with_asset_a(untrn.clone())
-                            .with_asset_b(amoguscoin.clone())
                             .with_balance_asset_a(10000000u128)
                             .with_balance_asset_b(10000000u128)
                             .build()?,
@@ -170,13 +167,12 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     untrn.clone(),
                     Pool::Auction(
                         AuctionPoolBuilder::default()
-                            .with_offer_asset(bruhtoken.clone())
-                            .with_ask_asset(untrn.clone())
                             .with_balance_offer_asset(10000000u128)
                             .with_price(Decimal::percent(1000))
                             .build()?,
                     ),
                 )
+                .with_arbbot()
                 .with_test(Box::new(tests::test_unprofitable_arb) as TestFn)
                 .build()?,
         )?
@@ -197,8 +193,6 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     amoguscoin.clone(),
                     Pool::Astroport(
                         AstroportPoolBuilder::default()
-                            .with_asset_a(bruhtoken.clone())
-                            .with_asset_b(amoguscoin.clone())
                             .with_balance_asset_a(15000000u128)
                             .with_balance_asset_b(10000000u128)
                             .build()?,
@@ -209,8 +203,6 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     amoguscoin.clone(),
                     Pool::Astroport(
                         AstroportPoolBuilder::default()
-                            .with_asset_a(untrn.clone())
-                            .with_asset_b(amoguscoin.clone())
                             .with_balance_asset_a(10000000u128)
                             .with_balance_asset_b(10000000u128)
                             .build()?,
@@ -221,13 +213,12 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     untrn.clone(),
                     Pool::Auction(
                         AuctionPoolBuilder::default()
-                            .with_offer_asset(bruhtoken.clone())
-                            .with_ask_asset(untrn.clone())
                             .with_balance_offer_asset(10000000u128)
                             .with_price(Decimal::percent(100))
                             .build()?,
                     ),
                 )
+                .with_arbbot()
                 .with_test(Box::new(tests::test_unprofitable_arb) as TestFn)
                 .build()?,
         )?
@@ -248,8 +239,6 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     bruhtoken.clone(),
                     Pool::Auction(
                         AuctionPoolBuilder::default()
-                            .with_offer_asset(bruhtoken.clone())
-                            .with_ask_asset(untrn.clone())
                             .with_balance_offer_asset(10000000000u128)
                             .with_price(Decimal::percent(100))
                             .build()?,
@@ -260,8 +249,6 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     untrn.clone(),
                     Pool::Auction(
                         AuctionPoolBuilder::default()
-                            .with_offer_asset(amoguscoin.clone())
-                            .with_ask_asset(bruhtoken.clone())
                             .with_balance_offer_asset(10000000000u128)
                             .with_price(Decimal::percent(90))
                             .build()?,
@@ -272,13 +259,12 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     untrn.clone(),
                     Pool::Auction(
                         AuctionPoolBuilder::default()
-                            .with_offer_asset(untrn.clone())
-                            .with_ask_asset(amoguscoin.clone())
                             .with_balance_offer_asset(10000000000u128)
                             .with_price(Decimal::percent(100))
                             .build()?,
                     ),
                 )
+                .with_arbbot()
                 .with_test(Box::new(tests::test_unprofitable_arb) as TestFn)
                 .build()?,
         )?
@@ -336,6 +322,7 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                             .build(),
                     ),
                 )
+                .with_arbbot()
                 .with_test(Box::new(tests::test_osmo_arb) as TestFn)
                 .build()?,
         )?
