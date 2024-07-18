@@ -276,12 +276,11 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                 .with_test(Box::new(tests::test_unprofitable_arb) as TestFn)
                 .build()?,
         )?
-        // Test case (astro -> osmos arb):
+        // Test case (astro -> osmo arb):
         //
-        // - Osmo: untrn-uosmo @ 1 untrn/uosmo
-        // - Osmo: OSMO-bruhtoken @ 1 bruhtoken/OSMO
-        // - Osmo: bruhtoken-amoguscoin @ 1.5 amoguscoin/bruhtoken
-        // - Osmo: amoguscoin-OSMO @ 1 OSMO/amoguscoin
+        // - Astro: untrn-bruhtoken @ 1.5 bruhtoken/untrn
+        // - Osmo: bruhtoken-uosmo @ 1 uosmo/bruhtoken
+        // - Astro: uosmo-untrn @ 1 untrn/uosmo
         .run(
             TestBuilder::default()
                 .with_name("Osmosis Arb")
@@ -289,15 +288,16 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                 .with_denom(untrn_osmo.clone(), 100000000000)
                 .with_denom(uosmo.clone(), 100000000000)
                 .with_denom(bruhtoken.clone(), 100000000000)
-                .with_denom(amoguscoin.clone(), 100000000000)
+                .with_denom(untrn.clone(), 100000000000)
+                .with_denom(bruhtoken_osmo.clone(), 100000000000)
                 .with_pool(
-                    untrn_osmo.clone(),
-                    uosmo.clone(),
-                    Pool::Osmosis(
-                        OsmosisPoolBuilder::default()
-                            .with_funds(untrn_osmo.clone(), 10000000u128)
-                            .with_funds(uosmo.clone(), 10000000u128)
-                            .build(),
+                    untrn.clone(),
+                    bruhtoken.clone(),
+                    Pool::Astroport(
+                        AstroportPoolBuilder::default()
+                            .with_balance_asset_a(10000000u128)
+                            .with_balance_asset_b(15000000u128)
+                            .build()?,
                     ),
                 )
                 .with_pool(
@@ -305,29 +305,19 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     bruhtoken_osmo.clone(),
                     Pool::Osmosis(
                         OsmosisPoolBuilder::default()
-                            .with_funds(uosmo.clone(), 10000000u128)
                             .with_funds(bruhtoken_osmo.clone(), 10000000u128)
+                            .with_funds(uosmo.clone(), 10000000u128)
                             .build(),
                     ),
                 )
                 .with_pool(
                     amoguscoin_osmo.clone(),
                     bruhtoken_osmo.clone(),
-                    Pool::Osmosis(
-                        OsmosisPoolBuilder::default()
-                            .with_funds(amoguscoin_osmo.clone(), 15000000u128)
-                            .with_funds(bruhtoken_osmo.clone(), 10000000u128)
-                            .build(),
-                    ),
-                )
-                .with_pool(
-                    amoguscoin_osmo.clone(),
-                    uosmo.clone(),
-                    Pool::Osmosis(
-                        OsmosisPoolBuilder::default()
-                            .with_funds(amoguscoin_osmo.clone(), 10000000u128)
-                            .with_funds(uosmo.clone(), 10000000u128)
-                            .build(),
+                    Pool::Astroport(
+                        AstroportPoolBuilder::default()
+                            .with_balance_asset_a(10000000u128)
+                            .with_balance_asset_b(10000000u128)
+                            .build()?,
                     ),
                 )
                 .with_arbbot()
