@@ -374,8 +374,8 @@ async def transfer(
     # Create a messate transfering the funds
     msg = tx_pb2.MsgTransfer(  # pylint: disable=no-member
         source_port="transfer",
-        source_channel=leg.backend.chain_transfer_channel_ids[
-            prev_leg.backend.chain_id
+        source_channel=prev_leg.backend.chain_transfer_channel_ids[
+            leg.backend.chain_id
         ],
         sender=str(
             Address(ctx.wallet.public_key(), prefix=prev_leg.backend.chain_prefix)
@@ -462,7 +462,9 @@ async def transfer(
         time.sleep(IBC_TRANSFER_POLL_INTERVAL_SEC)
 
         if await transfer_or_continue():
-            break
+            return
+
+    raise ValueError("IBC transfer timed out.")
 
 
 async def quantities_for_route_profit(
@@ -503,12 +505,6 @@ async def quantities_for_route_profit(
                 break
 
             prev_amt = quantities[-1]
-
-            # TODO: Remove
-            if isinstance(leg.backend, OsmosisPoolProvider):
-                quantities.append(prev_amt * 100)
-
-                continue
 
             if isinstance(leg.backend, AuctionProvider):
                 if leg.in_asset != leg.backend.asset_a:
@@ -575,10 +571,6 @@ async def route_base_denom_profit(
     exchange_rates: list[Decimal] = []
 
     for leg in route:
-        # TODO: Remove
-        if isinstance(leg.backend, OsmosisPoolProvider):
-            exchange_rates.append(Decimal(1000000.0))
-
         if isinstance(leg.backend, AuctionProvider):
             if leg.in_asset != leg.backend.asset_a:
                 return 0

@@ -420,7 +420,9 @@ async def main() -> None:
                 while True:
                     try:
                         await sched.poll()
-                    except Exception:
+                    except Exception as e:
+                        logger.info("Arbitrage round failed: %s", e)
+
                         continue
 
             def daemon() -> None:

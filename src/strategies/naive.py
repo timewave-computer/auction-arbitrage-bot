@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import logging
 from src.contracts.route import Leg, Status, Route
 from src.contracts.pool.provider import PoolProvider
+from src.contracts.pool.osmosis import OsmosisPoolProvider
 from src.contracts.auction import AuctionProvider
 from src.scheduler import Ctx
 from src.strategies.util import (
