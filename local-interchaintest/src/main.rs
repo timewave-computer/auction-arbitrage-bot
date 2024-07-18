@@ -276,7 +276,7 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                 .with_test(Box::new(tests::test_unprofitable_arb) as TestFn)
                 .build()?,
         )?
-        // Test case (osmo -> osmos arb):
+        // Test case (astro -> osmos arb):
         //
         // - Osmo: untrn-uosmo @ 1 untrn/uosmo
         // - Osmo: OSMO-bruhtoken @ 1 bruhtoken/OSMO

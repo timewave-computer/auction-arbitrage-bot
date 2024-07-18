@@ -80,11 +80,18 @@ async def main() -> None:
 
     if args.log_file:
         logging.basicConfig(
-            filename=args.log_file, level=os.environ.get("LOGLEVEL", "INFO").upper()
+            format="%(asctime)s %(levelname)-8s %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            filename=args.log_file,
+            level=os.environ.get("LOGLEVEL", "INFO").upper(),
         )
+
     else:
         logging.basicConfig(
-            stream=sys.stdout, level=os.environ.get("LOGLEVEL", "INFO").upper()
+            format="%(asctime)s %(levelname)-8s %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            stream=sys.stdout,
+            level=os.environ.get("LOGLEVEL", "INFO").upper(),
         )
 
     # Always make sure the history file exists
