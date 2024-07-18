@@ -320,7 +320,7 @@ pub struct Test {
 
     /// Fully qualified denoms (i.e., factory/neutronxyz/tokenabc or untrn or ibc/xyz)
     #[builder(default)]
-    denoms: Vec<String>,
+    denoms: HashSet<String>,
 
     /// How much of a given subdenom acc0 owns on a given chain
     /// (chain, token) -> balance
@@ -492,7 +492,7 @@ impl TestBuilder {
         self.borrow_mut()
             .denoms
             .get_or_insert_with(Default::default)
-            .push(denom.to_string().into());
+            .insert(denom.to_string().into());
 
         if denom.to_string().contains("factory") {
             self.borrow_mut()
