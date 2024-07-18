@@ -65,9 +65,11 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         base_chain: String::from("osmosis"),
         base_denom: String::from("uosmo"),
     };
-
-    // TODO:
-    // Test case (osmosis -> neutron)
+    let uosmo_ntrn = Denom::Interchain {
+        base_denom: String::from("uosmo"),
+        base_chain: String::from("osmosis"),
+        dest_chain: String::from("neutron"),
+    };
 
     TestRunner::new(&mut ctx, args)
         .start()?
@@ -308,7 +310,7 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     ),
                 )
                 .with_pool(
-                    amoguscoin.clone(),
+                    uosmo_ntrn.clone(),
                     bruhtoken.clone(),
                     Pool::Astroport(
                         AstroportPoolBuilder::default()
