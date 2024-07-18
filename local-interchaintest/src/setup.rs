@@ -335,6 +335,7 @@ pub struct Test {
     test: OwnedTestFn,
 
     /// Whether the arb bot output should be fed as input to the test
+    #[builder(default)]
     run_arbbot: bool,
 }
 
