@@ -18,7 +18,7 @@
             }
         },
         "osmosis": {
-            "localosmosis-1": {
+            "osmosis-1": {
                 "chain_name": "osmosis",
                 "chain_prefix": "osmo",
                 "chain_fee_denom": "uosmo",
