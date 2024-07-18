@@ -311,8 +311,8 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     ),
                 )
                 .with_pool(
-                    amoguscoin_osmo.clone(),
-                    bruhtoken_osmo.clone(),
+                    amoguscoin.clone(),
+                    bruhtoken.clone(),
                     Pool::Astroport(
                         AstroportPoolBuilder::default()
                             .with_balance_asset_a(10000000u128)
