@@ -416,6 +416,8 @@ impl Test {
                     Pool::Osmosis(spec) => {
                         let funds_a = spec.denom_funds.get(denom_a).unwrap_or(&0);
                         let funds_b = spec.denom_funds.get(denom_b).unwrap_or(&0);
+                        let weight_a = spec.denom_weights.get(denom_a).unwrap_or(&0);
+                        let weight_b = spec.denom_weights.get(denom_b).unwrap_or(&0);
 
                         // Create the osmo pool and join it
                         let (norm_denom_a, denom_map_ent_1) =
@@ -438,8 +440,8 @@ impl Test {
                         }
 
                         ctx.build_tx_create_osmo_pool()
-                            .with_weight(&norm_denom_a, *funds_a as u64)
-                            .with_weight(&norm_denom_b, *funds_b as u64)
+                            .with_weight(&norm_denom_a, *weight_a as u64)
+                            .with_weight(&norm_denom_b, *weight_b as u64)
                             .with_initial_deposit(&norm_denom_a, *funds_a as u64)
                             .with_initial_deposit(&norm_denom_b, *funds_b as u64)
                             .send()?;
@@ -539,8 +541,11 @@ pub struct AstroportPool {
 #[derive(Builder, Clone)]
 #[builder(setter(into, strip_option, prefix = "with"), build_fn(skip))]
 pub struct OsmosisPool {
-    #[builder(default = "HashMap::new()")]
+    #[builder(default)]
     denom_funds: HashMap<Denom, u128>,
+
+    #[builder(default)]
+    denom_weights: HashMap<Denom, u128>,
 }
 
 impl OsmosisPoolBuilder {
@@ -552,9 +557,18 @@ impl OsmosisPoolBuilder {
         self
     }
 
+    pub fn with_weight(&mut self, denom: Denom, weight: u128) -> &mut Self {
+        self.denom_weights
+            .get_or_insert_with(Default::default)
+            .insert(denom.into(), weight);
+
+        self
+    }
+
     pub fn build(&mut self) -> OsmosisPool {
         OsmosisPool {
             denom_funds: self.denom_funds.clone().unwrap_or_default(),
+            denom_weights: self.denom_weights.clone().unwrap_or_default(),
         }
     }
 }

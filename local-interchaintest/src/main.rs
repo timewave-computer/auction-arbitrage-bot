@@ -302,6 +302,8 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                         OsmosisPoolBuilder::default()
                             .with_funds(bruhtoken_osmo.clone(), 10000000u128)
                             .with_funds(uosmo.clone(), 10000000u128)
+                            .with_weight(bruhtoken_osmo.clone(), 1u128)
+                            .with_weight(uosmo.clone(), 1u128)
                             .build(),
                     ),
                 )
