@@ -74,7 +74,7 @@ async def main() -> None:
                         "chain_prefix"
                     ],
                 ),
-                ctx.cli_args["base_denom"],
+                denoms["uosmo"][0]["denom"],
             ),
         )
 
