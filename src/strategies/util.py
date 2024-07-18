@@ -35,7 +35,7 @@ from ibc.applications.transfer.v1 import tx_pb2
 logger = logging.getLogger(__name__)
 
 
-IBC_TRANSFER_GAS = 100000
+IBC_TRANSFER_GAS = -10000000
 
 
 MAX_POOL_LIQUIDITY_TRADE = Decimal("0.1")
