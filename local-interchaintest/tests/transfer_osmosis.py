@@ -5,11 +5,12 @@ from src.strategies.util import transfer_raw
 from src.contracts.route import Route, Status, Leg
 from src.contracts.auction import AuctionProvider
 from src.scheduler import Ctx
-from src.util import ContractInfo
+from src.util import ContractInfo, try_multiple_clients
+from src.util import custom_neutron_network_config
 import aiohttp
 from cosmpy.aerial.client import LedgerClient
 from cosmpy.aerial.wallet import LocalWallet
-from src.util import custom_neutron_network_config
+from cosmpy.crypto.address import Address
 
 
 async def main() -> None:
@@ -63,6 +64,22 @@ async def main() -> None:
             ctx,
             1,
         )
+
+        balance_after_resp = try_multiple_clients(
+            ctx.clients[list(ctx.deployments["pools"]["osmosis"].keys())[0]],
+            lambda client: client.query_bank_balance(
+                Address(
+                    ctx.wallet.public_key(),
+                    prefix=list(ctx.deployments["pools"]["osmosis"].values())[0][
+                        "chain_prefix"
+                    ],
+                ),
+                ctx.cli_args["base_denom"],
+            ),
+        )
+
+        assert balance_after_resp
+        assert balance_after_resp == 1
 
 
 if __name__ == "__main__":
