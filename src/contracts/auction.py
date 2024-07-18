@@ -47,6 +47,7 @@ class AuctionProvider(WithContract):
         self.chain_name = chain_info["chain_name"]
         self.chain_prefix = chain_info["chain_prefix"]
         self.chain_fee_denom = chain_info["chain_fee_denom"]
+        self.chain_transfer_channel_ids = chain_info["chain_transfer_channel_ids"]
         self.kind = "auction"
         self.endpoints = endpoints["http"]
         self.session = session

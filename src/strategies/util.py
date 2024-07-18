@@ -371,79 +371,12 @@ async def transfer(
     succeeded.
     """
 
-    denom_infos = await denom_info_on_chain(
-        src_chain=prev_leg.backend.chain_id,
-        src_denom=denom,
-        dest_chain=leg.backend.chain_id,
-        session=ctx.http_session,
-        denom_map=ctx.denom_map,
-    )
-
-    if not denom_infos or len(denom_infos) == 0:
-        raise ValueError("Missing denom info for target chain in IBC transfer")
-
-    denom_infos = [info for info in (denom_infos) if info.denom == dest_denom]
-
-    if not denom_infos or len(denom_infos) == 0:
-        raise ValueError("Missing denom info for target chain in IBC transfer")
-
-    denom_info = denom_infos[0]
-
-    channel_info: Optional[dict[str, Any]]
-
-    # Not enough info to complete the transfer
-    if not denom_infos or not denom_info.port or not denom_info.channel:
-        our_traces = await denom_info_on_chain(
-            src_chain=leg.backend.chain_id,
-            src_denom=denom_info.denom,
-            dest_chain=prev_leg.backend.chain_id,
-            session=ctx.http_session,
-            denom_map=ctx.denom_map,
-        )
-
-        if not our_traces:
-            raise ValueError("Missing channel info for target chain in IBC transfer")
-
-        our_traces = [trace for trace in (our_traces) if trace.denom == denom]
-
-        if not our_traces or len(our_traces) == 0:
-            raise ValueError("Missing channel info for target chain in IBC transfer")
-
-        our_trace = our_traces[0]
-
-        channel_info = {
-            "channel": {
-                "counterparty": {
-                    "port_id": our_trace.port,
-                    "channel_id": our_trace.channel,
-                }
-            }
-        }
-    else:
-        channel_info = await try_multiple_rest_endpoints(
-            ctx.endpoints[leg.backend.chain_name]["http"],
-            f"/ibc/core/channel/v1/channels/{denom_info.channel}/ports/{denom_info.port}",
-            ctx.http_session,
-        )
-
-    if not channel_info:
-        raise ValueError("Missing channel info for target chain in IBC transfer")
-
-    logger.debug(
-        "Executing IBC transfer %s from %s -> %s with source port %s, source channel %s, sender %s, and receiver %s",
-        denom,
-        prev_leg.backend.chain_id,
-        leg.backend.chain_id,
-        channel_info["channel"]["counterparty"]["port_id"],
-        channel_info["channel"]["counterparty"]["channel_id"],
-        str(Address(ctx.wallet.public_key(), prefix=prev_leg.backend.chain_prefix)),
-        str(Address(ctx.wallet.public_key(), prefix=leg.backend.chain_prefix)),
-    )
-
     # Create a messate transfering the funds
     msg = tx_pb2.MsgTransfer(  # pylint: disable=no-member
-        source_port=channel_info["channel"]["counterparty"]["port_id"],
-        source_channel=channel_info["channel"]["counterparty"]["channel_id"],
+        source_port="transfer",
+        source_channel=leg.backend.chain_transfer_channel_ids[
+            prev_leg.backend.chain_id
+        ],
         sender=str(
             Address(ctx.wallet.public_key(), prefix=prev_leg.backend.chain_prefix)
         ),

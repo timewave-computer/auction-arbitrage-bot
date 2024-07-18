@@ -45,6 +45,8 @@ class PoolProvider(ABC):
 
     chain_fee_denom: str
 
+    chain_transfer_channel_ids: dict[str, str]
+
     endpoints: list[str]
 
     swap_fee: int
