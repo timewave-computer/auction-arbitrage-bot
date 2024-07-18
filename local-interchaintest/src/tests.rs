@@ -15,6 +15,17 @@ pub fn test_transfer_osmosis(
     Ok(())
 }
 
+pub fn test_transfer_neutron(
+    _: Option<Value>,
+) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+    Command::new("python")
+        .current_dir("tests")
+        .arg("transfer_neutron.py")
+        .output()?;
+
+    Ok(())
+}
+
 pub fn test_profitable_arb(
     arbfile: Option<Value>,
 ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {

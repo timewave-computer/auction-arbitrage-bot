@@ -84,6 +84,14 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
              .with_test(Box::new(tests::test_transfer_osmosis) as TestFn)
              .build()?
         )?
+        // Test case (osmosis -> neutron)
+        .run(TestBuilder::default()
+             .with_name("Transfer From Osmosis to Neutron")
+             .with_description("Transfers from Osmosis to Neutron should succeed")
+             .with_denom(uosmo.clone(), 100000000000)
+             .with_test(Box::new(tests::test_transfer_neutron) as TestFn)
+             .build()?
+        )?
         // Test case (profitable arb):
         //
         // - Astroport: bruhtoken-amoguscoin @1.5 bruhtoken/amoguscoin
