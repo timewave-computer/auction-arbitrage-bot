@@ -193,6 +193,7 @@ impl<'a> TestRunner<'a> {
         // Perform hot start setup
         // Mapping of denoms to their matching denoms, chain id's, channel id's, and ports
         self.denom_map = Default::default();
+        test.setup(&mut self.denom_map, self.test_ctx)?;
 
         let ctx = &mut self.test_ctx;
 
@@ -254,8 +255,6 @@ impl<'a> TestRunner<'a> {
         util::create_denom_file(&self.denom_map)?;
 
         let statuses = self.test_statuses.clone();
-
-        test.setup(&mut self.denom_map, self.test_ctx)?;
 
         if test.run_arbbot {
             with_arb_bot_output(Arc::new(Box::new(move |arbfile: Option<Value>| {
