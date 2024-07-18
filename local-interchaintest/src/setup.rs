@@ -319,6 +319,7 @@ pub struct Test {
     description: String,
 
     /// Fully qualified denoms (i.e., factory/neutronxyz/tokenabc or untrn or ibc/xyz)
+    #[builder(default)]
     denoms: Vec<String>,
 
     /// How much of a given subdenom acc0 owns on a given chain
@@ -327,6 +328,7 @@ pub struct Test {
     tokenfactory_token_balances_acc0: HashMap<Denom, u128>,
 
     /// (Denom a, denom b) or (offer asset, ask asset) -> pool
+    #[builder(default)]
     pools: HashMap<(Denom, Denom), Vec<Pool>>,
 
     /// The test that should be run with the arb bot output
