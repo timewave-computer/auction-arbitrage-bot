@@ -323,6 +323,7 @@ pub struct Test {
 
     /// How much of a given subdenom acc0 owns on a given chain
     /// (chain, token) -> balance
+    #[builder(default)]
     tokenfactory_token_balances_acc0: HashMap<Denom, u128>,
 
     /// (Denom a, denom b) or (offer asset, ask asset) -> pool
@@ -333,14 +334,6 @@ pub struct Test {
 
     /// Whether the arb bot output should be fed as input to the test
     run_arbbot: bool,
-}
-
-impl TestBuilder {
-    pub fn with_arbbot(mut self) -> Self {
-        self.run_arbbot = Some(true);
-
-        self
-    }
 }
 
 impl Test {
@@ -512,6 +505,12 @@ impl TestBuilder {
             .entry((denom_a, denom_b))
             .or_default()
             .push(pool);
+
+        self
+    }
+
+    pub fn with_arbbot(mut self) -> Self {
+        self.run_arbbot = Some(true);
 
         self
     }
