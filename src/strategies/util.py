@@ -35,7 +35,7 @@ from ibc.applications.transfer.v1 import tx_pb2
 logger = logging.getLogger(__name__)
 
 
-IBC_TRANSFER_GAS = -10000000
+IBC_TRANSFER_GAS = 100000
 
 
 MAX_POOL_LIQUIDITY_TRADE = Decimal("0.1")
@@ -569,6 +569,10 @@ async def route_base_denom_profit(
     exchange_rates: list[Decimal] = []
 
     for leg in route:
+        # TODO: Remove
+        if isinstance(leg.backend, OsmosisPoolProvider):
+            exchange_rates.append(Decimal(10.0))
+
         if isinstance(leg.backend, AuctionProvider):
             if leg.in_asset != leg.backend.asset_a:
                 return 0
