@@ -321,6 +321,7 @@ async def recover_funds(
         [ctx.cli_args["base_denom"], curr_leg.in_asset(), curr_leg.backend.chain_id],
     )
 
+    # TODO: Check this
     route = route[: route.index(curr_leg) - 1]
     backtracked = list(
         reversed([Leg(leg.out_asset, leg.in_asset, leg.backend) for leg in route])
@@ -337,6 +338,7 @@ async def recover_funds(
     if not balance_resp:
         raise ValueError(f"Couldn't get balance for asset {curr_leg.in_asset()}.")
 
+    # TODO: Trade as much of tokens as possible
     resp = await quantities_for_route_profit(balance_resp, backtracked, r, ctx)
 
     if not resp:

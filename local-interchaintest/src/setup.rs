@@ -400,13 +400,36 @@ impl Test {
             .try_for_each(|((denom_a, denom_b), pools)| {
                 pools.iter().try_for_each(|pool_spec| match pool_spec {
                     Pool::Astroport(spec) => {
+                        let funds_a = spec.balance_asset_a;
+                        let funds_b = spec.balance_asset_b;
+
+                        // Create the osmo pool and join it
+                        let (norm_denom_a, denom_map_ent_1) =
+                            denom_a.normalize(funds_a, ctx).unwrap();
+                        let (norm_denom_b, denom_map_ent_2) =
+                            denom_b.normalize(funds_b, ctx).unwrap();
+
+                        if let Some((map_ent_a_1, map_ent_a_2)) = denom_map_ent_1 {
+                            // (denom, neutron) -> denom'
+                            // (denom', osmo) -> denom
+                            denom_map.insert((denom_a.to_string(), "neutron".into()), map_ent_a_1);
+                            denom_map.insert((norm_denom_a.clone(), "osmosis".into()), map_ent_a_2);
+                        }
+
+                        if let Some((map_ent_b_1, map_ent_b_2)) = denom_map_ent_2 {
+                            // (denom, neutron) -> denom'
+                            // (denom', osmo) -> denom
+                            denom_map.insert((denom_b.to_string(), "neutron".into()), map_ent_b_1);
+                            denom_map.insert((norm_denom_b.clone(), "osmosis".into()), map_ent_b_2);
+                        }
+
                         ctx.build_tx_create_pool()
-                            .with_denom_a(denom_a.to_string())
-                            .with_denom_b(&denom_b.to_string())
+                            .with_denom_a(&norm_denom_a)
+                            .with_denom_b(&norm_denom_b)
                             .send()?;
                         ctx.build_tx_fund_pool()
-                            .with_denom_a(&denom_a.to_string())
-                            .with_denom_b(&denom_b.to_string())
+                            .with_denom_a(&norm_denom_a)
+                            .with_denom_b(&norm_denom_b)
                             .with_amount_denom_a(spec.balance_asset_a)
                             .with_amount_denom_b(spec.balance_asset_b)
                             .with_liq_token_receiver(OWNER_ADDR)
