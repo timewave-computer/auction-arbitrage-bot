@@ -24,7 +24,7 @@
                 "chain_fee_denom": "uosmo",
                 "chain_transfer_channel_ids": {
                     "neutron-1": "channel-874"
-                },
+                }
             }
         }
     },
