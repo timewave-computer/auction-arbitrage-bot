@@ -321,7 +321,6 @@ async def recover_funds(
         [ctx.cli_args["base_denom"], curr_leg.in_asset(), curr_leg.backend.chain_id],
     )
 
-    # TODO: Check this
     route = route[: route.index(curr_leg) - 1]
     backtracked = list(
         reversed([Leg(leg.out_asset, leg.in_asset, leg.backend) for leg in route])
@@ -338,8 +337,21 @@ async def recover_funds(
     if not balance_resp:
         raise ValueError(f"Couldn't get balance for asset {curr_leg.in_asset()}.")
 
-    # TODO: Trade as much of tokens as possible
-    resp = await quantities_for_route_profit(balance_resp, backtracked, r, ctx)
+    if curr_leg.backend.chain_id != backtracked[0].backend.chain_id:
+        to_transfer = min(balance_resp, r.quantities[-2])
+
+        await transfer(
+            r,
+            curr_leg.in_asset(),
+            route[-1].out_asset(),
+            curr_leg,
+            ctx,
+            to_swap,
+        )
+
+    resp = await quantities_for_route_profit(
+        balance_resp, backtracked, r, ctx, seek_profit=False
+    )
 
     if not resp:
         raise ValueError("Couldn't get execution plan.")
@@ -508,6 +520,7 @@ async def quantities_for_route_profit(
     route: list[Leg],
     r: Route,
     ctx: Ctx[Any],
+    seek_profit: Optional[bool] = True,
 ) -> tuple[int, list[int]]:
     """
     Calculates what quantities should be used to obtain
@@ -519,7 +532,9 @@ async def quantities_for_route_profit(
 
     quantities: list[int] = [starting_amount]
 
-    while quantities[-1] - quantities[0] <= 0 or len(quantities) <= len(route):
+    while (seek_profit and quantities[-1] - quantities[0] <= 0) or len(
+        quantities
+    ) <= len(route):
         ctx.log_route(r, "info", "Route has possible execution plan: %s", [quantities])
 
         if starting_amount < DENOM_QUANTITY_ABORT_ARB:
