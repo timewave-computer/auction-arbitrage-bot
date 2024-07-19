@@ -229,6 +229,17 @@ impl<'a> TestRunner<'a> {
         ctx.build_tx_create_price_oracle().send()?;
         ctx.build_tx_update_auction_oracle().send()?;
 
+        let ntrn_to_osmo = ctx
+            .transfer_channel_ids
+            .get(&("neutron".into(), "osmosis".into()))
+            .cloned()
+            .unwrap();
+        let osmo_to_ntrn = ctx
+            .transfer_channel_ids
+            .get(&("osmosis".into(), "neutron".into()))
+            .cloned()
+            .unwrap();
+
         util::create_deployment_file(
             ctx.get_astroport_factory()?
                 .get(0)
@@ -239,16 +250,8 @@ impl<'a> TestRunner<'a> {
                 .contract_addr
                 .expect("missing deployed astroport factory")
                 .as_str(),
-            &self
-                .denom_map
-                .get(&("untrn".into(), "osmosis".into()))
-                .unwrap()
-                .channel_id,
-            &self
-                .denom_map
-                .get(&("uosmo".into(), "neutron".into()))
-                .unwrap()
-                .channel_id,
+            &ntrn_to_osmo,
+            &osmo_to_ntrn,
         )?;
         util::create_arbs_file()?;
         util::create_netconfig()?;

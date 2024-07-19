@@ -46,7 +46,7 @@ pub(crate) fn create_deployment_file(
                         "chain_prefix": "neutron",
                         "chain_fee_denom": "untrn",
                         "chain_transfer_channel_ids": {
-                "localosmosis-1": neutron_to_osmosis_channel_id,
+                            "localosmosis-1": neutron_to_osmosis_channel_id,
                         },
                         "directory": {
                             "address": astroport_factory_address,
