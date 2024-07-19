@@ -193,7 +193,6 @@ impl<'a> TestRunner<'a> {
         // Perform hot start setup
         // Mapping of denoms to their matching denoms, chain id's, channel id's, and ports
         self.denom_map = Default::default();
-        test.setup(&mut self.denom_map, self.test_ctx)?;
 
         let ctx = &mut self.test_ctx;
 
@@ -228,6 +227,8 @@ impl<'a> TestRunner<'a> {
             .send()?;
         ctx.build_tx_create_price_oracle().send()?;
         ctx.build_tx_update_auction_oracle().send()?;
+
+        test.setup(&mut self.denom_map, ctx)?;
 
         let ntrn_to_osmo = ctx
             .transfer_channel_ids
