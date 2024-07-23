@@ -2,10 +2,8 @@ import json
 import asyncio
 from typing import Any
 from src.strategies.util import transfer_raw
-from src.contracts.route import Route, Status, Leg
-from src.contracts.auction import AuctionProvider
 from src.scheduler import Ctx
-from src.util import ContractInfo, try_multiple_clients
+from src.util import try_multiple_clients
 from src.util import custom_neutron_network_config
 import aiohttp
 from cosmpy.aerial.client import LedgerClient
@@ -14,10 +12,7 @@ from cosmpy.crypto.address import Address
 
 
 async def main() -> None:
-    denom_map, deployments, net_config, denom = (None, None, None, None)
-
-    with open("../../denoms.json", "r", encoding="utf-8") as f:
-        denom_map = json.load(f)
+    net_config, denoms = (None, None)
 
     with open("../../net_config.json", "r", encoding="utf-8") as nf:
         net_config = json.load(nf)

@@ -93,7 +93,6 @@ def ctx(session: aiohttp.ClientSession) -> Ctx[State]:
             {
                 "pool_file": None,
                 "poll_interval": 120,
-                "discovery_interval": 600,
                 "hops": 3,
                 "pools": 100,
                 "require_leg_types": set(),

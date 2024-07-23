@@ -46,7 +46,7 @@ async def main() -> None:
     parser.add_argument("-f", "--pool_file", default=None)
     parser.add_argument("--denom_file", default=None)
     parser.add_argument("-p", "--poll_interval", default=120)
-    parser.add_argument("-d", "--discovery_interval", default=600)
+    parser.add_argument("-d", "--strategy_duration", default=600)
     parser.add_argument("-nh", "--hops", default=3)
     parser.add_argument("-np", "--pools", default=None)
     parser.add_argument(
@@ -165,7 +165,6 @@ async def main() -> None:
                 {
                     "pool_file": args.pool_file,
                     "poll_interval": int(args.poll_interval),
-                    "discovery_interval": int(args.discovery_interval),
                     "hops": int(args.hops),
                     "pools": int(args.pools) if args.pools else None,
                     "require_leg_types": args.require_leg_types,
@@ -426,7 +425,8 @@ async def main() -> None:
             async def event_loop() -> None:
                 while True:
                     try:
-                        await sched.poll()
+                        async with asyncio.timeout(args.poll_interval):
+                            await sched.poll()
                     except Exception as e:
                         logger.info("Arbitrage round failed: %s", e)
 
