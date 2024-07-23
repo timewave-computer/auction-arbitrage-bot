@@ -460,7 +460,7 @@ async def denom_route(
         if any(("transfer" not in op for op in ops)):
             return None
 
-        transfer_info = ops["transfer"]
+        transfer_info = ops[0]["transfer"]
 
         from_chain_info = await chain_info(
             transfer_info["from_chain_id"], session, denom_map
@@ -523,7 +523,7 @@ async def chain_info(
             pfm_enabled=chain["pfm_enabled"],
             supports_memo=chain["supports_memo"],
             bech32_prefix=chain["bech32_prefix"],
-            fee_asset=chain["fee_asset"],
+            fee_asset=chain["fee_assets"][0]["denom"],
             chain_type=chain["chain_type"],
             pretty_name=chain["pretty_name"],
         )
