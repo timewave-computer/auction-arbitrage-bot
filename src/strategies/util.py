@@ -2,6 +2,7 @@
 Defines common utilities shared across arbitrage strategies.
 """
 
+import json
 import operator
 from functools import reduce
 from decimal import Decimal
@@ -23,6 +24,8 @@ from src.util import (
     try_multiple_clients_fatal,
     try_multiple_clients,
     DENOM_QUANTITY_ABORT_ARB,
+    denom_route,
+    denom_info_on_chain,
 )
 from src.scheduler import Ctx
 from cosmos.base.v1beta1 import coin_pb2
@@ -343,10 +346,10 @@ async def recover_funds(
         await transfer(
             r,
             curr_leg.in_asset(),
-            route[-1].out_asset(),
             curr_leg,
+            backtracked[0],
             ctx,
-            to_swap,
+            to_transfer,
         )
 
     resp = await quantities_for_route_profit(
@@ -382,24 +385,65 @@ async def transfer(
     succeeded.
     """
 
-    src_channel_id = prev_leg.backend.chain_transfer_channel_ids[leg.backend.chain_id]
+    denom_infos_on_dest = await denom_info_on_chain(
+        prev_leg.backend.chain_id,
+        denom,
+        leg.backend.chain_id,
+        ctx.http_session,
+        ctx.denom_map,
+    )
+
+    if not denom_infos_on_dest:
+        raise ValueError(
+            f"Missing denom info for transfer {denom} ({prev_leg.backend.chain_id}) -> {leg.backend.chain_id}"
+        )
+
+    ibc_route = await denom_route(
+        prev_leg.backend.chain_id,
+        denom,
+        leg.backend.chain_id,
+        denom_infos_on_dest[0].denom,
+        ctx.http_session,
+    )
+
+    if not ibc_route or len(ibc_route) == 0:
+        raise ValueError(f"No route from {denom} to {leg.backend.chain_id}")
+
+    src_channel_id = ibc_route[0].channel
     sender_addr = str(
-        Address(ctx.wallet.public_key(), prefix=prev_leg.backend.chain_prefix)
+        Address(ctx.wallet.public_key(), prefix=ibc_route[0].from_chain.bech32_prefix)
     )
     receiver_addr = str(
-        Address(ctx.wallet.public_key(), prefix=leg.backend.chain_prefix)
+        Address(ctx.wallet.public_key(), prefix=ibc_route[0].to_chain.bech32_prefix)
     )
+
+    memo: Optional[str] = None
+
+    for ibc_leg in reversed(ibc_route[1:]):
+        memo = json.dumps(
+            {
+                "forward": {
+                    "receiver": "pfm",
+                    "port": ibc_leg.port,
+                    "channel": ibc_leg.channel,
+                    "timeout": "10m",
+                    "retries": 2,
+                    "next": memo,
+                }
+            }
+        )
 
     await transfer_raw(
         denom,
-        prev_leg.backend.chain_id,
+        ibc_route[0].from_chain.chain_id,
         prev_leg.backend.chain_fee_denom,
         src_channel_id,
-        leg.backend.chain_id,
+        ibc_route[0].to_chain.chain_id,
         sender_addr,
         receiver_addr,
         ctx,
         swap_balance,
+        memo=memo,
     )
 
 
@@ -413,6 +457,7 @@ async def transfer_raw(
     receiver_addr: str,
     ctx: Ctx[Any],
     swap_balance: int,
+    memo: Optional[str] = None,
     route: Optional[Route] = None,
 ) -> None:
     """
@@ -429,6 +474,7 @@ async def transfer_raw(
         sender=sender_addr,
         receiver=receiver_addr,
         timeout_timestamp=time.time_ns() + 600 * 10**9,
+        memo=memo,
     )
     msg.token.CopyFrom(
         coin_pb2.Coin(  # pylint: disable=maybe-no-member

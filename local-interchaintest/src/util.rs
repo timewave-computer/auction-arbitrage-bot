@@ -110,7 +110,7 @@ pub(crate) fn create_netconfig() -> Result<(), Box<dyn Error + Send + Sync>> {
         .create(true)
         .truncate(true)
         .write(true)
-        .open("../net_config.json")?;
+        .open("../net_config_test.json")?;
 
     f.write_all(
         serde_json::json!({

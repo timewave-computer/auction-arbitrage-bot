@@ -61,14 +61,14 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         base_chain: String::from("neutron"),
         dest_chain: String::from("osmosis"),
     };
-    let uosmo = Denom::Local {
-        base_chain: String::from("osmosis"),
-        base_denom: String::from("uosmo"),
-    };
     let uosmo_ntrn = Denom::Interchain {
         base_denom: String::from("uosmo"),
         base_chain: String::from("osmosis"),
         dest_chain: String::from("neutron"),
+    };
+    let uosmo = Denom::Local {
+        base_chain: String::from("osmosis"),
+        base_denom: String::from("uosmo"),
     };
 
     TestRunner::new(&mut ctx, args)
@@ -289,7 +289,7 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                 .with_denom(bruhtoken_osmo.clone(), 100000000000)
                 .with_pool(
                     untrn.clone(),
-                    bruhtoken.clone(),
+                    uosmo_ntrn.clone(),
                     Pool::Astroport(
                         AstroportPoolBuilder::default()
                             .with_balance_asset_a(10000000u128)
@@ -310,7 +310,7 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     ),
                 )
                 .with_pool(
-                    uosmo_ntrn.clone(),
+                    untrn.clone(),
                     bruhtoken.clone(),
                     Pool::Astroport(
                         AstroportPoolBuilder::default()
@@ -319,6 +319,7 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                             .build()?,
                     ),
                 )
+
                 .with_arbbot()
                 .with_test(Box::new(tests::test_osmo_arb) as TestFn)
                 .build()?,

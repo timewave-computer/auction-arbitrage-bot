@@ -240,6 +240,48 @@ def int_to_decimal(n: int) -> Decimal:
 
 
 @dataclass
+class ChainInfo:
+    """
+    Contains basic information about a chain.
+    """
+
+    chain_name: str
+    chain_id: str
+    pfm_enabled: bool
+    supports_memo: bool
+    bech32_prefix: str
+    fee_asset: str
+    chain_type: str
+    pretty_name: str
+
+
+@dataclass
+class DenomRouteLeg:
+    """
+    Represents an IBC transfer as a leg of a greater IBC transfer
+    from some src denom on a src chain to a dest denom on a dest chain.
+    """
+
+    # The origin and destination chains
+    src_chain: str
+    dest_chain: str
+
+    # The origin and destination denoms
+    src_denom: str
+    dest_denom: str
+
+    # The current leg in and out chain and denoms
+    from_chain: ChainInfo
+    to_chain: ChainInfo
+
+    denom_in: str
+    denom_out: str
+
+    port: str
+    channel: str
+
+
+@dataclass
 class DenomChainInfo:
     """
     Represents information about a denomination
@@ -378,6 +420,113 @@ async def denom_info_on_chain(
             ]
 
         return None
+
+
+async def denom_route(
+    src_chain: str,
+    src_denom: str,
+    dest_chain: str,
+    dest_denom: str,
+    session: aiohttp.ClientSession,
+    denom_map: Optional[dict[str, list[dict[str, str]]]] = None,
+) -> Optional[list[DenomRouteLeg]]:
+    """
+    Gets a neutron denom's denom and channel on/to another chain.
+    """
+
+    head = {"accept": "application/json", "content-type": "application/json"}
+
+    async with session.post(
+        "https://api.skip.money/v2/fungible/route",
+        headers=head,
+        json={
+            "amount_in": "1",
+            "source_asset_denom": src_denom,
+            "source_asset_chain_id": src_chain,
+            "dest_asset_denom": dest_denom,
+            "dest_asset_chain_id": dest_chain,
+            "allow_multi_tx": True,
+            "allow_unsafe": False,
+            "bridges": ["IBC"],
+        },
+    ) as resp:
+        if resp.status != 200:
+            return None
+
+        ops = (await resp.json())["operations"]
+
+        # The transfer includes a swap or some other operation
+        # we can't handle
+        if any(("transfer" not in op for op in ops)):
+            return None
+
+        transfer_info = ops["transfer"]
+
+        from_chain_info = await chain_info(
+            transfer_info["from_chain_id"], session, denom_map
+        )
+        to_chain_info = await chain_info(
+            transfer_info["to_chain_id"], session, denom_map
+        )
+
+        if not from_chain_info or not to_chain_info:
+            return None
+
+        return [
+            DenomRouteLeg(
+                src_chain=src_chain,
+                dest_chain=dest_chain,
+                src_denom=src_denom,
+                dest_denom=dest_denom,
+                from_chain=from_chain_info,
+                to_chain=to_chain_info,
+                denom_in=transfer_info["denom_in"],
+                denom_out=transfer_info["denom_out"],
+                port=transfer_info["port"],
+                channel=transfer_info["channel"],
+            )
+            for op in ops
+        ]
+
+
+async def chain_info(
+    chain_id: str,
+    session: aiohttp.ClientSession,
+    denom_map: Optional[dict[str, list[dict[str, str]]]] = None,
+) -> Optional[ChainInfo]:
+    """
+    Gets basic information about a cosmos chain.
+    """
+
+    head = {"accept": "application/json", "content-type": "application/json"}
+
+    async with session.get(
+        "https://api.skip.money/v2/info/chains",
+        headers=head,
+        json={
+            "chain_ids": [chain_id],
+        },
+    ) as resp:
+        if resp.status != 200:
+            return None
+
+        chains = (await resp.json())["chains"]
+
+        if len(chains) == 0:
+            return None
+
+        chain = chains[0]
+
+        return ChainInfo(
+            chain_name=chain["chain_name"],
+            chain_id=chain["chain_id"],
+            pfm_enabled=chain["pfm_enabled"],
+            supports_memo=chain["supports_memo"],
+            bech32_prefix=chain["bech32_prefix"],
+            fee_asset=chain["fee_asset"],
+            chain_type=chain["chain_type"],
+            pretty_name=chain["pretty_name"],
+        )
 
 
 @dataclass

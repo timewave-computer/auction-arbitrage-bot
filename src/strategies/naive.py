@@ -361,11 +361,15 @@ async def listen_routes_with_depth_dfs(
 
         prev_pool = path[-1]
 
+        logger.debug(f"exploring route: %s", fmt_route(path))
+
         # This leg **must** be connected to the previous
         # by construction, so therefore, if any
         # of the denoms match the starting denom, we are
         # finished, and the circuit is closed
         if len(path) > 1 and src == prev_pool.out_asset():
+            logger.debug(f"discovered route: %s", fmt_route(path))
+
             if (
                 len(required_leg_types - set((fmt_route_leg(leg) for leg in path))) > 0
                 or len(path) < depth

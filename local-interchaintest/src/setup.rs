@@ -253,10 +253,11 @@ impl<'a> TestRunner<'a> {
                 .as_str(),
             &ntrn_to_osmo,
             &osmo_to_ntrn,
-        )?;
-        util::create_arbs_file()?;
-        util::create_netconfig()?;
-        util::create_denom_file(&self.denom_map)?;
+        )
+        .expect("Failed to create deployments file");
+        util::create_arbs_file().expect("Failed to create arbs file");
+        util::create_netconfig().expect("Failed to create net config");
+        util::create_denom_file(&self.denom_map).expect("Failed to create denom file");
 
         let statuses = self.test_statuses.clone();
 
@@ -624,7 +625,7 @@ pub fn with_arb_bot_output(test: OwnedTestFn) -> TestResult {
         .arg("--deployments_file")
         .arg("deployments_file.json")
         .arg("--net_config")
-        .arg("net_config.json")
+        .arg("net_config_test.json")
         .arg("--base_denom")
         .arg("untrn")
         .arg("--denom_file")
