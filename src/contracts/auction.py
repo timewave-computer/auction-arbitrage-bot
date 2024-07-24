@@ -5,7 +5,7 @@ for the auction.
 
 import json
 from decimal import Decimal
-from typing import Any, List, Optional, cast
+from typing import Any, List, Optional
 from functools import cached_property
 from cosmpy.aerial.contract import LedgerContract
 from cosmpy.aerial.wallet import LocalWallet

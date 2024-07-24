@@ -31,7 +31,7 @@ from cosmpy.crypto.address import Address
 from cosmpy.aerial.tx import Transaction
 
 
-MAX_SPREAD = "0.1"
+MAX_SPREAD = "0.05"
 
 
 @dataclass
@@ -95,6 +95,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
     def __init__(
         self,
         deployments: dict[str, Any],
+        chain_id: str,
         endpoints: dict[str, list[str]],
         contract_info: ContractInfo,
         asset_a: Token | NativeToken,
@@ -102,7 +103,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         session: aiohttp.ClientSession,
         grpc_channels: list[grpc.aio.Channel],
     ):
-        chain_info = list(deployments["pools"]["astroport"].values())[0]
+        chain_info = deployments["pools"]["astroport"][chain_id]
 
         WithContract.__init__(self, contract_info)
         self.asset_a_denom = asset_a
@@ -369,13 +370,15 @@ class NeutronAstroportPoolDirectory:
     def __init__(
         self,
         deployments: dict[str, Any],
+        chain_id: str,
         session: aiohttp.ClientSession,
         grpc_channels: list[grpc.aio.Channel],
         poolfile_path: Optional[str] = None,
         endpoints: Optional[dict[str, list[str]]] = None,
     ):
         self.deployments = deployments
-        self.deployment_info = list(deployments["pools"]["astroport"].values())[0]
+        self.chain_id = chain_id
+        self.deployment_info = deployments["pools"]["astroport"][chain_id]
         self.cached_pools = cached_pools(poolfile_path, "neutron_astroport")
         self.session = session
         self.grpc_channels = grpc_channels
@@ -398,66 +401,17 @@ class NeutronAstroportPoolDirectory:
 
     @cached_property
     def clients(self) -> List[LedgerClient]:
-        chain_id = list(self.deployments["pools"]["astroport"].keys())[0]
-
         return [
-            LedgerClient(custom_neutron_network_config(endpoint, chain_id=chain_id))
+            LedgerClient(
+                custom_neutron_network_config(endpoint, chain_id=self.chain_id)
+            )
             for endpoint in self.endpoints["grpc"]
         ]
-
-    def __pools_cached(self) -> dict[str, dict[str, NeutronAstroportPoolProvider]]:
-        """
-        Reads the pools in the AstroportPoolProvider from the contents of the pool file.
-        """
-
-        if self.cached_pools is None:
-            return {}
-
-        pools: dict[str, dict[str, NeutronAstroportPoolProvider]] = {}
-
-        for poolfile_entry in self.cached_pools:
-            asset_a, asset_b = (
-                asset_info_to_token(poolfile_entry["asset_a"]),
-                asset_info_to_token(poolfile_entry["asset_b"]),
-            )
-            asset_a_addr, asset_b_addr = (
-                token_to_addr(asset_a),
-                token_to_addr(asset_b),
-            )
-            provider = NeutronAstroportPoolProvider(
-                self.deployments,
-                self.endpoints,
-                ContractInfo(
-                    self.deployment_info,
-                    self.clients,
-                    poolfile_entry["address"],
-                    "pair",
-                ),
-                asset_a,
-                asset_b,
-                self.session,
-                self.grpc_channels,
-            )
-
-            # Register the pool
-            if asset_a_addr not in pools:
-                pools[asset_a_addr] = {}
-
-            if asset_b_addr not in pools:
-                pools[asset_b_addr] = {}
-
-            pools[asset_a_addr][asset_b_addr] = provider
-            pools[asset_b_addr][asset_a_addr] = provider
-
-        return pools
 
     async def pools(self) -> dict[str, dict[str, NeutronAstroportPoolProvider]]:
         """
         Gets an NeutronAstroportPoolProvider for every pair on Astroport.
         """
-
-        if self.cached_pools is not None:
-            return self.__pools_cached()
 
         # Load all pools in 10-pool batches
         pools = []
@@ -503,6 +457,7 @@ class NeutronAstroportPoolDirectory:
 
             provider = NeutronAstroportPoolProvider(
                 self.deployments,
+                self.chain_id,
                 self.endpoints,
                 ContractInfo(
                     self.deployment_info,

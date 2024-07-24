@@ -4,7 +4,7 @@ Implements a pool provider for osmosis.
 
 from decimal import Decimal
 from functools import cached_property
-from typing import Any, Optional, List, cast
+from typing import Any, Optional, List
 import urllib3
 from cosmpy.aerial.wallet import LocalWallet
 from cosmpy.aerial.tx import Transaction, SigningCfg

@@ -63,14 +63,14 @@ async def main() -> None:
     parser.add_argument(
         "-pm",
         "--profit_margin",
-        default=10000,
+        default=100000,
     )
     parser.add_argument(
         "-l",
         "--log_file",
     )
     parser.add_argument("-hf", "--history_file", default="arbs.json")
-    parser.add_argument("-c", "--net_config")
+    parser.add_argument("-c", "--net_config", default="net_conf.json")
     parser.add_argument(
         "-df", "--deployments_file", default="contracts/deployments.json"
     )
@@ -199,57 +199,32 @@ async def main() -> None:
                     list(ctx.deployments["pools"]["osmosis"].keys())[0]
                 ],
             )
-            astro = NeutronAstroportPoolDirectory(
-                ctx.deployments,
-                ctx.http_session,
-                [
-                    (
-                        grpc.aio.secure_channel(
-                            endpoint.split("grpc+https://")[1],
-                            grpc.ssl_channel_credentials(),
+            astros = [
+                NeutronAstroportPoolDirectory(
+                    ctx.deployments,
+                    chain_id,
+                    ctx.http_session,
+                    [
+                        (
+                            grpc.aio.secure_channel(
+                                endpoint.split("grpc+https://")[1],
+                                grpc.ssl_channel_credentials(),
+                            )
+                            if "https" in endpoint
+                            else grpc.aio.insecure_channel(
+                                endpoint.split("grpc+http://")[1],
+                            )
                         )
-                        if "https" in endpoint
-                        else grpc.aio.insecure_channel(
-                            endpoint.split("grpc+http://")[1],
-                        )
-                    )
-                    for endpoint in endpoints[
-                        list(ctx.deployments["pools"]["astroport"].keys())[0]
-                    ]["grpc"]
-                ],
-                poolfile_path=args.pool_file,
-                endpoints=endpoints[
-                    list(ctx.deployments["pools"]["astroport"].keys())[0]
-                ],
-            )
+                        for endpoint in endpoints[chain_id]["grpc"]
+                    ],
+                    poolfile_path=args.pool_file,
+                    endpoints=endpoints[chain_id],
+                )
+                for chain_id in ctx.deployments["pools"]["astroport"].keys()
+            ]
 
             osmo_pools = await osmosis.pools()
-            astro_pools = await astro.pools()
-
-            # Save pools to the specified file if the user wants to dump pools
-            if args.cmd is not None and len(args.cmd) > 0 and args.cmd[0] == "dump":
-                # The user wants to dump to a nonexistent file
-                if args.pool_file is None:
-                    logger.error("Dump command provided but no poolfile specified.")
-
-                    sys.exit(1)
-
-                with open(args.pool_file, "r+", encoding="utf-8") as f:
-                    f.seek(0)
-                    json.dump(
-                        {
-                            "pools": {
-                                "osmosis": OsmosisPoolDirectory.dump_pools(osmo_pools),
-                                "neutron_astroport": NeutronAstroportPoolDirectory.dump_pools(
-                                    astro_pools
-                                ),
-                            },
-                            "auctions": sched.auction_manager.dump_auctions(
-                                sched.auctions
-                            ),
-                        },
-                        f,
-                    )
+            astros_pools = [await astro.pools() for astro in astros]
 
             if args.cmd is not None and len(args.cmd) > 0 and args.cmd[0] == "hist":
                 # The user wnats to see a specific route
@@ -408,9 +383,10 @@ async def main() -> None:
                 for osmo_pool in osmo_base.values():
                     sched.register_provider(osmo_pool)
 
-            for astro_base in astro_pools.values():
-                for astro_pool in astro_base.values():
-                    sched.register_provider(astro_pool)
+            for astro_pools in astros_pools:
+                for astro_base in astro_pools.values():
+                    for astro_pool in astro_base.values():
+                        sched.register_provider(astro_pool)
 
             await sched.register_auctions()
 

@@ -59,7 +59,7 @@ def fmt_route_leg(leg: Leg) -> str:
         return "osmosis"
 
     if isinstance(leg.backend, NeutronAstroportPoolProvider):
-        return "astroport"
+        return f"astroport ({leg.backend.chain_id})"
 
     if isinstance(leg.backend, AuctionProvider):
         return "auction"

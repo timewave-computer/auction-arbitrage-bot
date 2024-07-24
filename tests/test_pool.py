@@ -32,6 +32,7 @@ async def test_astroport_pools() -> None:
     ) as session:
         astroport = NeutronAstroportPoolDirectory(
             deployments(),
+            "neutron-1",
             session,
             [
                 grpc.aio.secure_channel(
@@ -112,6 +113,7 @@ async def test_astroport_poolfile() -> None:
     ) as session:
         astro = NeutronAstroportPoolDirectory(
             deployments(),
+            "neutron-1",
             session,
             [
                 grpc.aio.secure_channel(
@@ -145,6 +147,7 @@ async def test_astroport_provider() -> None:
     ) as session:
         astroport = NeutronAstroportPoolDirectory(
             deployments(),
+            "neutron-1",
             session,
             [
                 grpc.aio.secure_channel(
@@ -287,6 +290,7 @@ async def test_astroport_dump() -> None:
     ) as session:
         astro = NeutronAstroportPoolDirectory(
             deployments(),
+            "neutron-1",
             session,
             [
                 grpc.aio.secure_channel(
