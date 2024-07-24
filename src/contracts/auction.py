@@ -59,7 +59,7 @@ class AuctionProvider(WithContract):
         self.endpoints = endpoints["http"]
         self.session = session
         self.grpc_channels = grpc_channels
-        self.swap_fee = int(self.chain_gas_price * self.swap_gas_limit)
+        self.swap_fee = 20000
 
     async def exchange_rate(self) -> Decimal:
         """
