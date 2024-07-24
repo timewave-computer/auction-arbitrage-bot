@@ -4,7 +4,6 @@ of hops using all available providers.
 """
 
 import traceback
-from itertools import groupby
 import asyncio
 import random
 from typing import List, Union, Optional, Self, AsyncGenerator
@@ -23,7 +22,6 @@ from src.strategies.util import (
     fmt_route_leg,
     recover_funds,
     IBC_TRANSFER_GAS,
-    GAS_DISCOUNT_BATCHED,
 )
 from src.util import (
     DenomChainInfo,
@@ -251,7 +249,7 @@ async def eval_route(
     # Ensure that there is at least 5k of the base chain denom
     # at all times
     if ctx.cli_args["base_denom"] == "untrn":
-        gas_base_denom += int(sum((leg.backend.swap_fee for leg in legs)))
+        gas_base_denom += int(sum((leg.backend.swap_fee for leg in route)))
 
         for i, leg in enumerate(route[:-1]):
             next_leg = route[i + 1]

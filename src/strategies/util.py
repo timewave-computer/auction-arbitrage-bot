@@ -252,7 +252,7 @@ async def exec_arb(
             ctx.log_route(
                 route_ent,
                 "info",
-                "Arb leg(s) can be executed atomically; no transfer necessary",
+                "Arb leg(s) can be executed on the same chain; no transfer necessary",
                 [],
             )
 

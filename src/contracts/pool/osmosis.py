@@ -59,7 +59,7 @@ class OsmosisPoolProvider(PoolProvider):
         self.asset_b_denom = asset_b
         self.pool_id = pool_id
         self.session = session
-        self.swap_fee = 10000
+        self.swap_fee = 100000
         self.swap_gas_limit = 500000
 
     @cached_property
