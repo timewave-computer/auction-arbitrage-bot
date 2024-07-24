@@ -242,14 +242,19 @@ async def eval_route(
     # Ensure that there is at least 5k of the base chain denom
     # at all times
     if ctx.cli_args["base_denom"] == "untrn":
-        gas_base_denom += sum(
-            (
+        gas_base_denom += int(
+            sum(
                 (
-                    sum((leg.backend.swap_fee for leg in legs)) * GAS_DISCOUNT_BATCHED
-                    if len(legs) > 1
-                    else sum((leg.backend.swap_fee for leg in legs))
+                    (
+                        sum((leg.backend.swap_fee for leg in legs))
+                        * GAS_DISCOUNT_BATCHED
+                        if len(list(legs)) > 1
+                        else sum((leg.backend.swap_fee for leg in legs))
+                    )
+                    for (_, legs) in groupby(
+                        route, key=lambda elem: elem.backend.chain_id
+                    )
                 )
-                for legs in groupby(route, key=lambda elem: elem.backend.chain_id)
             )
         )
 
