@@ -61,6 +61,7 @@ class OsmosisPoolProvider(PoolProvider):
         self.pool_id = pool_id
         self.session = session
         self.swap_fee = 10000
+        self.swap_gas_limit = 500000
 
     @cached_property
     def ledgers(self) -> List[LedgerClient]:

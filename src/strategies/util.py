@@ -296,11 +296,17 @@ async def exec_arb(
             for msg in msgs:
                 tx.add_message(msg)
 
-            gas_limit = (
-                sum((leg.backend.swap_gas_limit for leg, _ in sublegs))
-                * GAS_DISCOUNT_BATCHED
+            ctx.log_route(route_ent, "info", "Built arb message chain")
+
+            gas_limit = int(
+                (
+                    sum((leg.backend.swap_gas_limit for leg, _ in sublegs))
+                    * GAS_DISCOUNT_BATCHED
+                )
             )
-            gas = gas_limit * sum((leg.backend.chain_gas_price for leg, _ in sublegs))
+            gas = int(
+                gas_limit * sum((leg.backend.chain_gas_price for leg, _ in sublegs))
+            )
 
             tx.seal(
                 SigningCfg.direct(ctx.wallet.public_key(), acc.sequence),
