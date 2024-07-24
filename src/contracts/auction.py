@@ -5,7 +5,7 @@ for the auction.
 
 import json
 from decimal import Decimal
-from typing import Any, List, Optional
+from typing import Any, List, Optional, cast
 from functools import cached_property
 from cosmpy.aerial.contract import LedgerContract
 from cosmpy.aerial.wallet import LocalWallet
@@ -17,10 +17,16 @@ from src.util import (
     ContractInfo,
     try_query_multiple,
     try_multiple_clients,
+    try_multiple_clients_fatal,
     try_exec_multiple_fatal,
 )
 import aiohttp
 import grpc
+from google.protobuf.message import Message
+from cosmwasm.wasm.v1.tx_pb2 import MsgExecuteContract
+from cosmpy.crypto.address import Address
+from cosmos.base.v1beta1.coin_pb2 import Coin
+from cosmpy.aerial.tx import Transaction
 
 
 class AuctionProvider(WithContract):
@@ -48,6 +54,8 @@ class AuctionProvider(WithContract):
         self.chain_prefix = chain_info["chain_prefix"]
         self.chain_fee_denom = chain_info["chain_fee_denom"]
         self.chain_transfer_channel_ids = chain_info["chain_transfer_channel_ids"]
+        self.chain_gas_price = Decimal("0.01")
+        self.swap_gas_limit = 500000
         self.kind = "auction"
         self.endpoints = endpoints["http"]
         self.session = session
@@ -135,6 +143,25 @@ class AuctionProvider(WithContract):
             {"bid": {}},
             funds=f"{amount}{self.asset_a_denom}",
             gas_limit=500000,
+        )
+
+    def swap_msg_asset_a(
+        self, wallet: LocalWallet, amount: int, min_amount: int
+    ) -> Message:
+        return cast(
+            Message,
+            MsgExecuteContract(
+                sender=str(Address(wallet.public_key(), prefix=self.chain_prefix)),
+                contract=self.contract_info.address,
+                msg=json.dumps({"bid": {}}),
+                funds=Coin(denom=self.asset_a_denom, amount=amount),
+            ),
+        )
+
+    def submit_swap_tx(self, tx: Transaction) -> SubmittedTx:
+        return try_multiple_clients_fatal(
+            self.contract_info.clients,
+            lambda client: client.broadcast_tx(tx),
         )
 
     async def remaining_asset_b(self) -> int:

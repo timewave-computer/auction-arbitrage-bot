@@ -3,6 +3,7 @@ Implements an arbitrage strategy with an arbitrary number
 of hops using all available providers.
 """
 
+from itertools import groupby
 import asyncio
 import random
 from typing import List, Union, Optional, Self, AsyncGenerator
@@ -21,6 +22,7 @@ from src.strategies.util import (
     fmt_route_leg,
     recover_funds,
     IBC_TRANSFER_GAS,
+    GAS_DISCOUNT_BATCHED,
 )
 from src.util import (
     DenomChainInfo,
@@ -240,7 +242,16 @@ async def eval_route(
     # Ensure that there is at least 5k of the base chain denom
     # at all times
     if ctx.cli_args["base_denom"] == "untrn":
-        gas_base_denom += sum([leg.backend.swap_fee for leg in route])
+        gas_base_denom += sum(
+            (
+                (
+                    sum((leg.backend.swap_fee for leg in legs)) * GAS_DISCOUNT_BATCHED
+                    if len(legs) > 1
+                    else sum((leg.backend.swap_fee for leg in legs))
+                )
+                for legs in groupby(route, key=lambda elem: elem.backend.chain_id)
+            )
+        )
 
         for i, leg in enumerate(route[:-1]):
             next_leg = route[i + 1]
