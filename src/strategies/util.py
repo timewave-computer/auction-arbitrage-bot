@@ -47,7 +47,7 @@ are batched together.
 GAS_DISCOUNT_BATCHED = Decimal("0.9")
 
 
-IBC_TRANSFER_GAS = 1000
+IBC_TRANSFER_GAS = 5000
 
 
 def fmt_route_leg(leg: Leg) -> str:
@@ -577,14 +577,25 @@ async def transfer_raw(
     """
 
     # Create a messate transfering the funds
-    msg = tx_pb2.MsgTransfer(  # pylint: disable=no-member
-        source_port="transfer",
-        source_channel=src_channel_id,
-        sender=sender_addr,
-        receiver=receiver_addr,
-        timeout_timestamp=time.time_ns() + 600 * 10**9,
-        memo=memo,
+    msg = (
+        tx_pb2.MsgTransfer(  # pylint: disable=no-member
+            source_port="transfer",
+            source_channel=src_channel_id,
+            sender=sender_addr,
+            receiver=receiver_addr,
+            timeout_timestamp=time.time_ns() + 600 * 10**9,
+            memo=memo,
+        )
+        if memo
+        else tx_pb2.MsgTransfer(  # pylint: disable=no-member
+            source_port="transfer",
+            source_channel=src_channel_id,
+            sender=sender_addr,
+            receiver=receiver_addr,
+            timeout_timestamp=time.time_ns() + 600 * 10**9,
+        )
     )
+
     msg.token.CopyFrom(
         coin_pb2.Coin(  # pylint: disable=maybe-no-member
             denom=denom, amount=str(swap_balance)

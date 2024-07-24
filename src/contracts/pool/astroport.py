@@ -119,7 +119,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         self.endpoints = endpoints["http"]
         self.session = session
         self.grpc_channels = grpc_channels
-        self.swap_fee = 5000
+        self.swap_fee = int(self.chain_gas_price * self.swap_gas_limit)
 
     async def __exchange_rate(
         self, asset_a: Token | NativeToken, asset_b: Token | NativeToken, amount: int

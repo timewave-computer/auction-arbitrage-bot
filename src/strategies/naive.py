@@ -148,9 +148,12 @@ async def strategy(
                     r, "info", "Route executed with profit %d", [r.realized_profit]
                 )
 
-            r.status = Status.EXECUTED
+            if r.route[-1].executed:
+                r.status = Status.EXECUTED
 
-            ctx.log_route(r, "info", "Executed route successfully", [])
+                ctx.log_route(r, "info", "Executed route successfully", [])
+            else:
+                ctx.log_route(r, "info", "Route aborted", [])
         except Exception:
             ctx.log_route(
                 r,
@@ -248,29 +251,22 @@ async def eval_route(
     # Ensure that there is at least 5k of the base chain denom
     # at all times
     if ctx.cli_args["base_denom"] == "untrn":
-        gas_base_denom += int(
-            sum(
-                (
-                    (
-                        int(
-                            sum((leg.backend.swap_fee for leg in legs))
-                            * GAS_DISCOUNT_BATCHED
-                        )
-                        if len(list(legs)) > 1
-                        else sum((leg.backend.swap_fee for leg in legs))
-                    )
-                    for (_, legs) in groupby(
-                        route, key=lambda elem: elem.backend.chain_id
-                    )
-                )
-            )
-        )
+        gas_base_denom += int(sum((leg.backend.swap_fee for leg in legs)))
 
         for i, leg in enumerate(route[:-1]):
             next_leg = route[i + 1]
 
             if leg.backend.chain_id != next_leg.backend.chain_id:
                 gas_base_denom += IBC_TRANSFER_GAS
+
+    ctx.log_route(
+        r,
+        "info",
+        "Route will cost %d to execute",
+        [
+            gas_base_denom,
+        ],
+    )
 
     starting_amt = state.balance - gas_base_denom
 
