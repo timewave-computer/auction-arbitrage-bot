@@ -29,7 +29,7 @@ from cosmos.base.v1beta1.coin_pb2 import Coin
 from cosmpy.crypto.address import Address
 
 
-MAX_SPREAD = "0.5"
+MAX_SPREAD = "0.1"
 
 
 @dataclass
