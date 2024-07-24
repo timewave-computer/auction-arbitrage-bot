@@ -3,6 +3,7 @@ Implements an arbitrage strategy with an arbitrary number
 of hops using all available providers.
 """
 
+import traceback
 from itertools import groupby
 import asyncio
 import random
@@ -150,8 +151,13 @@ async def strategy(
             r.status = Status.EXECUTED
 
             ctx.log_route(r, "info", "Executed route successfully", [])
-        except Exception as e:
-            ctx.log_route(r, "error", "Arb failed %s: %s", [fmt_route(route), e])
+        except Exception:
+            ctx.log_route(
+                r,
+                "error",
+                "Arb failed %s: %s",
+                [fmt_route(route), traceback.format_exc()],
+            )
 
             r.status = Status.FAILED
 
