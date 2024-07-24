@@ -98,8 +98,6 @@ python main.py --help
 
 The bot may also be supplied a command (an argument with no hyphens). The available commands are as follows:
 
-* `dump`: Loads all known pools, and writes discovered pools to a file, exiting immediately after. Results will be written in JSON format, following conventions outlined below.
-  * Sample execution: `WALLET_MNEMONIC=<wallet_mnemonic> python main.py dump`
 * `daemon`: Spawns the searcher event-loop as a long-running background "daemon" process, after initial setup. Exits the init script after spawning the daemon, leaving the daemon running in the background.
 * `hist`: Shows summary statistics for the bot's execution, including a lot of all recently completed orders.
 * `hist show <id>`: Shows execution logs for a particular order, as well as the execution plan for the order.

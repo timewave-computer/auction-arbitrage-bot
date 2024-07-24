@@ -44,7 +44,7 @@ MAX_POOL_LIQUIDITY_TRADE = Decimal("0.1")
 The amount of the summed gas limit that will be consumed if messages
 are batched together.
 """
-GAS_DISCOUNT_BATCHED = Decimal("0.9`")
+GAS_DISCOUNT_BATCHED = Decimal("0.9")
 
 
 IBC_TRANSFER_GAS = 1000
