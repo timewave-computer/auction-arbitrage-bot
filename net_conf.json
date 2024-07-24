@@ -1,0 +1,14 @@
+{
+  "neutron-1": {
+    "http": ["https://neutron-rest.publicnode.com"],
+    "grpc": ["grpc+https://neutron-grpc.publicnode.com:443"]
+  },
+  "osmosis-1": {
+    "http": ["https://lcd.osmosis.zone"],
+    "grpc": ["grpc+https://osmosis-grpc.publicnode.com:443"]
+  },
+  "phoenix-1": {
+    "http": ["https://terra-lcd.publicnode.com:443"],
+    "grpc": ["grpc+https://terra-grpc.publicnode.com:443"]
+  }
+}
