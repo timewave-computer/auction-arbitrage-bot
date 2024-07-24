@@ -133,7 +133,7 @@ async def exec_arb(
         leg, to_swap = to_execute.popleft()
 
         balance_resp = try_multiple_clients(
-            ctx.clients[leg.backend.chain_id.split("-")[0]],
+            ctx.clients[leg.backend.chain_id],
             lambda client: client.query_bank_balance(
                 Address(ctx.wallet.public_key(), prefix=leg.backend.chain_prefix),
                 leg.in_asset(),
@@ -280,7 +280,7 @@ async def exec_arb(
             )
 
             acc = try_multiple_clients_fatal(
-                ctx.clients[leg.backend.chain_id.split("-")[0]],
+                ctx.clients[leg.backend.chain_id],
                 lambda client: client.query_account(
                     str(
                         Address(
