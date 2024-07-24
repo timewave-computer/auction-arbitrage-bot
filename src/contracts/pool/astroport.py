@@ -25,7 +25,6 @@ from src.util import (
 )
 import aiohttp
 import grpc
-from google.protobuf.message import Message
 from cosmwasm.wasm.v1.tx_pb2 import MsgExecuteContract
 from cosmos.base.v1beta1.coin_pb2 import Coin
 from cosmpy.crypto.address import Address
@@ -216,30 +215,29 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         wallet: LocalWallet,
         assets: tuple[Token | NativeToken, Token | NativeToken],
         amount_min_amount: tuple[int, int],
-    ) -> Message:
+    ) -> Any:
         asset_a, asset_b = assets
         amount, min_amount = amount_min_amount
 
-        return cast(
-            Message,
-            MsgExecuteContract(
-                sender=str(Address(wallet.public_key(), prefix=self.chain_prefix)),
-                contract=self.contract_info.address,
-                msg=json.dumps(
-                    {
-                        "swap": {
-                            "offer_asset": {
-                                "info": token_to_asset_info(asset_a),
-                                "amount": str(amount),
-                            },
-                            "ask_asset_info": token_to_asset_info(asset_b),
-                            "max_spread": MAX_SPREAD,
-                        }
+        msg = MsgExecuteContract(
+            sender=str(Address(wallet.public_key(), prefix=self.chain_prefix)),
+            contract=self.contract_info.address,
+            msg=json.dumps(
+                {
+                    "swap": {
+                        "offer_asset": {
+                            "info": token_to_asset_info(asset_a),
+                            "amount": str(amount),
+                        },
+                        "ask_asset_info": token_to_asset_info(asset_b),
+                        "max_spread": MAX_SPREAD,
                     }
-                ),
-                funds=Coin(denom=token_to_addr(asset_a), amount=amount),
+                }
             ),
+            funds=Coin(denom=token_to_addr(asset_a), amount=str(amount)),
         )
+
+        return msg
 
     async def __balance(self, asset: Token | NativeToken) -> int:
         resp = await try_query_multiple(
@@ -281,7 +279,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
 
     def swap_msg_asset_a(
         self, wallet: LocalWallet, amount: int, min_amount: int
-    ) -> Message:
+    ) -> Any:
         return self.__swap_msg(
             wallet,
             (self.asset_a_denom, self.asset_b_denom),
@@ -293,7 +291,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         wallet: LocalWallet,
         amount: int,
         min_amount: int,
-    ) -> Message:
+    ) -> Any:
         return self.__swap_msg(
             wallet,
             (self.asset_b_denom, self.asset_a_denom),

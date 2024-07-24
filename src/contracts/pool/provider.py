@@ -8,7 +8,6 @@ from typing import Any, Optional, cast
 from abc import ABC, abstractmethod
 from cosmpy.aerial.wallet import LocalWallet
 from cosmpy.aerial.tx_helpers import SubmittedTx
-from google.protobuf.message import Message
 from cosmpy.aerial.tx import Transaction
 
 
@@ -120,7 +119,7 @@ class PoolProvider(ABC):
     @abstractmethod
     def swap_msg_asset_a(
         self, wallet: LocalWallet, amount: int, min_amount: int
-    ) -> Message:
+    ) -> Any:
         """
         Creates a protobuf message for executing the swap in this pool
         without executing the swap.
@@ -131,7 +130,7 @@ class PoolProvider(ABC):
     @abstractmethod
     def swap_msg_asset_b(
         self, wallet: LocalWallet, amount: int, min_amount: int
-    ) -> Message:
+    ) -> Any:
         """
         Creates a protobuf message for executing the swap in this pool
         without executing the swap.

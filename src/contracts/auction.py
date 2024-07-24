@@ -22,7 +22,6 @@ from src.util import (
 )
 import aiohttp
 import grpc
-from google.protobuf.message import Message
 from cosmwasm.wasm.v1.tx_pb2 import MsgExecuteContract
 from cosmpy.crypto.address import Address
 from cosmos.base.v1beta1.coin_pb2 import Coin
@@ -147,15 +146,12 @@ class AuctionProvider(WithContract):
 
     def swap_msg_asset_a(
         self, wallet: LocalWallet, amount: int, min_amount: int
-    ) -> Message:
-        return cast(
-            Message,
-            MsgExecuteContract(
-                sender=str(Address(wallet.public_key(), prefix=self.chain_prefix)),
-                contract=self.contract_info.address,
-                msg=json.dumps({"bid": {}}),
-                funds=Coin(denom=self.asset_a_denom, amount=amount),
-            ),
+    ) -> Any:
+        return MsgExecuteContract(
+            sender=str(Address(wallet.public_key(), prefix=self.chain_prefix)),
+            contract=self.contract_info.address,
+            msg=json.dumps({"bid": {}}),
+            funds=Coin(denom=self.asset_a_denom, amount=amount),
         )
 
     def submit_swap_tx(self, tx: Transaction) -> SubmittedTx:

@@ -19,7 +19,6 @@ from src.util import (
     try_multiple_clients_fatal,
 )
 import aiohttp
-from google.protobuf.message import Message
 
 
 class OsmosisPoolProvider(PoolProvider):
@@ -147,7 +146,7 @@ class OsmosisPoolProvider(PoolProvider):
         wallet: LocalWallet,
         assets: tuple[str, str],
         amount_min_amount: tuple[int, int],
-    ) -> Message:
+    ) -> Any:
         asset_a, asset_b = assets
         amount, min_token_out_amount = amount_min_amount
 
@@ -165,7 +164,7 @@ class OsmosisPoolProvider(PoolProvider):
             token_out_min_amount=str(min_token_out_amount),
         )
 
-        return cast(Message, msg)
+        return msg
 
     async def __balance(self, asset: str) -> int:
         res = await try_multiple_rest_endpoints(
@@ -240,7 +239,7 @@ class OsmosisPoolProvider(PoolProvider):
         wallet: LocalWallet,
         amount: int,
         min_amount: int,
-    ) -> Message:  # pylint: disable=duplicate-code
+    ) -> Any:  # pylint: disable=duplicate-code
         return self.__swap_msg(
             wallet,
             (self.asset_a_denom, self.asset_b_denom),
@@ -252,7 +251,7 @@ class OsmosisPoolProvider(PoolProvider):
         wallet: LocalWallet,
         amount: int,
         min_amount: int,
-    ) -> Message:
+    ) -> Any:
         return self.__swap_msg(
             wallet,
             (self.asset_b_denom, self.asset_a_denom),

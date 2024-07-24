@@ -296,7 +296,7 @@ async def exec_arb(
             for msg in msgs:
                 tx.add_message(msg)
 
-            ctx.log_route(route_ent, "info", "Built arb message chain")
+            ctx.log_route(route_ent, "info", "Built arb message chain", [])
 
             gas_limit = int(
                 (

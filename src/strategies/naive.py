@@ -252,8 +252,10 @@ async def eval_route(
             sum(
                 (
                     (
-                        sum((leg.backend.swap_fee for leg in legs))
-                        * GAS_DISCOUNT_BATCHED
+                        int(
+                            sum((leg.backend.swap_fee for leg in legs))
+                            * GAS_DISCOUNT_BATCHED
+                        )
                         if len(list(legs)) > 1
                         else sum((leg.backend.swap_fee for leg in legs))
                     )
