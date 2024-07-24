@@ -2,6 +2,7 @@
 Implements an arbitrage strategy based on bellman ford.
 """
 
+import traceback
 import random
 import logging
 from decimal import Decimal
@@ -329,8 +330,10 @@ async def strategy(
         r.status = Status.EXECUTED
 
         ctx.log_route(r, "info", "Executed route successfully: %s", [fmt_route(route)])
-    except Exception as e:
-        ctx.log_route(r, "error", "Arb failed %s: %s", [fmt_route(route), e])
+    except Exception:
+        ctx.log_route(
+            r, "error", "Arb failed %s: %s", [fmt_route(route), traceback.format_exc()]
+        )
 
         r.status = Status.FAILED
     finally:
