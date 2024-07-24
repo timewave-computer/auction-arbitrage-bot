@@ -54,7 +54,7 @@ class AuctionProvider(WithContract):
         self.chain_prefix = chain_info["chain_prefix"]
         self.chain_fee_denom = chain_info["chain_fee_denom"]
         self.chain_transfer_channel_ids = chain_info["chain_transfer_channel_ids"]
-        self.chain_gas_price = Decimal("0.01")
+        self.chain_gas_price = Decimal("0.0053")
         self.swap_gas_limit = 500000
         self.kind = "auction"
         self.endpoints = endpoints["http"]
