@@ -237,7 +237,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
                         }
                     }
                 ),
-                funds=Coin(denom=asset_a, amount=amount),
+                funds=Coin(denom=token_to_addr(asset_a), amount=amount),
             ),
         )
 
