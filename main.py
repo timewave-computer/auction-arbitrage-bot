@@ -63,7 +63,7 @@ async def main() -> None:
     parser.add_argument(
         "-pm",
         "--profit_margin",
-        default=100,
+        default=10000,
     )
     parser.add_argument(
         "-l",

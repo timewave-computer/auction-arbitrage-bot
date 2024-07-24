@@ -222,19 +222,21 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         msg = MsgExecuteContract(
             sender=str(Address(wallet.public_key(), prefix=self.chain_prefix)),
             contract=self.contract_info.address,
-            msg=json.dumps(
-                {
-                    "swap": {
-                        "offer_asset": {
-                            "info": token_to_asset_info(asset_a),
-                            "amount": str(amount),
-                        },
-                        "ask_asset_info": token_to_asset_info(asset_b),
-                        "max_spread": MAX_SPREAD,
+            msg=str.encode(
+                json.dumps(
+                    {
+                        "swap": {
+                            "offer_asset": {
+                                "info": token_to_asset_info(asset_a),
+                                "amount": str(amount),
+                            },
+                            "ask_asset_info": token_to_asset_info(asset_b),
+                            "max_spread": MAX_SPREAD,
+                        }
                     }
-                }
+                )
             ),
-            funds=Coin(denom=token_to_addr(asset_a), amount=str(amount)),
+            funds=[Coin(denom=token_to_addr(asset_a), amount=str(amount))],
         )
 
         return msg

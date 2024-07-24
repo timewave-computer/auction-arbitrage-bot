@@ -44,7 +44,7 @@ MAX_POOL_LIQUIDITY_TRADE = Decimal("0.1")
 The amount of the summed gas limit that will be consumed if messages
 are batched together.
 """
-GAS_DISCOUNT_BATCHED = Decimal("0.5")
+GAS_DISCOUNT_BATCHED = Decimal("0.9`")
 
 
 IBC_TRANSFER_GAS = 1000
@@ -309,9 +309,9 @@ async def exec_arb(
             )
 
             tx.seal(
-                SigningCfg.direct(ctx.wallet.public_key(), acc.sequence),
-                gas_limit,
-                gas,
+                signing_cfgs=SigningCfg.direct(ctx.wallet.public_key(), acc.sequence),
+                gas_limit=gas_limit,
+                fee=f"{gas}{leg.backend.chain_fee_denom}",
             )
             tx.sign(ctx.wallet.signer(), leg.backend.chain_id, acc.number)
             tx.complete()

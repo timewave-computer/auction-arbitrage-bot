@@ -150,8 +150,8 @@ class AuctionProvider(WithContract):
         return MsgExecuteContract(
             sender=str(Address(wallet.public_key(), prefix=self.chain_prefix)),
             contract=self.contract_info.address,
-            msg=json.dumps({"bid": {}}),
-            funds=Coin(denom=self.asset_a_denom, amount=amount),
+            msg=str.encode(json.dumps({"bid": {}})),
+            funds=[Coin(denom=self.asset_a_denom, amount=amount)],
         )
 
     def submit_swap_tx(self, tx: Transaction) -> SubmittedTx:
