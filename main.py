@@ -4,6 +4,7 @@
 Implements a command-line interface for running arbitrage strategies.
 """
 
+import traceback
 import asyncio
 from multiprocessing import Process
 import json
@@ -426,8 +427,10 @@ async def main() -> None:
                     try:
                         async with asyncio.timeout(args.poll_interval):
                             await sched.poll()
-                    except Exception as e:
-                        logger.info("Arbitrage round failed: %s", e)
+                    except Exception:
+                        logger.info(
+                            "Arbitrage round failed: %s", traceback.format_exc()
+                        )
 
                         continue
 
