@@ -4,7 +4,6 @@ Defines common utilities shared across arbitrage strategies.
 
 import json
 from decimal import Decimal
-from collections import deque
 import operator
 from functools import reduce
 import logging
