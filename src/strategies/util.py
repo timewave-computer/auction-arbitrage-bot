@@ -142,10 +142,21 @@ async def exec_arb(
         [len(route), fmt_route(route)],
     )
 
-    to_execute = collapse_route(zip(route, quantities))
+    to_execute: list[list[tuple[Leg, int]]] = collapse_route(zip(route, quantities))
+
+    ctx.log_route(
+        route_ent,
+        "info",
+        "Queueing candidpate arbitrage opportunity with atomized execution plan: %s",
+        [
+            len(route),
+            [fmt_route([leg for leg, _ in sublegs]) for sublegs in to_execute],
+        ],
+    )
 
     for sublegs in to_execute:
-        leg, to_swap = sublegs[0]
+        leg_to_swap: tuple[Leg, int] = sublegs[0]
+        (leg, to_swap) = leg_to_swap
 
         # Log legs on the same chain
         if len(sublegs) > 1:
