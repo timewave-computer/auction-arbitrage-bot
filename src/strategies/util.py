@@ -2,13 +2,14 @@
 Defines common utilities shared across arbitrage strategies.
 """
 
+from itertools import groupby
 import json
 from decimal import Decimal
 import operator
 from functools import reduce
 import logging
 import time
-from typing import Optional, Any
+from typing import Optional, Any, Iterator
 from src.contracts.route import Leg, Route
 from src.contracts.auction import AuctionProvider
 from src.contracts.pool.provider import PoolProvider
@@ -32,7 +33,6 @@ from cosmpy.crypto.address import Address
 from cosmpy.aerial.tx import Transaction, SigningCfg
 from cosmpy.aerial.tx_helpers import SubmittedTx
 from ibc.applications.transfer.v1 import tx_pb2
-from itertools import groupby
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +88,22 @@ def fmt_route_debug(route: list[Leg]) -> str:
     )
 
 
+def collapse_route(
+    route_legs_quantities: Iterator[tuple[Leg, int]]
+) -> list[list[tuple[Leg, int]]]:
+    """
+    Groups legs of the route by common consecutive chain ID's, meaning they can be
+    exceuted atomically.
+    """
+
+    return [
+        list(sublegs)
+        for _, sublegs in groupby(
+            route_legs_quantities, lambda r_q: r_q[0].backend.chain_id
+        )
+    ]
+
+
 async def exec_arb(
     route_ent: Route,
     profit: int,
@@ -126,18 +142,18 @@ async def exec_arb(
         [len(route), fmt_route(route)],
     )
 
-    to_execute = groupby(zip(route, quantities), lambda r_q: r_q[0].backend.chain_id)
+    to_execute = collapse_route(zip(route, quantities))
 
-    for _, sublegs in to_execute:
-        leg, to_swap = list(sublegs)[0]
+    for sublegs in to_execute:
+        leg, to_swap = sublegs[0]
 
         # Log legs on the same chain
-        if len(list(sublegs)) > 1:
+        if len(sublegs) > 1:
             ctx.log_route(
                 route_ent,
                 "info",
                 "%d legs are atomic and will be executed in one tx: %s",
-                [len(list(sublegs)), fmt_route([leg for (leg, to_swap) in sublegs])],
+                [len(sublegs), fmt_route([leg for (leg, to_swap) in sublegs])],
             )
 
         ctx.log_route(
@@ -236,7 +252,7 @@ async def exec_arb(
 
         # If there are multiple legs, build them as one large
         # transaction
-        if len(list(sublegs)) > 1:
+        if len(sublegs) > 1:
             msgs = (
                 (
                     leg.backend.swap_msg_asset_b(ctx.wallet, to_swap, 0)
