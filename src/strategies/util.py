@@ -149,7 +149,6 @@ async def exec_arb(
         "info",
         "Queueing candidpate arbitrage opportunity with atomized execution plan: %s",
         [
-            len(route),
             [fmt_route([leg for leg, _ in sublegs]) for sublegs in to_execute],
         ],
     )
