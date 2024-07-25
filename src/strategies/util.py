@@ -17,7 +17,6 @@ from src.contracts.pool.osmosis import OsmosisPoolProvider
 from src.contracts.pool.astroport import (
     NeutronAstroportPoolProvider,
 )
-
 from src.util import (
     IBC_TRANSFER_TIMEOUT_SEC,
     IBC_TRANSFER_POLL_INTERVAL_SEC,
@@ -34,6 +33,7 @@ from cosmpy.crypto.address import Address
 from cosmpy.aerial.tx import Transaction, SigningCfg
 from cosmpy.aerial.tx_helpers import SubmittedTx
 from ibc.applications.transfer.v1 import tx_pb2
+from itertools import groupby
 
 logger = logging.getLogger(__name__)
 
@@ -127,48 +127,19 @@ async def exec_arb(
         [len(route), fmt_route(route)],
     )
 
-    to_execute: deque[tuple[Leg, int]] = deque(zip(route, quantities))
+    to_execute = groupby(zip(route, quantities), lambda r_q: r_q[0].backend.chain_id)
 
-    while len(to_execute) > 0:
-        leg, to_swap = to_execute.popleft()
-
-        balance_resp = try_multiple_clients(
-            ctx.clients[leg.backend.chain_id],
-            lambda client: client.query_bank_balance(
-                Address(ctx.wallet.public_key(), prefix=leg.backend.chain_prefix),
-                leg.in_asset(),
-            ),
-        )
-
-        if not balance_resp:
-            continue
-
-        to_swap = min(to_swap, balance_resp)
-
-        # Gather all sequential legs on the same chain
-        sublegs = [(leg, to_swap)]
-
-        while len(to_execute) > 0:
-            subleg, s_to_swap = to_execute.popleft()
-
-            if subleg.backend.chain_id != leg.backend.chain_id:
-                to_execute.appendleft((subleg, s_to_swap))
-
-                break
-
-            sublegs.append((subleg, s_to_swap))
+    for _, sublegs in to_execute:
+        leg, to_swap = list(sublegs)[0]
 
         # Log legs on the same chain
-        if len(sublegs) > 1:
+        if len(list(sublegs)) > 1:
             ctx.log_route(
                 route_ent,
                 "info",
                 "%d legs are atomic and will be executed in one tx: %s",
-                [len(sublegs), fmt_route([leg for (leg, to_swap) in sublegs])],
+                [len(list(sublegs)), fmt_route([leg for (leg, to_swap) in sublegs])],
             )
-
-        if not balance_resp:
-            raise ValueError("Couldn't get balance.")
 
         ctx.log_route(
             route_ent,
@@ -192,8 +163,6 @@ async def exec_arb(
                 )
             ],
         )
-
-        leg, to_swap = sublegs[0]
 
         # The funds are not already on the current chain, so they need to be moved
         if prev_leg and prev_leg.backend.chain_id != leg.backend.chain_id:
@@ -268,7 +237,7 @@ async def exec_arb(
 
         # If there are multiple legs, build them as one large
         # transaction
-        if len(sublegs) > 1:
+        if len(list(sublegs)) > 1:
             msgs = (
                 (
                     leg.backend.swap_msg_asset_b(ctx.wallet, to_swap, 0)

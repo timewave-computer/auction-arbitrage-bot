@@ -142,14 +142,13 @@ async def strategy(
             if balance_after_resp:
                 r.realized_profit = balance_after_resp - balance_prior
 
-                ctx.log_route(
-                    r, "info", "Route executed with profit %d", [r.realized_profit]
-                )
-
             if r.route[-1].executed:
                 r.status = Status.EXECUTED
 
                 ctx.log_route(r, "info", "Executed route successfully", [])
+                ctx.log_route(
+                    r, "info", "Route executed with profit %d", [r.realized_profit]
+                )
             else:
                 ctx.log_route(r, "info", "Route aborted", [])
         except Exception:

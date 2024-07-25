@@ -44,7 +44,7 @@ class PoolProvider(ABC):
 
     chain_prefix: str
 
-    chain_gas_price: int
+    chain_gas_price: Decimal
 
     chain_fee_denom: str
 
