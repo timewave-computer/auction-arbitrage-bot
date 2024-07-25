@@ -156,7 +156,10 @@ async def strategy(
                 r,
                 "error",
                 "Arb failed %s: %s",
-                [fmt_route(route), traceback.format_exc()],
+                [
+                    fmt_route(route),
+                    traceback.format_exc().replace("\n", f"\n{r.uid}- Arb failed: "),
+                ],
             )
 
             r.status = Status.FAILED
