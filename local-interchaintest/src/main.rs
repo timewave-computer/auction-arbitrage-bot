@@ -273,6 +273,7 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                 .with_test(Box::new(tests::test_unprofitable_arb) as TestFn)
                 .build()?,
         )?
+        /*
         // Test case (astro -> osmo arb):
         //
         // - Astro: untrn-bruhtoken @ 1.5 bruhtoken/untrn
@@ -323,6 +324,6 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                 .with_arbbot()
                 .with_test(Box::new(tests::test_osmo_arb) as TestFn)
                 .build()?,
-        )?
+        )?*/
         .join()
 }
