@@ -17,6 +17,10 @@ import grpc
 
 logger = logging.getLogger(__name__)
 
+
+MAX_ROUTE_HISTORY_LEN = 200000
+
+
 TState = TypeVar("TState")
 
 
@@ -67,7 +71,9 @@ class Ctx(Generic[TState]):
 
         with open(self.cli_args["history_file"], "r", encoding="utf-8") as f:
             f.seek(0)
-            self.order_history = [load_route(json_route) for json_route in json.load(f)]
+            self.order_history = [
+                load_route(json_route) for json_route in json.load(f)
+            ][:-MAX_ROUTE_HISTORY_LEN]
 
         return self
 

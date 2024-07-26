@@ -74,6 +74,7 @@ async def main() -> None:
     parser.add_argument(
         "-df", "--deployments_file", default="contracts/deployments.json"
     )
+    parser.add_argument("-rt", "--rebalance_threshold", default=1000)
     parser.add_argument("cmd", nargs="*", default=None)
 
     args = parser.parse_args()
@@ -170,6 +171,7 @@ async def main() -> None:
                     "require_leg_types": args.require_leg_types,
                     "base_denom": args.base_denom,
                     "profit_margin": int(args.profit_margin),
+                    "rebalance_threshold": int(args.rebalance_threshold),
                     "wallet_mnemonic": os.environ.get("WALLET_MNEMONIC"),
                     "cmd": args.cmd,
                     "net_config": args.net_config,

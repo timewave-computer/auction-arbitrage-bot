@@ -2,7 +2,9 @@
 Defines common utilities shared across arbitrage strategies.
 """
 
+import random
 import traceback
+import asyncio
 from itertools import groupby
 import json
 from decimal import Decimal
@@ -10,7 +12,7 @@ import operator
 from functools import reduce
 import logging
 import time
-from typing import Optional, Any, Iterator
+from typing import Optional, Any, Iterator, AsyncGenerator, Union
 from src.contracts.route import Leg, Route
 from src.contracts.auction import AuctionProvider
 from src.contracts.pool.provider import PoolProvider
@@ -19,6 +21,7 @@ from src.contracts.pool.astroport import (
     NeutronAstroportPoolProvider,
 )
 from src.util import (
+    chain_info,
     IBC_TRANSFER_TIMEOUT_SEC,
     IBC_TRANSFER_POLL_INTERVAL_SEC,
     try_multiple_rest_endpoints,
@@ -27,6 +30,8 @@ from src.util import (
     DENOM_QUANTITY_ABORT_ARB,
     denom_route,
     denom_info_on_chain,
+    denom_info,
+    DenomChainInfo,
 )
 from src.scheduler import Ctx
 from cosmos.base.v1beta1 import coin_pb2
@@ -35,6 +40,7 @@ from cosmpy.aerial.tx import Transaction, SigningCfg
 from cosmpy.aerial.tx_helpers import SubmittedTx
 from cosmpy.aerial.wallet import LocalWallet
 from ibc.applications.transfer.v1 import tx_pb2
+from aiostream import stream
 
 logger = logging.getLogger(__name__)
 
@@ -429,6 +435,346 @@ async def exec_arb(
         ).executed = True
 
         prev_leg = leg
+
+
+async def rebalance_portfolio(
+    pools: dict[str, dict[str, list[PoolProvider]]],
+    auctions: dict[str, dict[str, AuctionProvider]],
+    ctx: Ctx[Any],
+) -> Ctx[Any]:
+    """
+    Sells any denoms on any chains we have endpoints for
+    that have a value in the base denom above the rebalancing threshold.
+    """
+
+    gas_denoms: set[str] = {
+        pool.chain_fee_denom
+        for pool_base in pools.values()
+        for pool_set in pool_base.values()
+        for pool in pool_set
+    }
+
+    # Sell qualifying denoms across all chains
+    for chain_id in ctx.endpoints.keys():
+        logger.info("Rebalancing portfolio for chain %s", chain_id)
+
+        chain_meta = await chain_info(chain_id, ctx.http_session)
+
+        if not chain_meta:
+            continue
+
+        # Find paths to sell all denoms
+        # If the resulting amount of untrn is greater
+        # than the threshold, execute the arb
+        denom_coins = try_multiple_clients(
+            ctx.clients[chain_id],
+            lambda client: client.query_bank_all_balances(
+                Address(
+                    ctx.wallet.public_key(),
+                    prefix=chain_meta.bech32_prefix,
+                ),
+            ),
+        )
+
+        if not denom_coins:
+            continue
+
+        # The base denom should not be rebalanced since that is what we are rebalancing to
+        qualifying_denoms_balances = (
+            (coin.denom, int(coin.amount))
+            for coin in denom_coins
+            if coin.denom != ctx.cli_args["base_denom"]
+        )
+
+        async def eval_sell_denom(denom: str, balance: int) -> None:
+            """
+            - Finds a route to sell the given denom
+            - Calculates the execution plan
+            - Executes the plan if the ending amount if greater than the
+            base denom liquidation threshold
+            """
+
+            if denom in gas_denoms:
+                return
+
+            logger.info("Rebalancing %d %s", balance, denom)
+
+            route_ent_route = await anext(
+                listen_routes_with_depth_dfs(
+                    ctx.cli_args["hops"],
+                    denom,
+                    ctx.cli_args["base_denom"],
+                    set(),
+                    pools,
+                    auctions,
+                    ctx,
+                )
+            )
+
+            if not route_ent_route:
+                logger.info("No route to rebalance %s; skipping", denom)
+
+                return
+
+            route_ent, route = route_ent_route
+
+            # For logging
+            _, execution_plan = await quantities_for_route_profit(
+                balance, route, route_ent, ctx, seek_profit=False
+            )
+
+            # The execution plan was aborted
+            if len(execution_plan) <= len(route):
+                ctx.log_route(
+                    route_ent,
+                    "info",
+                    "Insufficient execution planning for rebalancing for %s; skipping",
+                    [denom],
+                )
+
+                return
+
+            # Check that the execution plan results in a liquidatable quantity
+            if execution_plan[-1] < ctx.cli_args["rebalance_threshold"]:
+                ctx.log_route(
+                    route_ent,
+                    "info",
+                    "Not enough funds for rebalancing %s; skipping",
+                    [denom],
+                )
+
+                return
+
+            ctx.log_route(
+                route_ent, "info", "Executing rebalancing plan for %s", [denom]
+            )
+
+            # Execute the plan
+            route_ent.quantities = execution_plan
+            ctx.update_route(route_ent)
+
+            try:
+                await exec_arb(route_ent, 0, execution_plan, route, ctx)
+            except Exception:
+                ctx.log_route(
+                    route_ent,
+                    "error",
+                    "Arb failed - rebalancing of %s failed: %s",
+                    [
+                        denom,
+                        traceback.format_exc().replace(
+                            "\n",
+                            f"\n{route_ent.uid}- Arb failed - failed to rebalance funds: ",
+                        ),
+                    ],
+                )
+
+        await asyncio.gather(
+            *[
+                eval_sell_denom(denom, balance)
+                for denom, balance in qualifying_denoms_balances
+            ]
+        )
+
+    return ctx
+
+
+async def listen_routes_with_depth_dfs(
+    depth: int,
+    src: str,
+    dest: str,
+    required_leg_types: set[str],
+    pools: dict[str, dict[str, list[PoolProvider]]],
+    auctions: dict[str, dict[str, AuctionProvider]],
+    ctx: Ctx[Any],
+) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
+    denom_cache: dict[str, dict[str, list[str]]] = {}
+
+    start_pools: list[Union[AuctionProvider, PoolProvider]] = [
+        *auctions.get(src, {}).values(),
+        *(pool for pool_set in pools.get(src, {}).values() for pool in pool_set),
+    ]
+
+    start_legs: list[Leg] = [
+        Leg(
+            pool.asset_a if pool.asset_a() == src else pool.asset_b,
+            pool.asset_b if pool.asset_a() == src else pool.asset_a,
+            pool,
+        )
+        for pool in start_pools
+    ]
+
+    async def next_legs(
+        path: list[Leg],
+    ) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
+        nonlocal denom_cache
+
+        if len(path) >= 2 and not (
+            path[-1].in_asset() == path[-2].out_asset()
+            or path[-1].in_asset()
+            in [
+                denom
+                for denom_list in denom_cache[path[-2].out_asset()].values()
+                for denom in denom_list
+            ]
+        ):
+            return
+
+        # Only find `limit` pools
+        # with a depth less than `depth
+        if len(path) > depth:
+            return
+
+        # We must be finding the next leg
+        # in an already existing path
+        assert len(path) > 0
+
+        prev_pool = path[-1]
+
+        # This leg **must** be connected to the previous
+        # by construction, so therefore, if any
+        # of the denoms match the starting denom, we are
+        # finished, and the circuit is closed
+        if len(path) > 1 and dest == prev_pool.out_asset():
+            if len(required_leg_types - set((fmt_route_leg(leg) for leg in path))) > 0:
+                return
+
+            r: Route = ctx.queue_route(path, 0, 0, [])
+
+            yield (r, path)
+
+            return
+
+        # Find all pools that start where this leg ends
+        # the "ending" point of this leg is defined
+        # as its denom which is not shared by the
+        # leg before it.
+
+        # note: the previous leg's denoms will
+        # be in the denom cache by construction
+        # if this is the first leg, then there is
+        # no more work to do
+        end = prev_pool.out_asset()
+
+        if end not in denom_cache:
+            try:
+                denom_infos = await denom_info(
+                    prev_pool.backend.chain_id, end, ctx.http_session, ctx.denom_map
+                )
+
+                denom_cache[end] = {
+                    info[0].chain_id: [i.denom for i in info]
+                    for info in (
+                        denom_infos
+                        + [
+                            [
+                                DenomChainInfo(
+                                    denom=end,
+                                    chain_id=prev_pool.backend.chain_id,
+                                )
+                            ]
+                        ]
+                    )
+                    if len(info) > 0 and info[0].chain_id
+                }
+            except asyncio.TimeoutError:
+                return
+
+        # A pool is a candidate to be a next pool if it has a denom
+        # contained in denom_cache[end] or one of its denoms *is* end
+        next_pools: list[Leg] = list(
+            {
+                # Atomic pools
+                *(
+                    Leg(
+                        (
+                            auction.asset_a
+                            if auction.asset_a() == end
+                            else auction.asset_b
+                        ),
+                        (
+                            auction.asset_a
+                            if auction.asset_a() != end
+                            else auction.asset_b
+                        ),
+                        auction,
+                    )
+                    for auction in auctions.get(end, {}).values()
+                ),
+                *(
+                    Leg(
+                        pool.asset_a if pool.asset_a() == end else pool.asset_b,
+                        pool.asset_a if pool.asset_a() != end else pool.asset_b,
+                        pool,
+                    )
+                    for pool_set in pools.get(end, {}).values()
+                    for pool in pool_set
+                ),
+                # IBC pools
+                *(
+                    Leg(
+                        (
+                            auction.asset_a
+                            if auction.asset_a() == src or auction.asset_a() == denom
+                            else auction.asset_b
+                        ),
+                        (
+                            auction.asset_a
+                            if auction.asset_a() != src and auction.asset_a() != denom
+                            else auction.asset_b
+                        ),
+                        auction,
+                    )
+                    for denom_set in denom_cache[end].values()
+                    for denom in denom_set
+                    for auction in auctions.get(denom, {}).values()
+                    if auction.chain_id != prev_pool.backend.chain_id
+                ),
+                *(
+                    Leg(
+                        (
+                            pool.asset_a
+                            if pool.asset_a() == src or pool.asset_a() == denom
+                            else pool.asset_b
+                        ),
+                        (
+                            pool.asset_a
+                            if pool.asset_a() != src and pool.asset_a() != denom
+                            else pool.asset_b
+                        ),
+                        pool,
+                    )
+                    for denom_set in denom_cache[end].values()
+                    for denom in denom_set
+                    for pool_set in pools.get(denom, {}).values()
+                    for pool in pool_set
+                    if pool.chain_id != prev_pool.backend.chain_id
+                ),
+            }
+        )
+        next_pools = [x for x in next_pools if x not in path]
+
+        if len(next_pools) == 0:
+            return
+
+        random.shuffle(next_pools)
+
+        routes = stream.merge(*[next_legs(path + [pool]) for pool in next_pools])
+
+        async with routes.stream() as streamer:
+            async for route in streamer:
+                yield route
+
+    next_jobs = [next_legs([leg]) for leg in start_legs]
+
+    if len(next_jobs) == 0:
+        return
+
+    routes = stream.merge(*next_jobs)
+
+    async with routes.stream() as streamer:
+        async for route in streamer:
+            yield route
 
 
 async def recover_funds(

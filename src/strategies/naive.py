@@ -4,9 +4,7 @@ of hops using all available providers.
 """
 
 import traceback
-import asyncio
-import random
-from typing import List, Union, Optional, Self, AsyncGenerator
+from typing import List, Optional, Self
 from dataclasses import dataclass
 import logging
 from src.contracts.route import Leg, Status, Route
@@ -14,22 +12,20 @@ from src.contracts.pool.provider import PoolProvider
 from src.contracts.auction import AuctionProvider
 from src.scheduler import Ctx
 from src.strategies.util import (
+    rebalance_portfolio,
+    listen_routes_with_depth_dfs,
     quantities_for_route_profit,
     route_base_denom_profit,
     exec_arb,
     fmt_route,
     fmt_route_debug,
-    fmt_route_leg,
     recover_funds,
     IBC_TRANSFER_GAS,
 )
 from src.util import (
-    DenomChainInfo,
-    denom_info,
     try_multiple_clients,
 )
 from cosmpy.crypto.address import Address
-from aiostream import stream
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +89,13 @@ async def strategy(
     if ctx.cli_args["cmd"] == "dump":
         return ctx.cancel()
 
+    logger.info("Rebalancing portfolio")
+
+    try:
+        await rebalance_portfolio(pools, auctions, ctx)
+    except ValueError as e:
+        logger.error("Failed to rebalance portfolio: %s", e)
+
     # Report route stats to user
     logger.info(
         "Finding profitable routes",
@@ -101,11 +104,19 @@ async def strategy(
     async for r, route in listen_routes_with_depth_dfs(
         ctx.cli_args["hops"],
         ctx.cli_args["base_denom"],
+        ctx.cli_args["base_denom"],
         set(ctx.cli_args["require_leg_types"]),
         pools,
         auctions,
         ctx,
     ):
+        resp = await eval_route(r, route, ctx)
+
+        if not resp:
+            continue
+
+        r, route = resp
+
         ctx.log_route(r, "info", "Route queued: %s", [fmt_route(route)])
 
         if not state.balance:
@@ -215,11 +226,10 @@ def route_gas(route: list[Leg]) -> int:
 
 
 async def eval_route(
+    r: Route,
     route: list[Leg],
     ctx: Ctx[State],
 ) -> Optional[tuple[Route, list[Leg]]]:
-    r = ctx.queue_route(route, 0, 0, [])
-
     ctx.log_route(
         r, "info", "Evaluating route for profitability: %s", [fmt_route(route)]
     )
@@ -335,206 +345,3 @@ async def leg_liquidity(leg: Leg) -> tuple[int, int]:
         await leg.backend.balance_asset_a(),
         await leg.backend.balance_asset_b(),
     )
-
-
-async def listen_routes_with_depth_dfs(
-    depth: int,
-    src: str,
-    required_leg_types: set[str],
-    pools: dict[str, dict[str, List[PoolProvider]]],
-    auctions: dict[str, dict[str, AuctionProvider]],
-    ctx: Ctx[State],
-) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
-    denom_cache: dict[str, dict[str, list[str]]] = {}
-
-    start_pools: list[Union[AuctionProvider, PoolProvider]] = [
-        *auctions.get(src, {}).values(),
-        *(pool for pool_set in pools.get(src, {}).values() for pool in pool_set),
-    ]
-
-    start_legs: list[Leg] = [
-        Leg(
-            pool.asset_a if pool.asset_a() == src else pool.asset_b,
-            pool.asset_b if pool.asset_a() == src else pool.asset_a,
-            pool,
-        )
-        for pool in start_pools
-    ]
-
-    async def next_legs(
-        path: list[Leg],
-    ) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
-        nonlocal denom_cache
-
-        if len(path) >= 2 and not (
-            path[-1].in_asset() == path[-2].out_asset()
-            or path[-1].in_asset()
-            in [
-                denom
-                for denom_list in denom_cache[path[-2].out_asset()].values()
-                for denom in denom_list
-            ]
-        ):
-            return
-
-        # Only find `limit` pools
-        # with a depth less than `depth
-        if len(path) > depth:
-            return
-
-        # We must be finding the next leg
-        # in an already existing path
-        assert len(path) > 0
-
-        prev_pool = path[-1]
-
-        # This leg **must** be connected to the previous
-        # by construction, so therefore, if any
-        # of the denoms match the starting denom, we are
-        # finished, and the circuit is closed
-        if len(path) > 1 and src == prev_pool.out_asset():
-            if (
-                len(required_leg_types - set((fmt_route_leg(leg) for leg in path))) > 0
-                or len(path) < depth
-            ):
-                return
-
-            resp = await eval_route(path, ctx)
-
-            if not resp:
-                return
-
-            yield resp
-
-            return
-
-        # Find all pools that start where this leg ends
-        # the "ending" point of this leg is defined
-        # as its denom which is not shared by the
-        # leg before it.
-
-        # note: the previous leg's denoms will
-        # be in the denom cache by construction
-        # if this is the first leg, then there is
-        # no more work to do
-        end = prev_pool.out_asset()
-
-        if end not in denom_cache:
-            try:
-                denom_infos = await denom_info(
-                    prev_pool.backend.chain_id, end, ctx.http_session, ctx.denom_map
-                )
-
-                denom_cache[end] = {
-                    info[0].chain_id: [i.denom for i in info]
-                    for info in (
-                        denom_infos
-                        + [
-                            [
-                                DenomChainInfo(
-                                    denom=end,
-                                    chain_id=prev_pool.backend.chain_id,
-                                )
-                            ]
-                        ]
-                    )
-                    if len(info) > 0 and info[0].chain_id
-                }
-            except asyncio.TimeoutError:
-                return
-
-        # A pool is a candidate to be a next pool if it has a denom
-        # contained in denom_cache[end] or one of its denoms *is* end
-        next_pools: list[Leg] = list(
-            {
-                # Atomic pools
-                *(
-                    Leg(
-                        (
-                            auction.asset_a
-                            if auction.asset_a() == end
-                            else auction.asset_b
-                        ),
-                        (
-                            auction.asset_a
-                            if auction.asset_a() != end
-                            else auction.asset_b
-                        ),
-                        auction,
-                    )
-                    for auction in auctions.get(end, {}).values()
-                ),
-                *(
-                    Leg(
-                        pool.asset_a if pool.asset_a() == end else pool.asset_b,
-                        pool.asset_a if pool.asset_a() != end else pool.asset_b,
-                        pool,
-                    )
-                    for pool_set in pools.get(end, {}).values()
-                    for pool in pool_set
-                ),
-                # IBC pools
-                *(
-                    Leg(
-                        (
-                            auction.asset_a
-                            if auction.asset_a() == src or auction.asset_a() == denom
-                            else auction.asset_b
-                        ),
-                        (
-                            auction.asset_a
-                            if auction.asset_a() != src and auction.asset_a() != denom
-                            else auction.asset_b
-                        ),
-                        auction,
-                    )
-                    for denom_set in denom_cache[end].values()
-                    for denom in denom_set
-                    for auction in auctions.get(denom, {}).values()
-                    if auction.chain_id != prev_pool.backend.chain_id
-                ),
-                *(
-                    Leg(
-                        (
-                            pool.asset_a
-                            if pool.asset_a() == src or pool.asset_a() == denom
-                            else pool.asset_b
-                        ),
-                        (
-                            pool.asset_a
-                            if pool.asset_a() != src and pool.asset_a() != denom
-                            else pool.asset_b
-                        ),
-                        pool,
-                    )
-                    for denom_set in denom_cache[end].values()
-                    for denom in denom_set
-                    for pool_set in pools.get(denom, {}).values()
-                    for pool in pool_set
-                    if pool.chain_id != prev_pool.backend.chain_id
-                ),
-            }
-        )
-        next_pools = [x for x in next_pools if x not in path]
-
-        if len(next_pools) == 0:
-            return
-
-        random.shuffle(next_pools)
-
-        routes = stream.merge(*[next_legs(path + [pool]) for pool in next_pools])
-
-        async with routes.stream() as streamer:
-            async for route in streamer:
-                yield route
-
-    next_jobs = [next_legs([leg]) for leg in start_legs]
-
-    if len(next_jobs) == 0:
-        return
-
-    routes = stream.merge(*next_jobs)
-
-    async with routes.stream() as streamer:
-        async for route in streamer:
-            yield route
