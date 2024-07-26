@@ -8,7 +8,11 @@
     "grpc": ["grpc+https://osmosis-grpc.publicnode.com:443"]
   },
   "phoenix-1": {
-    "http": ["https://terra-lcd.publicnode.com:443"],
-    "grpc": ["grpc+https://terra-grpc.publicnode.com:443"]
+    "http": ["https://terra-api.polkachu.com"],
+    "grpc": ["grpc+http://terra-grpc.polkachu.com:11790"]
+  },
+  "noble-1": {
+    "http": ["https://lcd.mainnet.noble.strange.love"],
+    "grpc": ["grpc+http://noble-grpc.polkachu.com:21590"]
   }
 }

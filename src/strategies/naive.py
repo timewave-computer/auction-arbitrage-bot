@@ -433,8 +433,6 @@ async def listen_routes_with_depth_dfs(
                             [
                                 DenomChainInfo(
                                     denom=end,
-                                    port=None,
-                                    channel=None,
                                     chain_id=prev_pool.backend.chain_id,
                                 )
                             ]

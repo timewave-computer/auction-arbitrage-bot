@@ -30,8 +30,6 @@ async def test_denom_info() -> None:
             info[0][0].denom
             == "ibc/9E3CDA65E02637E219B43802452D6B37D782F466CF76ECB9F47A2E00C07C4769"
         )
-        assert info[0][0].port == "transfer"
-        assert info[0][0].channel == "channel-61"
 
 
 @pytest.mark.asyncio
@@ -53,8 +51,19 @@ async def test_denom_info_on_chain() -> None:
             info[0].denom
             == "ibc/126DA09104B71B164883842B769C0E9EC1486C0887D27A9999E395C2C8FB5682"
         )
-        assert info[0].port == "transfer"
-        assert info[0].channel == "channel-874"
+        assert info[0].chain_id == "osmosis-1"
+
+        info = await denom_info_on_chain(
+            "neutron-1",
+            "ibc/376222D6D9DAE23092E29740E56B758580935A6D77C24C2ABD57A6A78A1F3955",
+            "osmosis-1",
+            session,
+        )
+
+        assert info
+        assert len(info) > 0
+
+        assert info[0].denom == "uosmo"
         assert info[0].chain_id == "osmosis-1"
 
 
@@ -80,3 +89,16 @@ async def test_denom_route() -> None:
         assert len(info) > 0
 
         assert info
+
+        info = await denom_route(
+            "neutron-1",
+            "ibc/376222D6D9DAE23092E29740E56B758580935A6D77C24C2ABD57A6A78A1F3955",
+            "osmosis-1",
+            "uosmo",
+            session,
+        )
+
+        assert info
+        assert len(info) == 1
+
+        assert info[0].to_chain.chain_id == "osmosis-1"

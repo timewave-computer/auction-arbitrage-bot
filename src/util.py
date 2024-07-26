@@ -290,8 +290,6 @@ class DenomChainInfo:
     """
 
     denom: str
-    port: Optional[str]
-    channel: Optional[str]
     chain_id: Optional[str]
 
 
@@ -310,8 +308,6 @@ async def denom_info(
             [
                 DenomChainInfo(
                     denom_info["denom"],
-                    denom_info["port_id"],
-                    denom_info["channel_id"],
                     denom_info["chain_id"],
                 )
             ]
@@ -339,20 +335,7 @@ async def denom_info(
         def chain_info(chain_id: str, info: dict[str, Any]) -> DenomChainInfo:
             info = info["assets"][0]
 
-            if info["trace"] != "":
-                parts = info["trace"].split("/")
-                port, channel = parts[0], parts[1]
-
-                return DenomChainInfo(
-                    denom=info["denom"],
-                    port=port,
-                    channel=channel,
-                    chain_id=chain_id,
-                )
-
-            return DenomChainInfo(
-                denom=info["denom"], port=None, channel=None, chain_id=chain_id
-            )
+            return DenomChainInfo(denom=info["denom"], chain_id=chain_id)
 
         return [[chain_info(chain_id, info) for chain_id, info in dests.items()]]
 
@@ -372,8 +355,6 @@ async def denom_info_on_chain(
         return [
             DenomChainInfo(
                 denom_info["denom"],
-                denom_info["port_id"],
-                denom_info["channel_id"],
                 denom_info["chain_id"],
             )
             for denom_info in denom_map.get(src_denom, [])
@@ -401,23 +382,7 @@ async def denom_info_on_chain(
         if dest_chain in dests:
             info = dests[dest_chain]["assets"][0]
 
-            if info["trace"] != "":
-                port, channel = info["trace"].split("/")
-
-                return [
-                    DenomChainInfo(
-                        denom=info["denom"],
-                        port=port,
-                        channel=channel,
-                        chain_id=dest_chain,
-                    )
-                ]
-
-            return [
-                DenomChainInfo(
-                    denom=info["denom"], port=None, channel=None, chain_id=dest_chain
-                )
-            ]
+            return [DenomChainInfo(denom=info["denom"], chain_id=dest_chain)]
 
         return None
 
@@ -501,11 +466,8 @@ async def chain_info(
     head = {"accept": "application/json", "content-type": "application/json"}
 
     async with session.get(
-        "https://api.skip.money/v2/info/chains",
+        f"https://api.skip.money/v2/info/chains?chain_ids={chain_id}",
         headers=head,
-        json={
-            "chain_ids": [chain_id],
-        },
     ) as resp:
         if resp.status != 200:
             return None
