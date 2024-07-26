@@ -32,6 +32,7 @@ from cosmos.base.v1beta1 import coin_pb2
 from cosmpy.crypto.address import Address
 from cosmpy.aerial.tx import Transaction, SigningCfg
 from cosmpy.aerial.tx_helpers import SubmittedTx
+from cosmpy.aerial.wallet import LocalWallet
 from ibc.applications.transfer.v1 import tx_pb2
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,32 @@ def collapse_route(
             route_legs_quantities, lambda r_q: r_q[0].backend.chain_id
         )
     ]
+
+
+def build_atomic_arb(
+    sublegs: list[tuple[Leg, int]], wallet: LocalWallet
+) -> Transaction:
+    """
+    Creates a transaction whose messages are the arb trades
+    in an atomic arb.
+    """
+
+    msgs = (
+        (
+            leg.backend.swap_msg_asset_b(wallet, to_swap, 0)
+            if leg.in_asset == leg.backend.asset_b
+            and not isinstance(leg.backend, AuctionProvider)
+            else leg.backend.swap_msg_asset_a(wallet, to_swap, 0)
+        )
+        for leg, to_swap in sublegs
+    )
+
+    tx = Transaction()
+
+    for msg in msgs:
+        tx.add_message(msg)
+
+    return tx
 
 
 async def exec_arb(
@@ -263,15 +290,7 @@ async def exec_arb(
         # If there are multiple legs, build them as one large
         # transaction
         if len(sublegs) > 1:
-            msgs = (
-                (
-                    leg.backend.swap_msg_asset_b(ctx.wallet, to_swap, 0)
-                    if leg.in_asset == leg.backend.asset_b
-                    and not isinstance(leg.backend, AuctionProvider)
-                    else leg.backend.swap_msg_asset_a(ctx.wallet, to_swap, 0)
-                )
-                for leg, to_swap in sublegs
-            )
+            tx = build_atomic_arb(sublegs, ctx.wallet)
 
             acc = try_multiple_clients_fatal(
                 ctx.clients[leg.backend.chain_id],
@@ -284,11 +303,6 @@ async def exec_arb(
                     )
                 ),
             )
-
-            tx = Transaction()
-
-            for msg in msgs:
-                tx.add_message(msg)
 
             ctx.log_route(route_ent, "info", "Built arb message chain", [])
 

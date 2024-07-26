@@ -172,6 +172,7 @@ async def test_poll() -> None:
         osmosis = OsmosisPoolDirectory(deployments(), session)
         astroport = NeutronAstroportPoolDirectory(
             deployments(),
+            "neutron-1",
             session,
             [
                 grpc.aio.secure_channel(

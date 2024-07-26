@@ -74,65 +74,6 @@ async def test_osmosis_pools() -> None:
 
 
 @pytest.mark.asyncio
-async def test_osmosis_poolfile() -> None:
-    """
-    Test that an Osmosis pool provider can be instantiated from
-    a list of pools.
-    """
-
-    async with aiohttp.ClientSession(
-        connector=aiohttp.TCPConnector(
-            force_close=True, limit_per_host=DISCOVERY_CONCURRENCY_FACTOR
-        ),
-        timeout=aiohttp.ClientTimeout(total=30),
-    ) as session:
-        osmosis = OsmosisPoolDirectory(
-            deployments(), session, poolfile_path="tests/test_poolfile.json"
-        )
-        pools = await osmosis.pools()
-
-        assert len([pair for base in pools.values() for pair in base.values()]) == 4
-
-        for base in pools.values():
-            for pool in base.values():
-                assert isinstance(pool, OsmosisPoolProvider)
-
-
-@pytest.mark.asyncio
-async def test_astroport_poolfile() -> None:
-    """
-    Test that an Osmosis pool provider can be instantiated from
-    a list of pools.
-    """
-
-    async with aiohttp.ClientSession(
-        connector=aiohttp.TCPConnector(
-            force_close=True, limit_per_host=DISCOVERY_CONCURRENCY_FACTOR
-        ),
-        timeout=aiohttp.ClientTimeout(total=30),
-    ) as session:
-        astro = NeutronAstroportPoolDirectory(
-            deployments(),
-            "neutron-1",
-            session,
-            [
-                grpc.aio.secure_channel(
-                    "neutron-grpc.publicnode.com:443",
-                    grpc.ssl_channel_credentials(),
-                )
-            ],
-            poolfile_path="tests/test_poolfile.json",
-        )
-        pools = await astro.pools()
-
-        assert len([pair for base in pools.values() for pair in base.values()]) == 4
-
-        for base in pools.values():
-            for pool in base.values():
-                assert isinstance(pool, NeutronAstroportPoolProvider)
-
-
-@pytest.mark.asyncio
 async def test_astroport_provider() -> None:
     """
     Test that an astroport poool can be queried

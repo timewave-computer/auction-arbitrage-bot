@@ -42,7 +42,6 @@ class State:
     """
 
     balance: Optional[int]
-    liquidity_cache: dict[Leg, tuple[int, int]]
 
     def poll(
         self,
@@ -54,8 +53,6 @@ class State:
         Polls the state for a potential update, leaving the state
         alone, or producing a new state.
         """
-
-        self.liquidity_cache = {}
 
         balance_resp = try_multiple_clients(
             ctx.clients[list(ctx.deployments["auctions"].keys())[0]],
@@ -88,7 +85,7 @@ async def strategy(
     state = ctx.state
 
     if not state:
-        ctx.state = State(None, {})
+        ctx.state = State(None)
         state = ctx.state
 
     ctx = ctx.with_state(state.poll(ctx, pools, auctions))
@@ -196,6 +193,27 @@ async def strategy(
     return ctx
 
 
+def route_gas(route: list[Leg]) -> int:
+    """
+    Estimates the gas required to execute a route,
+    given that the base denom is untrn.
+    """
+
+    gas = 0
+
+    # Ensure that there is at least 5k of the base chain denom
+    # at all times
+    gas += int(sum((leg.backend.swap_fee for leg in route)))
+
+    for i, leg in enumerate(route[:-1]):
+        next_leg = route[i + 1]
+
+        if leg.backend.chain_id != next_leg.backend.chain_id:
+            gas += IBC_TRANSFER_GAS
+
+    return gas
+
+
 async def eval_route(
     route: list[Leg],
     ctx: Ctx[State],
@@ -246,18 +264,7 @@ async def eval_route(
         ],
     )
 
-    gas_base_denom = 0
-
-    # Ensure that there is at least 5k of the base chain denom
-    # at all times
-    if ctx.cli_args["base_denom"] == "untrn":
-        gas_base_denom += int(sum((leg.backend.swap_fee for leg in route)))
-
-        for i, leg in enumerate(route[:-1]):
-            next_leg = route[i + 1]
-
-            if leg.backend.chain_id != next_leg.backend.chain_id:
-                gas_base_denom += IBC_TRANSFER_GAS
+    gas_base_denom = 0 if ctx.cli_args["base_denom"] != "untrn" else route_gas(route)
 
     ctx.log_route(
         r,
