@@ -223,6 +223,7 @@ async def main() -> None:
                     endpoints=endpoints[chain_id],
                 )
                 for chain_id in ctx.deployments["pools"]["astroport"].keys()
+                if chain_id in endpoints
             ]
 
             osmo_pools = await osmosis.pools()
