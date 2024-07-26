@@ -14,5 +14,9 @@
   "noble-1": {
     "http": ["https://lcd.mainnet.noble.strange.love"],
     "grpc": ["grpc+http://noble-grpc.polkachu.com:21590"]
+  },
+  "injective-1": {
+    "http": ["https://injective-rest.publicnode.com"],
+    "grpc": ["grpc+https://injective-grpc.publicnode.com:443"]
   }
 }

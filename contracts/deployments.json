@@ -17,14 +17,29 @@
                 }
             },
             "phoenix-1": {
-                "chain_name": "neutron",
-                "chain_prefix": "neutron",
-                "chain_fee_denom": "untrn",
+                "chain_name": "terra2",
+                "chain_prefix": "terra",
+                "chain_fee_denom": "uluna",
                 "chain_transfer_channel_ids": {
                     "osmosis-1": "channel-10"
                 },
                 "directory": {
                     "address": "terra14x9fr055x5hvr48hzy2t4q7kvjvfttsvxusa4xsdcy702mnzsvuqprer8r",
+                    "src": "contracts/astroport_factory.wasm"
+                },
+                "pair": {
+                    "src": "contracts/astroport_pair.wasm"
+                }
+            },
+            "injective-1": {
+                "chain_name": "injective",
+                "chain_prefix": "inj",
+                "chain_fee_denom": "inj",
+                "chain_transfer_channel_ids": {
+                    "osmosis-1": "channel-10"
+                },
+                "directory": {
+                    "address": "inj19aenkaj6qhymmt746av8ck4r8euthq3zmxr2r6",
                     "src": "contracts/astroport_factory.wasm"
                 },
                 "pair": {
