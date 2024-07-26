@@ -3,8 +3,11 @@ Implements an arbitrage strategy with an arbitrary number
 of hops using all available providers.
 """
 
+from asyncio import Task
+from queue import Queue
+import asyncio
 import traceback
-from typing import List, Optional, Self
+from typing import List, Optional, Self, AsyncGenerator, Any
 from dataclasses import dataclass
 import logging
 from src.contracts.route import Leg, Status, Route
@@ -101,22 +104,18 @@ async def strategy(
         "Finding profitable routes",
     )
 
-    async for r, route in listen_routes_with_depth_dfs(
-        ctx.cli_args["hops"],
-        ctx.cli_args["base_denom"],
-        ctx.cli_args["base_denom"],
-        set(ctx.cli_args["require_leg_types"]),
-        pools,
-        auctions,
+    async for r, route in eval_routes(
+        listen_routes_with_depth_dfs(
+            ctx.cli_args["hops"],
+            ctx.cli_args["base_denom"],
+            ctx.cli_args["base_denom"],
+            set(ctx.cli_args["require_leg_types"]),
+            pools,
+            auctions,
+            ctx,
+        ),
         ctx,
     ):
-        resp = await eval_route(r, route, ctx)
-
-        if not resp:
-            continue
-
-        r, route = resp
-
         ctx.log_route(r, "info", "Route queued: %s", [fmt_route(route)])
 
         if not state.balance:
@@ -334,14 +333,32 @@ async def eval_route(
     return (r, route)
 
 
-async def leg_liquidity(leg: Leg) -> tuple[int, int]:
-    if isinstance(leg.backend, AuctionProvider):
-        return (
-            await leg.backend.remaining_asset_b(),
-            await leg.backend.remaining_asset_b(),
-        )
+async def eval_routes(
+    listened_routes: AsyncGenerator[tuple[Route, list[Leg]], None],
+    ctx: Ctx[Any],
+) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
+    """ "
+    Evaluates routes concurrently, yielding profitable routes.
+    """
 
-    return (
-        await leg.backend.balance_asset_a(),
-        await leg.backend.balance_asset_b(),
-    )
+    tasks = set()
+    profitable_routes: Queue[tuple[Route, list[Leg]]] = Queue()
+
+    async for r, route in listened_routes:
+        while not profitable_routes.empty():
+            yield profitable_routes.get()
+
+        task = asyncio.create_task(eval_route(r, route, ctx))
+
+        def eval_end(t: Task[Optional[tuple[Route, list[Leg]]]]) -> None:
+            tasks.discard(task)
+
+            res = t.result()
+
+            if not res:
+                return
+
+            profitable_routes.put(res)
+
+        task.add_done_callback(eval_end)
+        tasks.add(task)

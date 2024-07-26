@@ -486,7 +486,7 @@ async def rebalance_portfolio(
             if coin.denom != ctx.cli_args["base_denom"]
         )
 
-        async def eval_sell_denom(denom: str, balance: int) -> None:
+        async def eval_sell_denom(denom: str, sell_denom: str, balance: int) -> None:
             """
             - Finds a route to sell the given denom
             - Calculates the execution plan
@@ -503,7 +503,7 @@ async def rebalance_portfolio(
                 listen_routes_with_depth_dfs(
                     ctx.cli_args["hops"],
                     denom,
-                    ctx.cli_args["base_denom"],
+                    sell_denom,
                     set(),
                     pools,
                     auctions,
@@ -571,7 +571,7 @@ async def rebalance_portfolio(
 
         await asyncio.gather(
             *[
-                eval_sell_denom(denom, balance)
+                eval_sell_denom(denom, ctx.cli_args["base_denom"], balance)
                 for denom, balance in qualifying_denoms_balances
             ]
         )
@@ -788,7 +788,11 @@ async def recover_funds(
         r,
         "info",
         "Recovering funds in denom %s from current denom %s on chain %s",
-        [ctx.cli_args["base_denom"], curr_leg.in_asset(), curr_leg.backend.chain_id],
+        [
+            ctx.cli_args["base_denom"],
+            curr_leg.in_asset(),
+            curr_leg.backend.chain_id,
+        ],
     )
 
     route = route[: route.index(curr_leg) - 1]
