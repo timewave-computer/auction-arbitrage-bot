@@ -58,7 +58,7 @@ async def main() -> None:
     parser.add_argument(
         "-b",
         "--base_denom",
-        default="ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81",
+        default="untrn",
     )
     parser.add_argument(
         "-pm",
