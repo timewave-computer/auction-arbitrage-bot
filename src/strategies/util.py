@@ -2,6 +2,7 @@
 Defines common utilities shared across arbitrage strategies.
 """
 
+import traceback
 from itertools import groupby
 import json
 from decimal import Decimal
@@ -240,15 +241,18 @@ async def exec_arb(
                     ctx,
                     to_swap,
                 )
-            except Exception as e:
+            except Exception:
                 ctx.log_route(
                     route_ent,
                     "error",
-                    "Failed to transfer funds from %s -> %s: %s",
+                    "Arb failed - failed to transfer funds from %s -> %s: %s",
                     [
                         prev_leg.backend.chain_id,
                         leg.backend.chain_id,
-                        e,
+                        traceback.format_exc().replace(
+                            "\n",
+                            f"\n{route_ent.uid}- Arb failed - failed to transfer funds: ",
+                        ),
                     ],
                 )
 
