@@ -46,7 +46,7 @@ async def main() -> None:
     )
     parser.add_argument("-f", "--pool_file", default=None)
     parser.add_argument("--denom_file", default=None)
-    parser.add_argument("-p", "--poll_interval", default=600)
+    parser.add_argument("-p", "--poll_interval", default=1200)
     parser.add_argument("-nh", "--hops", default=3)
     parser.add_argument("-np", "--pools", default=None)
     parser.add_argument(
