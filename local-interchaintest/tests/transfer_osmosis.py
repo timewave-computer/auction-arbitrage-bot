@@ -58,6 +58,7 @@ async def main() -> None:
             "osmo1hj5fveer5cjtn4wd6wstzugjfdxzl0xpwhpz63",
             ctx,
             1,
+            memo="hi",
         )
 
         balance_after_resp = try_multiple_clients(

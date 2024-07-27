@@ -939,23 +939,12 @@ async def transfer_raw(
     """
 
     # Create a messate transfering the funds
-    msg = (
-        tx_pb2.MsgTransfer(  # pylint: disable=no-member
-            source_port="transfer",
-            source_channel=src_channel_id,
-            sender=sender_addr,
-            receiver=receiver_addr,
-            timeout_timestamp=time.time_ns() + 600 * 10**9,
-            memo=memo,
-        )
-        if memo
-        else tx_pb2.MsgTransfer(  # pylint: disable=no-member
-            source_port="transfer",
-            source_channel=src_channel_id,
-            sender=sender_addr,
-            receiver=receiver_addr,
-            timeout_timestamp=time.time_ns() + 600 * 10**9,
-        )
+    msg = tx_pb2.MsgTransfer(  # pylint: disable=no-member
+        source_port="transfer",
+        source_channel=src_channel_id,
+        sender=sender_addr,
+        receiver=receiver_addr,
+        timeout_timestamp=time.time_ns() + 600 * 10**9,
     )
 
     msg.token.CopyFrom(
@@ -975,6 +964,7 @@ async def transfer_raw(
         SigningCfg.direct(ctx.wallet.public_key(), acc.sequence),
         f"100000{src_chain_fee_denom}",
         1000000,
+        memo=memo,
     )
     tx.sign(ctx.wallet.signer(), src_chain_id, acc.number)
     tx.complete()
