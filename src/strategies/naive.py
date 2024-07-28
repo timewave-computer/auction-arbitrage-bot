@@ -3,11 +3,8 @@ Implements an arbitrage strategy with an arbitrary number
 of hops using all available providers.
 """
 
-from asyncio import Task
-from queue import Queue
-import asyncio
 import traceback
-from typing import List, Optional, Self, AsyncGenerator, Any
+from typing import List, Optional, Self
 from dataclasses import dataclass
 import logging
 from src.contracts.route import Leg, Status, Route
