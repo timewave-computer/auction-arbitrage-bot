@@ -40,4 +40,4 @@ jobs:
           toolchain: stable
 
       - name: Run local-interchaintest
-        run: cd local-interchaintest && nix run ../#local-ic start neutron_osmosis_gaia -- --api-port 42069
+        run: cd local-interchaintest && nix run ../#local-ic start neutron_osmosis_gaia -- --api-port 42069 & curl --head -X GET --retry 1000 --retry-connrefused --retry-delay 1 http://localhost:42069 && cd local-interchaintest && nix develop --command cargo run
