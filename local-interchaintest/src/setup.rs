@@ -17,7 +17,10 @@ use std::{
     fs::OpenOptions,
     path::Path,
     process::Command,
-    sync::{mpsc, Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc, Mutex,
+    },
 };
 
 const EXIT_STATUS_SUCCESS: i32 = 9;
@@ -638,6 +641,7 @@ pub fn with_arb_bot_output(test: OwnedTestFn) -> TestResult {
     let proc_handle = Arc::new(proc);
     let proc_handle_watcher = proc_handle.clone();
     let (tx_res, rx_res) = mpsc::channel();
+    let mut finished = AtomicBool::new(false);
 
     let test_handle = test.clone();
 
@@ -647,6 +651,13 @@ pub fn with_arb_bot_output(test: OwnedTestFn) -> TestResult {
 
         // An arb was found
         if let EventKind::Modify(_) = e.kind {
+            if finished
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| Some(x))
+                .unwrap()
+            {
+                return;
+            }
+
             let f = OpenOptions::new()
                 .read(true)
                 .open(ARBFILE_PATH)
@@ -663,6 +674,8 @@ pub fn with_arb_bot_output(test: OwnedTestFn) -> TestResult {
 
             proc_handle_watcher.kill().expect("failed to kill arb bot");
             tx_res.send(res).expect("failed to send test results");
+
+            finished.store(true, Ordering::SeqCst);
         }
     })?;
 
@@ -677,5 +690,8 @@ pub fn with_arb_bot_output(test: OwnedTestFn) -> TestResult {
         }
     }
 
-    rx_res.recv()?
+    rx_res.recv()??;
+    watcher
+        .unwatch(Path::new(ARBFILE_PATH))
+        .map_err(|e| e.into())
 }
