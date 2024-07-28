@@ -1,7 +1,7 @@
 # type: ignore
 
 import json
-from typing import Any
+from typing import Any, Optional
 from src.scheduler import Ctx
 from src.contracts.route import Leg
 from src.strategies.util import collapse_route, build_atomic_arb, transfer_raw
@@ -153,9 +153,7 @@ async def test_transfer_raw() -> None:
         )
 
         if not denom_infos_on_dest:
-            raise ValueError(
-                f"Missing denom info for transfer {denom} (neutron-1) -> osmosis-1"
-            )
+            raise ValueError("Missing denom info for transfer (neutron-1) -> osmosis-1")
 
         ibc_route = await denom_route(
             "neutron-1",
@@ -166,7 +164,7 @@ async def test_transfer_raw() -> None:
         )
 
         if not ibc_route or len(ibc_route) == 0:
-            raise ValueError(f"No route from {denom} to {leg.backend.chain_id}")
+            raise ValueError("No route")
 
         src_channel_id = ibc_route[0].channel
         sender_addr = str(

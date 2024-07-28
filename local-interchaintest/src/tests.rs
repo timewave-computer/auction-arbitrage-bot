@@ -2,7 +2,7 @@ use super::util;
 use serde_json::Value;
 use std::{error::Error, process::Command};
 
-const ERROR_MARGIN_PROFIT: u64 = 100000;
+const ERROR_MARGIN_PROFIT: u64 = 50000;
 
 pub fn test_transfer_osmosis(
     _: Option<Value>,
@@ -57,14 +57,14 @@ pub fn test_profitable_arb(
     println!("AUCTION BOT PROFIT: {auction_profit}");
 
     util::assert_err(
-        "500000 + PROFIT_MARGIN > profit > 500000 - PROFIT_MARGIN",
-        500000 + ERROR_MARGIN_PROFIT > profit && profit > 500000 - ERROR_MARGIN_PROFIT,
+        "200000 + PROFIT_MARGIN > profit > 200000 - PROFIT_MARGIN",
+        200000 + ERROR_MARGIN_PROFIT > profit && profit > 200000 - ERROR_MARGIN_PROFIT,
         true,
     )?;
     util::assert_err(
-        "500000 + PROFIT_MARGIN > auction_profit > 500000 - PROFIT_MARGIN",
-        500000 + ERROR_MARGIN_PROFIT > auction_profit
-            && auction_profit > 500000 - ERROR_MARGIN_PROFIT,
+        "200000 + PROFIT_MARGIN > auction_profit > 200000 - PROFIT_MARGIN",
+        200000 + ERROR_MARGIN_PROFIT > auction_profit
+            && auction_profit > 200000 - ERROR_MARGIN_PROFIT,
         true,
     )?;
 

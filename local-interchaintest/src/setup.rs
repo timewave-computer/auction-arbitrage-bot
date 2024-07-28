@@ -243,8 +243,8 @@ impl<'a> TestRunner<'a> {
 
         util::create_deployment_file(
             ctx.get_astroport_factory()?
-                .get(0)
-                .and_then(|c| c.contract_addr.as_ref())
+                .contract_addr
+                .as_ref()
                 .expect("missing deployed astroport factory")
                 .as_str(),
             ctx.get_auctions_manager()?

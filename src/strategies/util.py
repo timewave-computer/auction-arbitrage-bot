@@ -12,7 +12,7 @@ import operator
 from functools import reduce
 import logging
 import time
-from typing import Optional, Any, Iterator, AsyncGenerator, Union
+from typing import Optional, Any, Iterator, AsyncGenerator, Union, Awaitable, Callable
 from src.contracts.route import Leg, Route
 from src.contracts.auction import AuctionProvider
 from src.contracts.pool.provider import PoolProvider
@@ -45,7 +45,7 @@ from aiostream import stream
 logger = logging.getLogger(__name__)
 
 
-MAX_POOL_LIQUIDITY_TRADE = Decimal("0.1")
+MAX_POOL_LIQUIDITY_TRADE = Decimal("0.05")
 
 """
 The amount of the summed gas limit that will be consumed if messages
@@ -587,6 +587,11 @@ async def listen_routes_with_depth_dfs(
     pools: dict[str, dict[str, list[PoolProvider]]],
     auctions: dict[str, dict[str, AuctionProvider]],
     ctx: Ctx[Any],
+    eval_profit: Optional[
+        Callable[
+            [Route, list[Leg], Ctx[Any]], Awaitable[Optional[tuple[Route, list[Leg]]]]
+        ]
+    ] = None,
 ) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
     denom_cache: dict[str, dict[str, list[str]]] = {}
 
@@ -608,6 +613,7 @@ async def listen_routes_with_depth_dfs(
         path: list[Leg],
     ) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
         nonlocal denom_cache
+        nonlocal eval_profit
 
         if len(path) >= 2 and not (
             path[-1].in_asset() == path[-2].out_asset()
@@ -640,6 +646,14 @@ async def listen_routes_with_depth_dfs(
                 return
 
             r: Route = ctx.queue_route(path, 0, 0, [])
+
+            if eval_profit:
+                resp = await eval_profit(r, path, ctx)
+
+                if resp:
+                    yield resp
+
+                return
 
             yield (r, path)
 
@@ -1165,6 +1179,8 @@ async def route_base_denom_profit(
             continue
 
         exchange_rates.append(Decimal(balance_asset_a) / Decimal(balance_asset_b))
+
+    logger.debug("Exchange rates for route %s: %s", fmt_route(route), exchange_rates)
 
     return int(reduce(operator.mul, exchange_rates, starting_amount)) - starting_amount
 

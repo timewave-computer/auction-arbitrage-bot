@@ -1224,7 +1224,7 @@ dependencies = [
 [[package]]
 name = "localic-utils"
 version = "0.1.0"
-source = "git+https://github.com/timewave-computer/localic-utils?branch=main#32135559ba2fc62d54db6cd2137fd04f7704ccf4"
+source = "git+https://github.com/timewave-computer/localic-utils?branch=main#6272c78b3ee113a51770903a6246ef06bff854cd"
 dependencies = [
  "astroport",
  "cosmwasm-std",

@@ -2,6 +2,7 @@
 Implements an arbitrage strategy based on bellman ford.
 """
 
+from functools import cache
 import traceback
 import random
 import logging
@@ -20,7 +21,6 @@ from src.strategies.util import (
     quantities_for_route_profit,
 )
 from src.util import (
-    DISCOVERY_CONCURRENCY_FACTOR,
     denom_info_on_chain,
     try_multiple_clients,
 )
@@ -63,6 +63,9 @@ class State:
     # between a base denom and a pair denom
     weights: dict[Union[AuctionProvider, PoolProvider], tuple[Edge, Edge]]
 
+    # Resets all cached pricing information
+    run: int
+
     async def poll(
         self,
         ctx: Ctx[Self],
@@ -73,6 +76,8 @@ class State:
         Polls the state for a potential update, leaving the state
         alone, or producing a new state.
         """
+
+        self.run += 1
 
         self.weights = {}
 
@@ -95,41 +100,38 @@ class State:
             len(vertices),
         )
 
-        sem = asyncio.Semaphore(DISCOVERY_CONCURRENCY_FACTOR)
-
         async def all_edges_for(
             vertex: Union[AuctionProvider, PoolProvider]
         ) -> tuple[
             Union[AuctionProvider, PoolProvider], Optional[Edge], Optional[Edge]
         ]:
-            async with sem:
-                edge_a_b = await pair_provider_edge(
-                    vertex.asset_a(), vertex.asset_b(), vertex
-                )
+            edge_a_b = await pair_provider_edge(
+                vertex.asset_a(),
+                vertex.asset_b(),
+                vertex,
+                ctx.state.run if ctx and ctx.state else 0,
+            )
 
-                try:
-                    return (
-                        vertex,
-                        (
-                            Edge(edge_a_b[1].backend, -Decimal.ln(edge_a_b[1].weight))
-                            if edge_a_b[1]
-                            else None
+            return (
+                vertex,
+                (
+                    Edge(edge_a_b[1].backend, -Decimal.ln(edge_a_b[1].weight))
+                    if edge_a_b[1]
+                    else None
+                ),
+                (
+                    Edge(
+                        Leg(
+                            edge_a_b[1].backend.out_asset,
+                            edge_a_b[1].backend.in_asset,
+                            edge_a_b[1].backend.backend,
                         ),
-                        (
-                            Edge(
-                                Leg(
-                                    edge_a_b[1].backend.out_asset,
-                                    edge_a_b[1].backend.in_asset,
-                                    edge_a_b[1].backend.backend,
-                                ),
-                                -Decimal.ln(Decimal(1) / edge_a_b[1].weight),
-                            )
-                            if edge_a_b[1]
-                            else None
-                        ),
+                        -Decimal.ln(Decimal(1) / edge_a_b[1].weight),
                     )
-                except asyncio.TimeoutError:
-                    return (vertex, None, None)
+                    if edge_a_b[1]
+                    else None
+                ),
+            )
 
         # Calculate all edge weights
         weights: Iterator[tuple[Union[AuctionProvider, PoolProvider], Edge, Edge]] = (
@@ -147,8 +149,23 @@ class State:
         return self
 
 
+@cache
+async def provider_liquidity_asset_a(provider: PoolProvider, run: int) -> int:
+    logger.debug("Provider weight miss (%s) (%d)", hash(provider), run)
+
+    return await provider.balance_asset_a()
+
+
+@cache
+async def provider_liquidity_asset_b(provider: PoolProvider, run: int) -> int:
+    logger.debug("Provider weight miss (%s) (%d)", hash(provider), run)
+
+    return await provider.balance_asset_b()
+
+
+@cache
 async def pair_provider_edge(
-    src: str, pair: str, provider: Union[PoolProvider, AuctionProvider]
+    src: str, pair: str, provider: Union[PoolProvider, AuctionProvider], run: int
 ) -> tuple[str, Optional[Edge]]:
     """
     Calculates edge weights for a specific pair connected to a base.
@@ -180,9 +197,9 @@ async def pair_provider_edge(
             ),
         )
 
-    balance_asset_a, balance_asset_b = (
-        await provider.balance_asset_a(),
-        await provider.balance_asset_b(),
+    balance_asset_a, balance_asset_b = await asyncio.gather(
+        provider_liquidity_asset_a(provider, run),
+        provider_liquidity_asset_b(provider, run),
     )
 
     if balance_asset_a == 0 or balance_asset_b == 0:
@@ -234,7 +251,7 @@ async def strategy(
     state = ctx.state
 
     if not state:
-        ctx.state = State({}, {}, {})
+        ctx.state = State({}, {}, {}, 0)
         state = ctx.state
 
     ctx = ctx.with_state(await state.poll(ctx, pools, auctions))

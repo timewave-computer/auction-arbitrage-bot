@@ -104,17 +104,15 @@ async def strategy(
         "Finding profitable routes",
     )
 
-    async for r, route in eval_routes(
-        listen_routes_with_depth_dfs(
-            ctx.cli_args["hops"],
-            ctx.cli_args["base_denom"],
-            ctx.cli_args["base_denom"],
-            set(ctx.cli_args["require_leg_types"]),
-            pools,
-            auctions,
-            ctx,
-        ),
+    async for r, route in listen_routes_with_depth_dfs(
+        ctx.cli_args["hops"],
+        ctx.cli_args["base_denom"],
+        ctx.cli_args["base_denom"],
+        set(ctx.cli_args["require_leg_types"]),
+        pools,
+        auctions,
         ctx,
+        eval_profit=eval_route,
     ):
         ctx.log_route(r, "info", "Route queued: %s", [fmt_route(route)])
 
@@ -331,34 +329,3 @@ async def eval_route(
 
     # Queue the route for execution, since it is profitable
     return (r, route)
-
-
-async def eval_routes(
-    listened_routes: AsyncGenerator[tuple[Route, list[Leg]], None],
-    ctx: Ctx[Any],
-) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
-    """ "
-    Evaluates routes concurrently, yielding profitable routes.
-    """
-
-    tasks = set()
-    profitable_routes: Queue[tuple[Route, list[Leg]]] = Queue()
-
-    async for r, route in listened_routes:
-        while not profitable_routes.empty():
-            yield profitable_routes.get()
-
-        task = asyncio.create_task(eval_route(r, route, ctx))
-
-        def eval_end(t: Task[Optional[tuple[Route, list[Leg]]]]) -> None:
-            tasks.discard(task)
-
-            res = t.result()
-
-            if not res:
-                return
-
-            profitable_routes.put(res)
-
-        task.add_done_callback(eval_end)
-        tasks.add(task)
