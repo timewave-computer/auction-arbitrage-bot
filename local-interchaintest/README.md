@@ -25,15 +25,11 @@ make install
 ### Start `local-ic`:
 
 ```bash
-local-ic start neutron_osmosis --api-port 42069
+local-ic start neutron_osmosis_gaia --api-port 42069
 ```
 
 ### Run tests
 
 ```bash
-# If running docker in root mode
-make sudo-test
-
-# If running docker in rootless mode
 make test
 ```
