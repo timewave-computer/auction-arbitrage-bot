@@ -5,5 +5,13 @@ edition = "2021"
 
 [dependencies]
 cosmwasm-std = "1.5.5"
-localic-std = { git = "https://github.com/strangelove-ventures/interchaintest.git", version = "0.0.1" }
-local-ictest-e2e = { git = "https://github.com/timewave-computer/covenants", branch = "benskey/local-interchain" }
+localic-std = { git = "https://github.com/strangelove-ventures/interchaintest.git", branch = "main" }
+reqwest = { version = "0.11.27", features = ["blocking", "json"] }
+serde_json = "1.0.117"
+serde = "1.0.203"
+localic-utils = { git = "https://github.com/timewave-computer/localic-utils", branch = "main" }
+notify = "6.1.1"
+itertools = "0.13.0"
+shared_child = "1.0.0"
+clap = { version = "4.5.8", features = ["derive"] }
+derive_builder = "0.20.0"

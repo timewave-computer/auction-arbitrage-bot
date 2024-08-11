@@ -1,7 +1,13 @@
 {
     "pools": {
         "astroport": {
-            "neutron": {
+            "neutron-1": {
+                "chain_name": "neutron",
+                "chain_prefix": "neutron",
+                "chain_fee_denom": "untrn",
+                "chain_transfer_channel_ids": {
+                    "osmosis-1": "channel-10"
+                },
                 "directory": {
                     "address": "neutron1hptk0k5kng7hjy35vmh009qd5m6l33609nypgf2yc6nqnewduqasxplt4e",
                     "src": "contracts/astroport_factory.wasm"
@@ -9,11 +15,57 @@
                 "pair": {
                     "src": "contracts/astroport_pair.wasm"
                 }
+            },
+            "phoenix-1": {
+                "chain_name": "terra2",
+                "chain_prefix": "terra",
+                "chain_fee_denom": "uluna",
+                "chain_transfer_channel_ids": {
+                    "osmosis-1": "channel-10"
+                },
+                "directory": {
+                    "address": "terra14x9fr055x5hvr48hzy2t4q7kvjvfttsvxusa4xsdcy702mnzsvuqprer8r",
+                    "src": "contracts/astroport_factory.wasm"
+                },
+                "pair": {
+                    "src": "contracts/astroport_pair.wasm"
+                }
+            },
+            "injective-1": {
+                "chain_name": "injective",
+                "chain_prefix": "inj",
+                "chain_fee_denom": "inj",
+                "chain_transfer_channel_ids": {
+                    "osmosis-1": "channel-10"
+                },
+                "directory": {
+                    "address": "inj19aenkaj6qhymmt746av8ck4r8euthq3zmxr2r6",
+                    "src": "contracts/astroport_factory.wasm"
+                },
+                "pair": {
+                    "src": "contracts/astroport_pair.wasm"
+                }
+            }
+        },
+        "osmosis": {
+            "osmosis-1": {
+                "chain_name": "osmosis",
+                "chain_prefix": "osmo",
+                "chain_fee_denom": "uosmo",
+                "chain_transfer_channel_ids": {
+                    "neutron-1": "channel-874"
+                }
             }
         }
     },
     "auctions": {
-        "neutron": {
+        "neutron-1": {
+            "chain_name": "neutron",
+            "chain_prefix": "neutron",
+            "chain_fee_denom": "untrn",
+            "chain_transfer_channel_ids": {
+                "osmosis-1": "channel-10"
+            },
             "auctions_manager": {
                 "address": "neutron13exc5wdc7y5qpqazc34djnu934lqvfw2dru30j52ahhjep6jzx8ssjxcyz",
                 "src": "contracts/auctions_manager.wasm"

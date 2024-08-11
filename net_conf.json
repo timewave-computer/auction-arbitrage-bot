@@ -1,0 +1,22 @@
+{
+  "neutron-1": {
+    "http": ["https://neutron-rest.publicnode.com"],
+    "grpc": ["grpc+https://neutron-grpc.publicnode.com:443"]
+  },
+  "osmosis-1": {
+    "http": ["https://lcd.osmosis.zone"],
+    "grpc": ["grpc+https://osmosis-grpc.publicnode.com:443"]
+  },
+  "phoenix-1": {
+    "http": ["https://terra-api.polkachu.com"],
+    "grpc": ["grpc+http://terra-grpc.polkachu.com:11790"]
+  },
+  "noble-1": {
+    "http": ["https://lcd.mainnet.noble.strange.love"],
+    "grpc": ["grpc+http://noble-grpc.polkachu.com:21590"]
+  },
+  "injective-1": {
+    "http": ["https://injective-rest.publicnode.com"],
+    "grpc": ["grpc+https://injective-grpc.publicnode.com:443"]
+  }
+}

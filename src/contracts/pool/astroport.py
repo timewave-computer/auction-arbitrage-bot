@@ -4,6 +4,8 @@ Implemens contract wrappers for Astroport, providing pricing information for
 Astroport pools.
 """
 
+from decimal import Decimal
+import json
 from functools import cached_property
 from typing import Any, cast, Optional, List
 from dataclasses import dataclass
@@ -18,10 +20,16 @@ from src.util import (
     ContractInfo,
     try_query_multiple,
     try_exec_multiple_fatal,
+    try_multiple_clients_fatal,
     custom_neutron_network_config,
 )
 import aiohttp
 import grpc
+from cosmwasm.wasm.v1.tx_pb2 import MsgExecuteContract
+from cosmos.base.v1beta1.coin_pb2 import Coin
+from cosmpy.crypto.address import Address
+from cosmpy.aerial.tx import Transaction
+
 
 MAX_SPREAD = "0.05"
 
@@ -86,6 +94,8 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
 
     def __init__(
         self,
+        deployments: dict[str, Any],
+        chain_id: str,
         endpoints: dict[str, list[str]],
         contract_info: ContractInfo,
         asset_a: Token | NativeToken,
@@ -93,17 +103,23 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         session: aiohttp.ClientSession,
         grpc_channels: list[grpc.aio.Channel],
     ):
+        chain_info = deployments["pools"]["astroport"][chain_id]
+
         WithContract.__init__(self, contract_info)
         self.asset_a_denom = asset_a
         self.asset_b_denom = asset_b
         self.chain_id = contract_info.clients[0].query_chain_id()
-        self.chain_prefix = "neutron"
-        self.chain_fee_denom = "untrn"
+        self.chain_name = chain_info["chain_name"]
+        self.chain_prefix = chain_info["chain_prefix"]
+        self.chain_fee_denom = chain_info["chain_fee_denom"]
+        self.chain_transfer_channel_ids = chain_info["chain_transfer_channel_ids"]
+        self.chain_gas_price = Decimal("0.0053")
+        self.swap_gas_limit = 500000
         self.kind = "astroport"
         self.endpoints = endpoints["http"]
         self.session = session
         self.grpc_channels = grpc_channels
-        self.swap_fee = 50000
+        self.swap_fee = 9000
 
     async def __exchange_rate(
         self, asset_a: Token | NativeToken, asset_b: Token | NativeToken, amount: int
@@ -145,9 +161,9 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
                 self.contracts,
                 {
                     "reverse_simulation": {
-                        "offer_asset_info": token_to_asset_info(asset_b),
+                        "offer_asset_info": token_to_asset_info(asset_a),
                         "ask_asset": {
-                            "info": token_to_asset_info(asset_a),
+                            "info": token_to_asset_info(asset_b),
                             "amount": str(amount),
                         },
                     }
@@ -181,7 +197,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
         return try_exec_multiple_fatal(
             self.contracts,
             wallet,
-            {
+            msg={
                 "swap": {
                     "offer_asset": {
                         "info": token_to_asset_info(asset_a),
@@ -194,6 +210,37 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
             funds=f"{amount}{token_to_addr(asset_a)}",
             gas_limit=3000000,
         )
+
+    def __swap_msg(
+        self,
+        wallet: LocalWallet,
+        assets: tuple[Token | NativeToken, Token | NativeToken],
+        amount_min_amount: tuple[int, int],
+    ) -> Any:
+        asset_a, asset_b = assets
+        amount, min_amount = amount_min_amount
+
+        msg = MsgExecuteContract(
+            sender=str(Address(wallet.public_key(), prefix=self.chain_prefix)),
+            contract=self.contract_info.address,
+            msg=str.encode(
+                json.dumps(
+                    {
+                        "swap": {
+                            "offer_asset": {
+                                "info": token_to_asset_info(asset_a),
+                                "amount": str(amount),
+                            },
+                            "ask_asset_info": token_to_asset_info(asset_b),
+                            "max_spread": MAX_SPREAD,
+                        }
+                    }
+                )
+            ),
+            funds=[Coin(denom=token_to_addr(asset_a), amount=str(amount))],
+        )
+
+        return msg
 
     async def __balance(self, asset: Token | NativeToken) -> int:
         resp = await try_query_multiple(
@@ -231,6 +278,33 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
             wallet,
             (self.asset_b_denom, self.asset_a_denom),
             (amount, min_amount),
+        )
+
+    def swap_msg_asset_a(
+        self, wallet: LocalWallet, amount: int, min_amount: int
+    ) -> Any:
+        return self.__swap_msg(
+            wallet,
+            (self.asset_a_denom, self.asset_b_denom),
+            (amount, min_amount),
+        )
+
+    def swap_msg_asset_b(
+        self,
+        wallet: LocalWallet,
+        amount: int,
+        min_amount: int,
+    ) -> Any:
+        return self.__swap_msg(
+            wallet,
+            (self.asset_b_denom, self.asset_a_denom),
+            (amount, min_amount),
+        )
+
+    def submit_swap_tx(self, tx: Transaction) -> SubmittedTx:
+        return try_multiple_clients_fatal(
+            self.contract_info.clients,
+            lambda client: client.broadcast_tx(tx),
         )
 
     async def simulate_swap_asset_a(
@@ -296,12 +370,15 @@ class NeutronAstroportPoolDirectory:
     def __init__(
         self,
         deployments: dict[str, Any],
+        chain_id: str,
         session: aiohttp.ClientSession,
         grpc_channels: list[grpc.aio.Channel],
         poolfile_path: Optional[str] = None,
         endpoints: Optional[dict[str, list[str]]] = None,
     ):
-        self.deployment_info = deployments["pools"]["astroport"]["neutron"]
+        self.deployments = deployments
+        self.chain_id = chain_id
+        self.deployment_info = deployments["pools"]["astroport"][chain_id]
         self.cached_pools = cached_pools(poolfile_path, "neutron_astroport")
         self.session = session
         self.grpc_channels = grpc_channels
@@ -325,62 +402,16 @@ class NeutronAstroportPoolDirectory:
     @cached_property
     def clients(self) -> List[LedgerClient]:
         return [
-            LedgerClient(custom_neutron_network_config(endpoint))
+            LedgerClient(
+                custom_neutron_network_config(endpoint, chain_id=self.chain_id)
+            )
             for endpoint in self.endpoints["grpc"]
         ]
-
-    def __pools_cached(self) -> dict[str, dict[str, NeutronAstroportPoolProvider]]:
-        """
-        Reads the pools in the AstroportPoolProvider from the contents of the pool file.
-        """
-
-        if self.cached_pools is None:
-            return {}
-
-        pools: dict[str, dict[str, NeutronAstroportPoolProvider]] = {}
-
-        for poolfile_entry in self.cached_pools:
-            asset_a, asset_b = (
-                asset_info_to_token(poolfile_entry["asset_a"]),
-                asset_info_to_token(poolfile_entry["asset_b"]),
-            )
-            asset_a_addr, asset_b_addr = (
-                token_to_addr(asset_a),
-                token_to_addr(asset_b),
-            )
-            provider = NeutronAstroportPoolProvider(
-                self.endpoints,
-                ContractInfo(
-                    self.deployment_info,
-                    self.clients,
-                    poolfile_entry["address"],
-                    "pair",
-                ),
-                asset_a,
-                asset_b,
-                self.session,
-                self.grpc_channels,
-            )
-
-            # Register the pool
-            if asset_a_addr not in pools:
-                pools[asset_a_addr] = {}
-
-            if asset_b_addr not in pools:
-                pools[asset_b_addr] = {}
-
-            pools[asset_a_addr][asset_b_addr] = provider
-            pools[asset_b_addr][asset_a_addr] = provider
-
-        return pools
 
     async def pools(self) -> dict[str, dict[str, NeutronAstroportPoolProvider]]:
         """
         Gets an NeutronAstroportPoolProvider for every pair on Astroport.
         """
-
-        if self.cached_pools is not None:
-            return self.__pools_cached()
 
         # Load all pools in 10-pool batches
         pools = []
@@ -425,6 +456,8 @@ class NeutronAstroportPoolDirectory:
                 continue
 
             provider = NeutronAstroportPoolProvider(
+                self.deployments,
+                self.chain_id,
                 self.endpoints,
                 ContractInfo(
                     self.deployment_info,

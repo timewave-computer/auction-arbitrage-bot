@@ -7,7 +7,8 @@ from src.contracts.pool.astroport import (
     NeutronAstroportPoolProvider,
 )
 from src.contracts.pool.osmosis import OsmosisPoolDirectory, OsmosisPoolProvider
-from src.util import deployments, DISCOVERY_CONCURRENCY_FACTOR
+from src.util import DISCOVERY_CONCURRENCY_FACTOR
+from tests.util import deployments
 import pytest
 import aiohttp
 import grpc
@@ -31,6 +32,7 @@ async def test_astroport_pools() -> None:
     ) as session:
         astroport = NeutronAstroportPoolDirectory(
             deployments(),
+            "neutron-1",
             session,
             [
                 grpc.aio.secure_channel(
@@ -61,7 +63,7 @@ async def test_osmosis_pools() -> None:
         ),
         timeout=aiohttp.ClientTimeout(total=30),
     ) as session:
-        osmosis = OsmosisPoolDirectory(session)
+        osmosis = OsmosisPoolDirectory(deployments(), session)
         pools = await osmosis.pools()
 
         assert len(pools) != 0
@@ -69,64 +71,6 @@ async def test_osmosis_pools() -> None:
         for base in pools.values():
             for pool in base.values():
                 assert isinstance(pool, OsmosisPoolProvider)
-
-
-@pytest.mark.asyncio
-async def test_osmosis_poolfile() -> None:
-    """
-    Test that an Osmosis pool provider can be instantiated from
-    a list of pools.
-    """
-
-    async with aiohttp.ClientSession(
-        connector=aiohttp.TCPConnector(
-            force_close=True, limit_per_host=DISCOVERY_CONCURRENCY_FACTOR
-        ),
-        timeout=aiohttp.ClientTimeout(total=30),
-    ) as session:
-        osmosis = OsmosisPoolDirectory(
-            session, poolfile_path="tests/test_poolfile.json"
-        )
-        pools = await osmosis.pools()
-
-        assert len([pair for base in pools.values() for pair in base.values()]) == 4
-
-        for base in pools.values():
-            for pool in base.values():
-                assert isinstance(pool, OsmosisPoolProvider)
-
-
-@pytest.mark.asyncio
-async def test_astroport_poolfile() -> None:
-    """
-    Test that an Osmosis pool provider can be instantiated from
-    a list of pools.
-    """
-
-    async with aiohttp.ClientSession(
-        connector=aiohttp.TCPConnector(
-            force_close=True, limit_per_host=DISCOVERY_CONCURRENCY_FACTOR
-        ),
-        timeout=aiohttp.ClientTimeout(total=30),
-    ) as session:
-        astro = NeutronAstroportPoolDirectory(
-            deployments(),
-            session,
-            [
-                grpc.aio.secure_channel(
-                    "neutron-grpc.publicnode.com:443",
-                    grpc.ssl_channel_credentials(),
-                )
-            ],
-            poolfile_path="tests/test_poolfile.json",
-        )
-        pools = await astro.pools()
-
-        assert len([pair for base in pools.values() for pair in base.values()]) == 4
-
-        for base in pools.values():
-            for pool in base.values():
-                assert isinstance(pool, NeutronAstroportPoolProvider)
 
 
 @pytest.mark.asyncio
@@ -144,6 +88,7 @@ async def test_astroport_provider() -> None:
     ) as session:
         astroport = NeutronAstroportPoolDirectory(
             deployments(),
+            "neutron-1",
             session,
             [
                 grpc.aio.secure_channel(
@@ -168,7 +113,24 @@ async def test_astroport_provider() -> None:
             )
         )
 
-        await list(list(pools.values())[0].values())[0].simulate_swap_asset_a(1000)
+        for base in pools.values():
+            for pool in base.values():
+                if (await pool.balance_asset_a()) <= 0 or (
+                    await pool.balance_asset_b()
+                ) <= 0:
+                    continue
+
+                in_a = await pool.simulate_swap_asset_a(10)
+                assert in_a >= 0
+
+                in_b = await pool.simulate_swap_asset_b(10)
+                assert in_b >= 0
+
+                assert (await pool.reverse_simulate_swap_asset_a(in_a)) >= 0
+                assert (await pool.reverse_simulate_swap_asset_b(in_b)) >= 0
+
+                break
+            break
 
 
 @pytest.mark.asyncio
@@ -184,7 +146,7 @@ async def test_osmosis_provider() -> None:
         ),
         timeout=aiohttp.ClientTimeout(total=30),
     ) as session:
-        osmosis = OsmosisPoolDirectory(session)
+        osmosis = OsmosisPoolDirectory(deployments(), session)
         pools = await osmosis.pools()
 
         # All pools must have assets
@@ -204,6 +166,25 @@ async def test_osmosis_provider() -> None:
         # At least one pool must have some assets to swap
         await list(list(pools.values())[0].values())[0].simulate_swap_asset_a(1000)
 
+        for base in pools.values():
+            for pool in base.values():
+                if (await pool.balance_asset_a()) <= 0 or (
+                    await pool.balance_asset_b()
+                ) <= 0:
+                    continue
+
+                in_a = await pool.simulate_swap_asset_a(10)
+                assert in_a >= 0
+
+                in_b = await pool.simulate_swap_asset_b(10)
+                assert in_b >= 0
+
+                assert (await pool.reverse_simulate_swap_asset_a(in_a)) >= 0
+                assert (await pool.reverse_simulate_swap_asset_b(in_b)) >= 0
+
+                break
+            break
+
 
 @pytest.mark.asyncio
 async def test_osmosis_dump() -> None:
@@ -218,7 +199,7 @@ async def test_osmosis_dump() -> None:
         ),
         timeout=aiohttp.ClientTimeout(total=30),
     ) as session:
-        osmosis = OsmosisPoolDirectory(session)
+        osmosis = OsmosisPoolDirectory(deployments(), session)
         pools = await osmosis.pools()
 
         # The directory must be able to dump pools
@@ -250,6 +231,7 @@ async def test_astroport_dump() -> None:
     ) as session:
         astro = NeutronAstroportPoolDirectory(
             deployments(),
+            "neutron-1",
             session,
             [
                 grpc.aio.secure_channel(

@@ -3,12 +3,12 @@ Tests that the scheduler works as expected.
 """
 
 from dataclasses import dataclass
-from typing import List
+import json
+from typing import List, cast, Any
 from cosmpy.aerial.client import LedgerClient, NetworkConfig
 from cosmpy.aerial.wallet import LocalWallet
 from src.scheduler import Scheduler, Ctx
 from src.util import (
-    deployments,
     NEUTRON_NETWORK_CONFIG,
     DISCOVERY_CONCURRENCY_FACTOR,
     custom_neutron_network_config,
@@ -17,6 +17,7 @@ from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
 from src.contracts.pool.provider import PoolProvider
 from src.contracts.auction import AuctionProvider
+from tests.util import deployments
 import aiohttp
 import pytest
 import grpc
@@ -52,63 +53,65 @@ def ctx(session: aiohttp.ClientSession) -> Ctx[State]:
     """
 
     endpoints: dict[str, dict[str, list[str]]] = {
-        "neutron": {
+        "neutron-1": {
             "http": ["https://neutron-rest.publicnode.com"],
             "grpc": ["grpc+https://neutron-grpc.publicnode.com:443"],
         },
-        "osmosis": {
+        "osmosis-1": {
             "http": ["https://lcd.osmosis.zone"],
             "grpc": ["grpc+https://osmosis-grpc.publicnode.com:443"],
         },
     }
 
-    return Ctx(
-        {
-            "neutron": [
-                LedgerClient(NEUTRON_NETWORK_CONFIG),
-                *[
-                    LedgerClient(custom_neutron_network_config(endpoint))
-                    for endpoint in endpoints["neutron"]["grpc"]
+    with open("contracts/deployments.json", encoding="utf-8") as f:
+        return Ctx(
+            {
+                "neutron-1": [
+                    LedgerClient(NEUTRON_NETWORK_CONFIG),
+                    *[
+                        LedgerClient(custom_neutron_network_config(endpoint))
+                        for endpoint in endpoints["neutron-1"]["grpc"]
+                    ],
                 ],
-            ],
-            "osmosis": [
-                *[
-                    LedgerClient(
-                        NetworkConfig(
-                            chain_id="osmosis-1",
-                            url=endpoint,
-                            fee_minimum_gas_price=0.0053,
-                            fee_denomination="uosmo",
-                            staking_denomination="uosmo",
+                "osmosis-1": [
+                    *[
+                        LedgerClient(
+                            NetworkConfig(
+                                chain_id="osmosis-1",
+                                url=endpoint,
+                                fee_minimum_gas_price=0.0053,
+                                fee_denomination="uosmo",
+                                staking_denomination="uosmo",
+                            )
                         )
-                    )
-                    for endpoint in endpoints["osmosis"]["grpc"]
+                        for endpoint in endpoints["osmosis-1"]["grpc"]
+                    ],
                 ],
-            ],
-        },
-        endpoints,
-        LocalWallet.from_mnemonic(TEST_WALLET_MNEMONIC, prefix="neutron"),
-        {
-            "pool_file": None,
-            "poll_interval": 120,
-            "discovery_interval": 600,
-            "hops": 3,
-            "pools": 100,
-            "require_leg_types": set(),
-            "base_denom": "",
-            "profit_margin": 100,
-            "wallet_mnemonic": "",
-            "cmd": "",
-            "net_config": "",
-            "log_file": "",
-            "history_file": "",
-            "skip_api_key": None,
-        },
-        None,
-        False,
-        session,
-        [],
-    ).with_state(State(1000))
+            },
+            endpoints,
+            LocalWallet.from_mnemonic(TEST_WALLET_MNEMONIC, prefix="neutron"),
+            {
+                "pool_file": None,
+                "poll_interval": 120,
+                "hops": 3,
+                "pools": 100,
+                "require_leg_types": set(),
+                "base_denom": "",
+                "profit_margin": 100,
+                "wallet_mnemonic": "",
+                "cmd": "",
+                "net_config": "",
+                "log_file": "",
+                "history_file": "",
+                "skip_api_key": None,
+            },
+            None,
+            False,
+            session,
+            [],
+            cast(dict[str, Any], json.load(f)),
+            None,
+        ).with_state(State(1000))
 
 
 @pytest.mark.asyncio
@@ -139,12 +142,12 @@ async def test_register_provider() -> None:
         ),
         timeout=aiohttp.ClientTimeout(total=30),
     ) as session:
-        osmosis = OsmosisPoolDirectory(session)
+        osmosis = OsmosisPoolDirectory(deployments(), session)
         pool = list(list((await osmosis.pools()).values())[0].values())[0]
 
         sched = Scheduler(ctx(session), strategy)
 
-        directory = OsmosisPoolDirectory(session)
+        directory = OsmosisPoolDirectory(deployments(), session)
         pools = await directory.pools()
 
         for base in pools.values():
@@ -166,9 +169,10 @@ async def test_poll() -> None:
         ),
         timeout=aiohttp.ClientTimeout(total=30),
     ) as session:
-        osmosis = OsmosisPoolDirectory(session)
+        osmosis = OsmosisPoolDirectory(deployments(), session)
         astroport = NeutronAstroportPoolDirectory(
             deployments(),
+            "neutron-1",
             session,
             [
                 grpc.aio.secure_channel(
