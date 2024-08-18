@@ -1,19 +1,10 @@
 # type: ignore
 
-import json
-from typing import Any, Optional
-from src.scheduler import Ctx
+from typing import Any
 from src.contracts.route import Leg
-from src.strategies.util import collapse_route, build_atomic_arb, transfer_raw
-from src.util import denom_info_on_chain, denom_route, custom_neutron_network_config
+from src.strategies.util import collapse_route, build_atomic_arb
 from tests.test_scheduler import TEST_WALLET_MNEMONIC
 from cosmpy.aerial.wallet import LocalWallet
-from cosmpy.aerial.client import LedgerClient
-from cosmpy.crypto.address import Address
-import pytest
-import aiohttp
-
-pytest_plugins = ("pytest_asyncio",)
 
 
 class MockPool:
