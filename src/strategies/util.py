@@ -499,75 +499,67 @@ async def rebalance_portfolio(
 
             logger.info("Rebalancing %d %s", balance, denom)
 
-            route_ent_route = await anext(
-                listen_routes_with_depth_dfs(
-                    ctx.cli_args["hops"],
-                    denom,
-                    sell_denom,
-                    set(),
-                    pools,
-                    auctions,
-                    ctx,
+            async for route_ent, route in listen_routes_with_depth_dfs(
+                ctx.cli_args["hops"],
+                denom,
+                sell_denom,
+                set(),
+                pools,
+                auctions,
+                ctx,
+            ):
+                # For logging
+                _, execution_plan = await quantities_for_route_profit(
+                    balance, route, route_ent, ctx, seek_profit=False
                 )
-            )
 
-            if not route_ent_route:
-                logger.info("No route to rebalance %s; skipping", denom)
+                # The execution plan was aborted
+                if len(execution_plan) <= len(route):
+                    ctx.log_route(
+                        route_ent,
+                        "info",
+                        "Insufficient execution planning for rebalancing for %s; skipping",
+                        [denom],
+                    )
 
-                return
+                    continue
 
-            route_ent, route = route_ent_route
+                # Check that the execution plan results in a liquidatable quantity
+                if execution_plan[-1] < ctx.cli_args["rebalance_threshold"]:
+                    ctx.log_route(
+                        route_ent,
+                        "info",
+                        "Not enough funds for rebalancing %s; trying a different execution plan",
+                        [denom],
+                    )
 
-            # For logging
-            _, execution_plan = await quantities_for_route_profit(
-                balance, route, route_ent, ctx, seek_profit=False
-            )
+                    continue
 
-            # The execution plan was aborted
-            if len(execution_plan) <= len(route):
                 ctx.log_route(
-                    route_ent,
-                    "info",
-                    "Insufficient execution planning for rebalancing for %s; skipping",
-                    [denom],
+                    route_ent, "info", "Executing rebalancing plan for %s", [denom]
                 )
 
-                return
+                # Execute the plan
+                route_ent.quantities = execution_plan
+                ctx.update_route(route_ent)
 
-            # Check that the execution plan results in a liquidatable quantity
-            if execution_plan[-1] < ctx.cli_args["rebalance_threshold"]:
-                ctx.log_route(
-                    route_ent,
-                    "info",
-                    "Not enough funds for rebalancing %s; skipping",
-                    [denom],
-                )
+                try:
+                    await exec_arb(route_ent, 0, execution_plan, route, ctx)
 
-                return
-
-            ctx.log_route(
-                route_ent, "info", "Executing rebalancing plan for %s", [denom]
-            )
-
-            # Execute the plan
-            route_ent.quantities = execution_plan
-            ctx.update_route(route_ent)
-
-            try:
-                await exec_arb(route_ent, 0, execution_plan, route, ctx)
-            except Exception:
-                ctx.log_route(
-                    route_ent,
-                    "error",
-                    "Arb failed - rebalancing of %s failed: %s",
-                    [
-                        denom,
-                        traceback.format_exc().replace(
-                            "\n",
-                            f"\n{route_ent.uid}- Arb failed - failed to rebalance funds: ",
-                        ),
-                    ],
-                )
+                    break
+                except Exception:
+                    ctx.log_route(
+                        route_ent,
+                        "error",
+                        "Arb failed - rebalancing of %s failed: %s",
+                        [
+                            denom,
+                            traceback.format_exc().replace(
+                                "\n",
+                                f"\n{route_ent.uid}- Arb failed - failed to rebalance funds: ",
+                            ),
+                        ],
+                    )
 
         await asyncio.gather(
             *[
