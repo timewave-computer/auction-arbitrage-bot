@@ -96,6 +96,15 @@ async def strategy(
     except ValueError as e:
         logger.error("Failed to rebalance portfolio: %s", e)
 
+    ctx = ctx.with_state(state.poll(ctx, pools, auctions))
+
+    if not state.balance:
+        return ctx
+
+    logger.info(
+        f"Starting arbitrage round with {state.balance} {ctx.cli_args['base_denom']}"
+    )
+
     # Report route stats to user
     logger.info(
         "Finding profitable routes",
