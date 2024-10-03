@@ -153,7 +153,7 @@ class Ctx(Generic[TState]):
         )
 
         if balance_resp_in:
-            prefix += f"BALANCE[{route.legs[0].in_asset()[:DENOM_BALANCE_PREFIX_MAX_DENOM_LEN]}]: {balance_resp_in} "
+            prefix += f"balance[{route.legs[0].in_asset()[:DENOM_BALANCE_PREFIX_MAX_DENOM_LEN]}]: {balance_resp_in} "
 
         balance_resp_base_denom = try_multiple_clients(
             self.clients[route.legs[0].backend.chain_id],
@@ -166,7 +166,7 @@ class Ctx(Generic[TState]):
         )
 
         if balance_resp_base_denom:
-            prefix += f"BALANCE[{self.cli_args['base_denom'][:DENOM_BALANCE_PREFIX_MAX_DENOM_LEN]}]: {balance_resp_in} "
+            prefix += f"balance[{self.cli_args['base_denom'][:DENOM_BALANCE_PREFIX_MAX_DENOM_LEN]}]: {balance_resp_in} "
 
         route.logs.append(f"{log_level.upper()} {prefix}{fmt_string % tuple(args)}")
 
