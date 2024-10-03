@@ -142,25 +142,34 @@ class Ctx(Generic[TState]):
 
         prefix = ""
 
-        balance_resp_in = try_multiple_clients(
-            self.clients[route.legs[0].backend.chain_id],
-            lambda client: client.query_bank_balance(
-                Address(
-                    self.wallet.public_key(), prefix=route.legs[0].backend.chain_prefix
-                ),
-                route.legs[0].in_asset(),
+        curr_leg = next(
+            (
+                leg
+                for (leg_repr, leg) in zip(route.route, route.legs)
+                if not leg_repr.executed
             ),
+            default=None,
         )
 
-        if balance_resp_in:
-            prefix += f"balance[{route.legs[0].in_asset()[:DENOM_BALANCE_PREFIX_MAX_DENOM_LEN]}]: {balance_resp_in} "
+        if curr_leg:
+            balance_resp_in = try_multiple_clients(
+                self.clients[curr_leg.backend.chain_id],
+                lambda client: client.query_bank_balance(
+                    Address(
+                        self.wallet.public_key(),
+                        prefix=route.legs[0].backend.chain_prefix,
+                    ),
+                    curr_leg.in_asset(),
+                ),
+            )
+
+            if balance_resp_in:
+                prefix += f"balance[{curr_leg.in_asset()[:DENOM_BALANCE_PREFIX_MAX_DENOM_LEN]}]: {balance_resp_in} "
 
         balance_resp_base_denom = try_multiple_clients(
-            self.clients[route.legs[0].backend.chain_id],
+            self.clients[curr_leg.backend.chain_id],
             lambda client: client.query_bank_balance(
-                Address(
-                    self.wallet.public_key(), prefix=route.legs[0].backend.chain_prefix
-                ),
+                Address(self.wallet.public_key(), prefix=curr_leg.backend.chain_prefix),
                 self.cli_args["base_denom"],
             ),
         )
