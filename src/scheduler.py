@@ -166,7 +166,7 @@ class Ctx(Generic[TState]):
         )
 
         if balance_resp_base_denom:
-            prefix += f"balance[{self.cli_args['base_denom'][:DENOM_BALANCE_PREFIX_MAX_DENOM_LEN]}]: {balance_resp_in} "
+            prefix += f"balance[{self.cli_args['base_denom'][:DENOM_BALANCE_PREFIX_MAX_DENOM_LEN]}]: {balance_resp_base_denom} "
 
         route.logs.append(f"{log_level.upper()} {prefix}{fmt_string % tuple(args)}")
 
