@@ -63,8 +63,7 @@ class State:
             ),
         )
 
-        if balance_resp:
-            self.balance = balance_resp
+        self.balance = balance_resp
 
         return self
 
