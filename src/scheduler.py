@@ -8,10 +8,12 @@ import json
 from typing import Callable, List, Self, Optional, Awaitable, Any, TypeVar, Generic
 from dataclasses import dataclass
 from cosmpy.aerial.client import LedgerClient
+from cosmpy.crypto.address import Address
 from cosmpy.aerial.wallet import LocalWallet
 from src.contracts.auction import AuctionDirectory, AuctionProvider
 from src.contracts.route import Route, load_route, LegRepr, Status, Leg
 from src.contracts.pool.provider import PoolProvider
+from src.util import try_multiple_clients
 import aiohttp
 import grpc
 
@@ -19,6 +21,10 @@ logger = logging.getLogger(__name__)
 
 
 MAX_ROUTE_HISTORY_LEN = 200000
+
+
+# Length to truncate denoms in balance logs to
+DENOM_BALANCE_PREFIX_MAX_DENOM_LEN = 12
 
 
 TState = TypeVar("TState")
@@ -104,6 +110,7 @@ class Ctx(Generic[TState]):
                 LegRepr(leg.in_asset(), leg.out_asset(), leg.backend.kind, False)
                 for leg in route
             ],
+            route,
             theoretical_profit,
             expected_profit,
             None,
@@ -133,14 +140,42 @@ class Ctx(Generic[TState]):
         Writes a log to the standard logger and to the log file of a route.
         """
 
-        route.logs.append(f"{log_level.upper()} {fmt_string % tuple(args)}")
+        prefix = ""
+
+        balance_resp_in = try_multiple_clients(
+            self.clients[route.legs[0].backend.chain_id],
+            lambda client: client.query_bank_balance(
+                Address(
+                    self.wallet.public_key(), prefix=route.legs[0].backend.chain_prefix
+                ),
+                route.legs[0].in_asset(),
+            ),
+        )
+
+        if balance_resp_in:
+            prefix += f"BALANCE[{route.legs[0].in_asset()[:DENOM_BALANCE_PREFIX_MAX_DENOM_LEN]}]: {balance_resp_in} "
+
+        balance_resp_base_denom = try_multiple_clients(
+            self.clients[route.legs[0].backend.chain_id],
+            lambda client: client.query_bank_balance(
+                Address(
+                    self.wallet.public_key(), prefix=route.legs[0].backend.chain_prefix
+                ),
+                self.cli_args["base_denom"],
+            ),
+        )
+
+        if balance_resp_base_denom:
+            prefix += f"BALANCE[{self.cli_args['base_denom'][:DENOM_BALANCE_PREFIX_MAX_DENOM_LEN]}]: {balance_resp_in} "
+
+        route.logs.append(f"{log_level.upper()} {prefix}{fmt_string % tuple(args)}")
 
         if route.uid >= len(self.order_history) or route.uid < 0:
             return
 
         self.order_history[route.uid] = route
 
-        fmt_string = f"%s- {fmt_string}"
+        fmt_string = f"{prefix}%s- {fmt_string}"
 
         if log_level == "info":
             logger.info(fmt_string, str(route), *args)
