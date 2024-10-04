@@ -183,7 +183,6 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                 .with_test(Box::new(tests::test_unprofitable_arb) as TestFn)
                 .build()?,
         )?
-        /*
         // Test case (astro -> osmo arb):
         //
         // - Astro: untrn-bruhtoken @ 1.5 bruhtoken/untrn
@@ -213,7 +212,7 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     bruhtoken_osmo.clone(),
                     Pool::Osmosis(
                         OsmosisPoolBuilder::default()
-                            .with_funds(bruhtoken_osmo.clone(), 10000000u128)
+                            .with_funds(bruhtoken_osmo.clone(), 100000000u128)
                             .with_funds(uosmo.clone(), 10000000u128)
                             .with_weight(bruhtoken_osmo.clone(), 1u128)
                             .with_weight(uosmo.clone(), 1u128)
@@ -223,16 +222,16 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                 .with_pool(
                     untrn.clone(),
                     bruhtoken.clone(),
-                    Pool::Astroport(
-                        AstroportPoolBuilder::default()
-                            .with_balance_asset_a(10000000u128)
-                            .with_balance_asset_b(10000000u128)
+                    Pool::Auction(
+                        AuctionPoolBuilder::default()
+                            .with_balance_offer_asset(10000000u128)
+                            .with_price(Decimal::percent(10))
                             .build()?,
                     ),
                 )
                 .with_arbbot()
                 .with_test(Box::new(tests::test_osmo_arb) as TestFn)
                 .build()?,
-        )?*/
+        )?
         .join()
 }

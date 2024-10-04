@@ -641,7 +641,7 @@ pub fn with_arb_bot_output(test: OwnedTestFn) -> TestResult {
     let proc_handle = Arc::new(proc);
     let proc_handle_watcher = proc_handle.clone();
     let (tx_res, rx_res) = mpsc::channel();
-    let mut finished = AtomicBool::new(false);
+    let finished = AtomicBool::new(false);
 
     let test_handle = test.clone();
 
