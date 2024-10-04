@@ -140,51 +140,46 @@ class Ctx(Generic[TState]):
         Writes a log to the standard logger and to the log file of a route.
         """
 
-        prefix = ""
-
-        curr_leg = next(
-            (
-                leg
-                for (leg_repr, leg) in zip(route.route, route.legs)
-                if not leg_repr.executed
-            ),
-            default=None,
-        )
-
-        if curr_leg:
-            balance_resp_in = try_multiple_clients(
-                self.clients[curr_leg.backend.chain_id],
+        def asset_balance_prefix(leg: Leg, asset: str) -> Optional[str]:
+            balance_resp_asset = try_multiple_clients(
+                self.clients[leg.backend.chain_id],
                 lambda client: client.query_bank_balance(
                     Address(
                         self.wallet.public_key(),
-                        prefix=route.legs[0].backend.chain_prefix,
+                        prefix=leg.backend.chain_prefix,
                     ),
-                    curr_leg.in_asset(),
+                    asset,
                 ),
             )
 
-            if balance_resp_in:
-                prefix += f"balance[{curr_leg.in_asset()[:DENOM_BALANCE_PREFIX_MAX_DENOM_LEN]}]: {balance_resp_in} "
+            if not balance_resp_asset:
+                return None
 
-        balance_resp_base_denom = try_multiple_clients(
-            self.clients[curr_leg.backend.chain_id],
-            lambda client: client.query_bank_balance(
-                Address(self.wallet.public_key(), prefix=curr_leg.backend.chain_prefix),
-                self.cli_args["base_denom"],
-            ),
+            return f"balance[{leg.backend.chain_id}]({asset[:DENOM_BALANCE_PREFIX_MAX_DENOM_LEN]}): {balance_resp_asset}"
+
+        def leg_balance_prefixes(leg: Leg) -> list[str]:
+            assets = [leg.in_asset(), leg.out_asset()]
+
+            return [
+                x for x in (asset_balance_prefix(leg, asset) for asset in assets) if x
+            ]
+
+        prefix = " ".join(
+            {
+                prefix
+                for leg_prefixes in [leg_balance_prefixes(leg) for leg in route.legs]
+                for prefix in leg_prefixes
+            }
         )
 
-        if balance_resp_base_denom:
-            prefix += f"balance[{self.cli_args['base_denom'][:DENOM_BALANCE_PREFIX_MAX_DENOM_LEN]}]: {balance_resp_base_denom} "
-
-        route.logs.append(f"{log_level.upper()} {prefix}{fmt_string % tuple(args)}")
+        route.logs.append(f"{log_level.upper()} {prefix} {fmt_string % tuple(args)}")
 
         if route.uid >= len(self.order_history) or route.uid < 0:
             return
 
         self.order_history[route.uid] = route
 
-        fmt_string = f"{prefix}%s- {fmt_string}"
+        fmt_string = f"{prefix} %s- {fmt_string}"
 
         if log_level == "info":
             logger.info(fmt_string, str(route), *args)
