@@ -13,7 +13,13 @@ from cosmpy.aerial.wallet import LocalWallet
 from src.contracts.auction import AuctionDirectory, AuctionProvider
 from src.contracts.route import Route, load_route, LegRepr, Status, Leg
 from src.contracts.pool.provider import PoolProvider
-from src.util import try_multiple_clients
+from src.util import (
+    try_multiple_clients,
+    DenomRouteLeg,
+    DenomRouteQuery,
+    ChainInfo,
+    DenomChainInfo,
+)
 import aiohttp
 import grpc
 
@@ -47,7 +53,9 @@ class Ctx(Generic[TState]):
     http_session: aiohttp.ClientSession
     order_history: list[Route]
     deployments: dict[str, Any]
-    denom_map: Optional[dict[str, list[dict[str, str]]]]
+    denom_map: dict[str, list[DenomChainInfo]]
+    denom_routes: dict[DenomRouteQuery, list[DenomRouteLeg]]
+    chain_info: dict[str, ChainInfo]
 
     def with_state(self, state: Any) -> Self:
         """
@@ -193,6 +201,163 @@ class Ctx(Generic[TState]):
 
         if log_level == "debug":
             logger.debug(fmt_string, str(route), *args)
+
+    async def query_denom_route(
+        self, query: DenomRouteQuery
+    ) -> Optional[list[DenomRouteLeg]]:
+        if self.denom_routes and query in self.denom_routes:
+            return self.denom_routes[query]
+
+        head = {"accept": "application/json", "content-type": "application/json"}
+
+        async with self.http_session.post(
+            "https://api.skip.money/v2/fungible/route",
+            headers=head,
+            json={
+                "amount_in": "1",
+                "source_asset_denom": query.src_denom,
+                "source_asset_chain_id": query.src_chain,
+                "dest_asset_denom": query.dest_denom,
+                "dest_asset_chain_id": query.dest_chain,
+                "allow_multi_tx": True,
+                "allow_unsafe": False,
+                "bridges": ["IBC"],
+            },
+        ) as resp:
+            if resp.status != 200:
+                return None
+
+            ops = (await resp.json())["operations"]
+
+            # The transfer includes a swap or some other operation
+            # we can't handle
+            if any(("transfer" not in op for op in ops)):
+                return None
+
+            transfer_info = ops[0]["transfer"]
+
+            from_chain_info = await self.query_chain_info(
+                transfer_info["from_chain_id"]
+            )
+            to_chain_info = await self.query_chain_info(transfer_info["to_chain_id"])
+
+            if not from_chain_info or not to_chain_info:
+                return None
+
+            route = [
+                DenomRouteLeg(
+                    src_chain=query.src_chain,
+                    dest_chain=query.dest_chain,
+                    src_denom=query.src_denom,
+                    dest_denom=query.dest_denom,
+                    from_chain=from_chain_info,
+                    to_chain=to_chain_info,
+                    denom_in=transfer_info["denom_in"],
+                    denom_out=transfer_info["denom_out"],
+                    port=transfer_info["port"],
+                    channel=transfer_info["channel"],
+                )
+                for op in ops
+            ]
+
+            self.denom_routes[query] = route
+
+            return route
+
+    async def query_chain_info(
+        self,
+        chain_id: str,
+    ) -> Optional[ChainInfo]:
+        """
+        Gets basic information about a cosmos chain.
+        """
+
+        if chain_id in self.chain_info:
+            return self.chain_info[chain_id]
+
+        head = {"accept": "application/json", "content-type": "application/json"}
+
+        async with self.http_session.get(
+            f"https://api.skip.money/v2/info/chains?chain_ids={chain_id}",
+            headers=head,
+        ) as resp:
+            if resp.status != 200:
+                return None
+
+            chains = (await resp.json())["chains"]
+
+            if len(chains) == 0:
+                return None
+
+            chain = chains[0]
+
+            chain_info = ChainInfo(
+                chain_name=chain["chain_name"],
+                chain_id=chain["chain_id"],
+                pfm_enabled=chain["pfm_enabled"],
+                supports_memo=chain["supports_memo"],
+                bech32_prefix=chain["bech32_prefix"],
+                fee_asset=chain["fee_assets"][0]["denom"],
+                chain_type=chain["chain_type"],
+                pretty_name=chain["pretty_name"],
+            )
+
+            self.chain_info[chain_id] = chain_info
+
+            return chain_info
+
+    async def query_denom_info_on_chain(
+        self,
+        src_chain: str,
+        src_denom: str,
+        dest_chain: str,
+    ) -> Optional[DenomChainInfo]:
+        """
+        Gets a neutron denom's denom and channel on/to another chain.
+        """
+
+        infos = await self.query_denom_info(src_chain, src_denom)
+
+        return next((info for info in infos if info.dest_chain_id == dest_chain))
+
+    async def query_denom_info(
+        self,
+        src_chain: str,
+        src_denom: str,
+    ) -> list[DenomChainInfo]:
+        """
+        Gets a denom's denom and channel on/to other chains.
+        """
+
+        if src_denom in self.denom_map:
+            return self.denom_map[src_denom]
+
+        head = {"accept": "application/json", "content-type": "application/json"}
+
+        async with self.http_session.post(
+            "https://api.skip.money/v1/fungible/assets_from_source",
+            headers=head,
+            json={
+                "allow_multi_tx": False,
+                "include_cw20_assets": True,
+                "source_asset_denom": src_denom,
+                "source_asset_chain_id": src_chain,
+                "client_id": "timewave-arb-bot",
+            },
+        ) as resp:
+            if resp.status != 200:
+                return []
+
+            dests = (await resp.json())["dest_assets"]
+
+            def chain_info(chain_id: str, info: dict[str, Any]) -> DenomChainInfo:
+                info = info["assets"][0]
+
+                return DenomChainInfo(
+                    src_chain_id=src_chain, denom=info["denom"], dest_chain_id=chain_id
+                )
+
+            return [chain_info(chain_id, info) for chain_id, info in dests.items()]
 
 
 class Scheduler(Generic[TState]):

@@ -21,17 +21,13 @@ from src.contracts.pool.astroport import (
     NeutronAstroportPoolProvider,
 )
 from src.util import (
-    chain_info,
     IBC_TRANSFER_TIMEOUT_SEC,
     IBC_TRANSFER_POLL_INTERVAL_SEC,
     try_multiple_rest_endpoints,
     try_multiple_clients_fatal,
     try_multiple_clients,
     DENOM_QUANTITY_ABORT_ARB,
-    denom_route,
-    denom_info_on_chain,
-    denom_info,
-    DenomChainInfo,
+    DenomRouteQuery,
 )
 from src.scheduler import Ctx
 from cosmos.base.v1beta1 import coin_pb2
@@ -458,7 +454,7 @@ async def rebalance_portfolio(
     for chain_id in ctx.endpoints.keys():
         logger.info("Rebalancing portfolio for chain %s", chain_id)
 
-        chain_meta = await chain_info(chain_id, ctx.http_session)
+        chain_meta = await ctx.query_chain_info(chain_id)
 
         if not chain_meta:
             continue
@@ -585,8 +581,6 @@ async def listen_routes_with_depth_dfs(
         ]
     ] = None,
 ) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
-    denom_cache: dict[str, dict[str, list[str]]] = {}
-
     start_pools: list[Union[AuctionProvider, PoolProvider]] = [
         *auctions.get(src, {}).values(),
         *(pool for pool_set in pools.get(src, {}).values() for pool in pool_set),
@@ -604,17 +598,19 @@ async def listen_routes_with_depth_dfs(
     async def next_legs(
         path: list[Leg],
     ) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
-        nonlocal denom_cache
         nonlocal eval_profit
+
+        matching_denoms = [
+            info.denom
+            for info in await ctx.query_denom_info(
+                path[-2].backend.chain_id,
+                path[-2].out_asset(),
+            )
+        ]
 
         if len(path) >= 2 and not (
             path[-1].in_asset() == path[-2].out_asset()
-            or path[-1].in_asset()
-            in [
-                denom
-                for denom_list in denom_cache[path[-2].out_asset()].values()
-                for denom in denom_list
-            ]
+            or path[-1].in_asset() in matching_denoms
         ):
             return
 
@@ -662,29 +658,7 @@ async def listen_routes_with_depth_dfs(
         # no more work to do
         end = prev_pool.out_asset()
 
-        if end not in denom_cache:
-            try:
-                denom_infos = await denom_info(
-                    prev_pool.backend.chain_id, end, ctx.http_session, ctx.denom_map
-                )
-
-                denom_cache[end] = {
-                    info[0].chain_id: [i.denom for i in info]
-                    for info in (
-                        denom_infos
-                        + [
-                            [
-                                DenomChainInfo(
-                                    denom=end,
-                                    chain_id=prev_pool.backend.chain_id,
-                                )
-                            ]
-                        ]
-                    )
-                    if len(info) > 0 and info[0].chain_id
-                }
-            except asyncio.TimeoutError:
-                return
+        denom_infos = await ctx.query_denom_info(prev_pool.backend.chain_id, end)
 
         # A pool is a candidate to be a next pool if it has a denom
         # contained in denom_cache[end] or one of its denoms *is* end
@@ -721,38 +695,40 @@ async def listen_routes_with_depth_dfs(
                     Leg(
                         (
                             auction.asset_a
-                            if auction.asset_a() == src or auction.asset_a() == denom
+                            if auction.asset_a() == src
+                            or auction.asset_a() == denom_info.denom
                             else auction.asset_b
                         ),
                         (
                             auction.asset_a
-                            if auction.asset_a() != src and auction.asset_a() != denom
+                            if auction.asset_a() != src
+                            and auction.asset_a() != denom_info.denom
                             else auction.asset_b
                         ),
                         auction,
                     )
-                    for denom_set in denom_cache[end].values()
-                    for denom in denom_set
-                    for auction in auctions.get(denom, {}).values()
+                    for denom_info in denom_infos
+                    for auction in auctions.get(denom_info.denom, {}).values()
                     if auction.chain_id != prev_pool.backend.chain_id
                 ),
                 *(
                     Leg(
                         (
                             pool.asset_a
-                            if pool.asset_a() == src or pool.asset_a() == denom
+                            if pool.asset_a() == src
+                            or pool.asset_a() == denom_info.denom
                             else pool.asset_b
                         ),
                         (
                             pool.asset_a
-                            if pool.asset_a() != src and pool.asset_a() != denom
+                            if pool.asset_a() != src
+                            and pool.asset_a() != denom_info.denom
                             else pool.asset_b
                         ),
                         pool,
                     )
-                    for denom_set in denom_cache[end].values()
-                    for denom in denom_set
-                    for pool_set in pools.get(denom, {}).values()
+                    for denom_info in denom_infos
+                    for pool_set in pools.get(denom_info.denom, {}).values()
                     for pool in pool_set
                     if pool.chain_id != prev_pool.backend.chain_id
                 ),
@@ -862,12 +838,10 @@ async def transfer(
     succeeded.
     """
 
-    denom_infos_on_dest = await denom_info_on_chain(
+    denom_infos_on_dest = await ctx.query_denom_info_on_chain(
         prev_leg.backend.chain_id,
         denom,
         leg.backend.chain_id,
-        ctx.http_session,
-        ctx.denom_map,
     )
 
     if not denom_infos_on_dest:
@@ -875,12 +849,13 @@ async def transfer(
             f"Missing denom info for transfer {denom} ({prev_leg.backend.chain_id}) -> {leg.backend.chain_id}"
         )
 
-    ibc_route = await denom_route(
-        prev_leg.backend.chain_id,
-        denom,
-        leg.backend.chain_id,
-        denom_infos_on_dest[0].denom,
-        ctx.http_session,
+    ibc_route = await ctx.query_denom_route(
+        DenomRouteQuery(
+            src_chain=prev_leg.backend.chain_id,
+            src_denom=denom,
+            dest_chain=leg.backend.chain_id,
+            dest_denom=denom_infos_on_dest.denom,
+        )
     )
 
     if not ibc_route or len(ibc_route) == 0:

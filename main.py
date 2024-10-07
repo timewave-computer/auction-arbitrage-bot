@@ -13,7 +13,7 @@ import logging
 import sys
 from os import path
 import os
-from typing import Any, cast, Optional
+from typing import Any, cast
 from cosmpy.aerial.client import LedgerClient
 from cosmpy.aerial.wallet import LocalWallet
 from src.scheduler import Scheduler, Ctx
@@ -105,12 +105,16 @@ async def main() -> None:
                 f,
             )
 
-    denom_map: Optional[dict[str, list[dict[str, str]]]] = None
+    denom_file: dict[str, Any] = {
+        "denom_map": {},
+        "denom_routes": {},
+        "chain_info": {},
+    }
 
     # If the user has specified a denom map, use that instead of skip
     if args.denom_file is not None and path.isfile(args.denom_file):
         with open(args.denom_file, "r", encoding="utf-8") as f:
-            denom_map = json.load(f)
+            denom_file = json.load(f)
 
     # If the user specified a poolfile, create the poolfile if it is empty
     if args.pool_file is not None and not path.isfile(args.pool_file):
@@ -188,7 +192,9 @@ async def main() -> None:
                 session,
                 [],
                 cast(dict[str, Any], json.load(f)),
-                denom_map,
+                denom_file["denom_map"],
+                denom_file["denom_routes"],
+                denom_file["chain_info"],
             ).recover_history()
             sched = Scheduler(ctx, strategy)
 

@@ -46,6 +46,8 @@ async def main() -> None:
             [],
             {},
             denoms,
+            {},
+            {},
         )
 
         await transfer_raw(
