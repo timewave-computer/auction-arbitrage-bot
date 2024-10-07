@@ -3,7 +3,7 @@
 from typing import Any
 from src.contracts.route import Leg
 from src.strategies.util import collapse_route, build_atomic_arb
-from tests.test_scheduler import TEST_WALLET_MNEMONIC
+from tests.util import TEST_WALLET_MNEMONIC
 from cosmpy.aerial.wallet import LocalWallet
 
 

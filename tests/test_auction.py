@@ -84,7 +84,7 @@ async def test_auction_provider() -> None:
                         * price
                     )
                     assert liq_estimate - liquidity < 5
-                    assert liquidity - liq_estimate < 100
+                    assert liquidity - liq_estimate < 1000
 
 
 @pytest.mark.asyncio

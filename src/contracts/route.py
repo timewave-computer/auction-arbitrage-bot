@@ -53,6 +53,7 @@ class Route:
 
     uid: int
     route: list[LegRepr]
+    legs: list[Leg]
     theoretical_profit: int
     expected_profit: int
     realized_profit: Optional[int]
@@ -104,6 +105,7 @@ def load_route(s: str) -> Route:
     return Route(
         loaded["uid"],
         [load_leg_repr(json_leg) for json_leg in loaded["route"]],
+        [],
         loaded["theoretical_profit"],
         loaded["expected_profit"],
         loaded["realized_profit"],
