@@ -27,6 +27,7 @@ from src.util import (
     try_multiple_clients_fatal,
     try_multiple_clients,
     DenomRouteQuery,
+    fmt_denom_route_leg,
 )
 from src.scheduler import Ctx
 from cosmos.base.v1beta1 import coin_pb2
@@ -961,6 +962,13 @@ async def transfer(
             dest_chain=leg.backend.chain_id,
             dest_denom=denom_infos_on_dest.denom,
         )
+    )
+
+    ctx.log_route(
+        route,
+        "info",
+        "Got potential transfer route: %s",
+        [fmt_denom_route_leg(leg) for leg in ibc_route],
     )
 
     if not ibc_route or len(ibc_route) == 0:

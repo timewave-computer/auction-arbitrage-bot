@@ -309,6 +309,12 @@ def load_denom_route_leg(obj: dict[str, Any]) -> DenomRouteLeg:
     )
 
 
+def fmt_denom_route_leg(leg: DenomRouteLeg) -> str:
+    return (
+        f"{src_denom} ({src_chain}) -> {dest_denom} ({dest_chain}) via {channel}/{port}"
+    )
+
+
 @dataclass
 class DenomChainInfo:
     """
