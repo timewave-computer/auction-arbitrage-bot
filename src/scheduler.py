@@ -166,12 +166,18 @@ class Ctx(Generic[TState]):
             return f"balance[{leg.backend.chain_id}]({asset[:DENOM_BALANCE_PREFIX_MAX_DENOM_LEN]}): {balance_resp_asset}"
 
         def leg_balance_prefixes(leg: Leg) -> list[str]:
+            """
+            Get the chain, denom, and denom balance for the in and out assets in the leg.
+            """
+
             assets = [leg.in_asset(), leg.out_asset()]
 
             return [
                 x for x in (asset_balance_prefix(leg, asset) for asset in assets) if x
             ]
 
+        # Log all in and out asset balances for each leg in the route,
+        # removing any duplicate prefixes using dict.fromkeys
         prefix = " ".join(
             list(
                 dict.fromkeys(
