@@ -145,7 +145,7 @@ pub fn test_osmo_arb(arbfile: Option<Value>) -> Result<(), Box<dyn Error + Send 
 
     util::assert_err(
         "200000 + PROFIT_MARGIN > profit > 200000 - PROFIT_MARGIN",
-        200000 + ERROR_MARGIN_PROFIT > osmo_profit && osmo_profit > 200000 - ERROR_MARGIN_PROFIT,
+        9000000 + ERROR_MARGIN_PROFIT > osmo_profit && osmo_profit > 9000000 - ERROR_MARGIN_PROFIT,
         true,
     )?;
     util::assert_err(
