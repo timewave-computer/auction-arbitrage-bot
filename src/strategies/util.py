@@ -1252,7 +1252,7 @@ async def quantities_for_route_profit(
     if len(plans_by_profit) == 0:
         return (0, [])
 
-    best_plan = plans[plans_by_profit[0]]
+    best_plan = plans[plans_by_profit[-1]]
 
     ctx.log_route(
         r,
