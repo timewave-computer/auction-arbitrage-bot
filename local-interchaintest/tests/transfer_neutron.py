@@ -1,9 +1,9 @@
 import json
 import asyncio
-from asyncio import Lock
+from asyncio import Semaphore
 from typing import Any
 from src.strategies.util import transfer_raw
-from src.scheduler import Ctx
+from src.scheduler import Ctx, MAX_SKIP_CONCURRENT_CALLS
 from src.util import try_multiple_clients
 from src.util import custom_neutron_network_config
 import aiohttp
@@ -49,7 +49,7 @@ async def main() -> None:
             denoms,
             {},
             {},
-            Lock(),
+            Semaphore(MAX_SKIP_CONCURRENT_CALLS),
         )
 
         await transfer_raw(

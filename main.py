@@ -4,7 +4,7 @@
 Implements a command-line interface for running arbitrage strategies.
 """
 
-from asyncio import Lock
+from asyncio import Semaphore
 import traceback
 import asyncio
 from multiprocessing import Process
@@ -215,7 +215,7 @@ async def main() -> None:
                     chain_id: load_chain_info(info)
                     for (chain_id, info) in denom_file["chain_info"].items()
                 },
-                Lock(),
+                Semaphore(),
             ).recover_history()
             sched = Scheduler(ctx, strategy)
 

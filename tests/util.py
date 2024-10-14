@@ -1,4 +1,4 @@
-from asyncio import Lock
+from asyncio import Semaphore
 from typing import Any, cast, AsyncIterator
 import json
 import aiohttp
@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from contextlib import asynccontextmanager
 from cosmpy.aerial.client import LedgerClient, NetworkConfig
 from cosmpy.aerial.wallet import LocalWallet
-from src.scheduler import Ctx
+from src.scheduler import Ctx, MAX_SKIP_CONCURRENT_CALLS
 from src.util import (
     DISCOVERY_CONCURRENCY_FACTOR,
     NEUTRON_NETWORK_CONFIG,
@@ -109,5 +109,5 @@ async def ctx() -> AsyncIterator[Ctx[Any]]:
                 denom_map={},
                 denom_routes={},
                 chain_info={},
-                http_session_lock=Lock(),
+                http_session_lock=Semaphore(MAX_SKIP_CONCURRENT_CALLS),
             ).with_state(State(1000))

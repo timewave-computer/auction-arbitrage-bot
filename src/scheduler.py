@@ -2,7 +2,7 @@
 Implements a strategy runner with an arbitrary provider set in an event-loop style.
 """
 
-from asyncio import Lock
+from asyncio import Semaphore
 import logging
 from datetime import datetime
 import json
@@ -62,7 +62,7 @@ class Ctx(Generic[TState]):
     denom_map: dict[str, list[DenomChainInfo]]
     denom_routes: dict[str, dict[str, list[DenomRouteLeg]]]
     chain_info: dict[str, ChainInfo]
-    http_session_lock: Lock
+    http_session_lock: Semaphore
 
     def with_state(self, state: Any) -> Self:
         """
