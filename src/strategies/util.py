@@ -616,7 +616,7 @@ async def rebalance_portfolio(
                     [denom],
                 )
 
-                continue
+                return
 
             # Check that the execution plan results in a liquidatable quantity
             if execution_plan[-1] < ctx.cli_args["rebalance_threshold"]:
@@ -627,7 +627,7 @@ async def rebalance_portfolio(
                     [denom],
                 )
 
-                continue
+                return
 
             ctx.log_route(
                 route_ent, "info", "Executing rebalancing plan for %s", [denom]
@@ -639,8 +639,6 @@ async def rebalance_portfolio(
 
             try:
                 await exec_arb(route_ent, 0, execution_plan, route, ctx)
-
-                break
             except Exception:
                 ctx.log_route(
                     route_ent,
