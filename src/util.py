@@ -310,9 +310,7 @@ def load_denom_route_leg(obj: dict[str, Any]) -> DenomRouteLeg:
 
 
 def fmt_denom_route_leg(leg: DenomRouteLeg) -> str:
-    return (
-        f"{src_denom} ({src_chain}) -> {dest_denom} ({dest_chain}) via {channel}/{port}"
-    )
+    return f"{leg.src_denom} ({leg.src_chain}) -> {leg.dest_denom} ({leg.dest_chain}) via {leg.channel}/{leg.port}"
 
 
 @dataclass

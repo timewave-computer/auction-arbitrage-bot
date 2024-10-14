@@ -964,15 +964,15 @@ async def transfer(
         )
     )
 
+    if not ibc_route or len(ibc_route) == 0:
+        raise ValueError(f"No route from {denom} to {leg.backend.chain_id}")
+
     ctx.log_route(
         route,
         "info",
         "Got potential transfer route: %s",
         [fmt_denom_route_leg(leg) for leg in ibc_route],
     )
-
-    if not ibc_route or len(ibc_route) == 0:
-        raise ValueError(f"No route from {denom} to {leg.backend.chain_id}")
 
     src_channel_id = ibc_route[0].channel
     sender_addr = str(
