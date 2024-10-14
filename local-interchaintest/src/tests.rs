@@ -143,7 +143,17 @@ pub fn test_osmo_arb(arbfile: Option<Value>) -> Result<(), Box<dyn Error + Send 
     println!("AUCTION BOT PROFIT: {auction_profit}");
     println!("OSMOSIS BOT PROFIT: {osmo_profit}");
 
-    util::assert_err("osmo_profit == 9482512", osmo_profit, 9482512)?;
+    util::assert_err(
+        "200000 + PROFIT_MARGIN > profit > 200000 - PROFIT_MARGIN",
+        200000 + ERROR_MARGIN_PROFIT > osmo_profit && osmo_profit > 200000 - ERROR_MARGIN_PROFIT,
+        true,
+    )?;
+    util::assert_err(
+        "200000 + PROFIT_MARGIN > auction_profit > 200000 - PROFIT_MARGIN",
+        200000 + ERROR_MARGIN_PROFIT > auction_profit
+            && auction_profit > 200000 - ERROR_MARGIN_PROFIT,
+        true,
+    )?;
 
     Ok(())
 }

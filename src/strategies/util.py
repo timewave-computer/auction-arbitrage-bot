@@ -695,13 +695,12 @@ async def listen_routes_with_depth_dfs(
         nonlocal eval_profit
 
         if len(path) >= 2:
-            matching_denoms = [
-                info.denom
-                for info in await ctx.query_denom_info(
-                    path[-2].backend.chain_id,
-                    path[-2].out_asset(),
-                )
-            ]
+            denom_infos = await ctx.query_denom_info(
+                path[-2].backend.chain_id,
+                path[-2].out_asset(),
+            )
+
+            matching_denoms = [info.denom for info in denom_infos]
 
             if not (
                 path[-1].in_asset() == path[-2].out_asset()
@@ -1209,7 +1208,7 @@ async def quantities_for_route_profit(
                 ", ".join(
                     (
                         f"[{', '.join((str(qty) for qty in plans[plan_idx]))}]"
-                        for plan_idx in plans_by_profit[:5]
+                        for plan_idx in plans_by_profit[:-5]
                     )
                 ),
             ],
@@ -1218,11 +1217,11 @@ async def quantities_for_route_profit(
         profit = 0 if len(quantities) == 0 else quantities[-1] - quantities[0]
 
         # Insert in sorted position
-        if len(quantities) >= len(route):
+        if len(quantities) > len(route):
             insort(plans_by_profit, mid, key=lambda idx: plans[idx][-1] - plans[idx][0])
 
         # Continue checking plans, since this quantity was not profitable
-        if len(quantities) < len(route) or profit <= 0:
+        if len(quantities) <= len(route) or profit <= 0:
             right = mid
             mid = right // 2
 
