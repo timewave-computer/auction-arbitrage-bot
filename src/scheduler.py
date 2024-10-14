@@ -150,6 +150,9 @@ class Ctx(Generic[TState]):
         Writes a log to the standard logger and to the log file of a route.
         """
 
+        if not route.logs_enabled:
+            return
+
         def asset_balance_prefix(leg: Leg, asset: str) -> Optional[str]:
             balance_resp_asset = try_multiple_clients(
                 self.clients[leg.backend.chain_id],
