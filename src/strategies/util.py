@@ -2,6 +2,7 @@
 Defines common utilities shared across arbitrage strategies.
 """
 
+from bisect import insort
 import random
 import traceback
 import asyncio
@@ -26,7 +27,6 @@ from src.util import (
     try_multiple_rest_endpoints,
     try_multiple_clients_fatal,
     try_multiple_clients,
-    DENOM_QUANTITY_ABORT_ARB,
     DenomRouteQuery,
 )
 from src.scheduler import Ctx
@@ -108,6 +108,14 @@ def collapse_route(
     ]
 
 
+def expand_route(route_sublegs: list[list[tuple[Leg, int]]]) -> list[tuple[Leg, int]]:
+    """
+    Ungroups legs grouped together by consecutive elements.
+    """
+
+    return [leg for sublegs in route_sublegs for leg in sublegs]
+
+
 def build_atomic_arb(
     sublegs: list[tuple[Leg, int]], wallet: LocalWallet
 ) -> Transaction:
@@ -132,6 +140,28 @@ def build_atomic_arb(
         tx.add_message(msg)
 
     return tx
+
+
+def denom_balance_on_chain(
+    provider: Union[AuctionProvider, PoolProvider], denom: str, ctx: Ctx[Any]
+) -> int:
+    """
+    Gets the maximum order size for the provider of the leg,
+    given the balance in the user's wallet.
+    """
+
+    balance_resp = try_multiple_clients(
+        ctx.clients[provider.chain_id],
+        lambda client: client.query_bank_balance(
+            Address(ctx.wallet.public_key(), prefix=provider.chain_prefix),
+            denom,
+        ),
+    )
+
+    if isinstance(balance_resp, int):
+        return balance_resp
+
+    return 0
 
 
 async def exec_arb(
@@ -183,9 +213,73 @@ async def exec_arb(
         ],
     )
 
-    for sublegs in to_execute:
+    for i, sublegs in enumerate(to_execute):
+        (leg, predicted_to_swap) = sublegs[0]
+
+        # The execution plan must have a sufficient balance
+        # in order to execute the step.
+        # Otherwise, the step's quantity should be set to the balance
+        # and the plan should be updated and reevaluated for profit.
+        # If the route is no longer profitable, it should be canceled
+
+        to_swap = min(
+            predicted_to_swap,
+            denom_balance_on_chain(
+                prev_leg.backend if prev_leg else leg.backend,
+                prev_leg.out_asset() if prev_leg else leg.in_asset(),
+                ctx,
+            ),
+        )
+
+        ctx.log_route(
+            route_ent,
+            "info",
+            "Execution plan for leg %s requires %d, and maximum spendable for leg is %d",
+            [fmt_route([leg]), predicted_to_swap, to_swap],
+        )
+
+        # Recalculate execution plan and update all legs,
+        # or abort if the route is no longer profitable
+        if to_swap != predicted_to_swap:
+            ctx.log_route(
+                route_ent,
+                "info",
+                "Maximum spendable for leg %s (%d) is insufficient for execution plan (requires %d); reevaluating",
+                [fmt_route([leg]), predicted_to_swap, to_swap],
+            )
+
+            remaining_legs = expand_route(to_execute[i:])
+
+            _, new_execution_plan = await quantities_for_route_profit(
+                to_swap,
+                [leg for leg, _ in remaining_legs],
+                route_ent,
+                ctx,
+                seek_profit=False,
+            )
+
+            # The execution plan was aborted
+            if len(new_execution_plan) < len(remaining_legs):
+                ctx.log_route(
+                    route_ent,
+                    "info",
+                    "Insufficient execution planning (%d) for remaining legs (%d); skipping",
+                    [len(new_execution_plan), len(remaining_legs)],
+                )
+
+                continue
+
+            # The execution plan indicates the trade is no longer profitable
+            if new_execution_plan[-1] < quantities[0]:
+                raise ValueError(
+                    "Execution plan indicates arb is no longer profitable."
+                )
+
+            # Update the remaining execution plan
+            to_execute[i:] = collapse_route(iter(remaining_legs))
+
         leg_to_swap: tuple[Leg, int] = sublegs[0]
-        (leg, to_swap) = leg_to_swap
+        (leg, _) = leg_to_swap
 
         # Log legs on the same chain
         if len(sublegs) > 1:
@@ -600,19 +694,20 @@ async def listen_routes_with_depth_dfs(
     ) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
         nonlocal eval_profit
 
-        matching_denoms = [
-            info.denom
-            for info in await ctx.query_denom_info(
-                path[-2].backend.chain_id,
-                path[-2].out_asset(),
-            )
-        ]
+        if len(path) >= 2:
+            matching_denoms = [
+                info.denom
+                for info in await ctx.query_denom_info(
+                    path[-2].backend.chain_id,
+                    path[-2].out_asset(),
+                )
+            ]
 
-        if len(path) >= 2 and not (
-            path[-1].in_asset() == path[-2].out_asset()
-            or path[-1].in_asset() in matching_denoms
-        ):
-            return
+            if not (
+                path[-1].in_asset() == path[-2].out_asset()
+                or path[-1].in_asset() in matching_denoms
+            ):
+                return
 
         # Only find `limit` pools
         # with a depth less than `depth
@@ -790,7 +885,7 @@ async def recover_funds(
         ),
     )
 
-    if not balance_resp:
+    if balance_resp is None or not isinstance(balance_resp, int):
         raise ValueError(f"Couldn't get balance for asset {curr_leg.in_asset()}.")
 
     if curr_leg.backend.chain_id != backtracked[0].backend.chain_id:
@@ -979,7 +1074,7 @@ async def transfer_raw(
 
         # Check for a package acknowledgement by querying osmosis
         ack_resp = await try_multiple_rest_endpoints(
-            ctx.endpoints[src_chain_id]["http"],
+            ctx.endpoints[dest_chain_id]["http"],
             (
                 f"/ibc/core/channel/v1/channels/{src_channel_id}/"
                 f"ports/transfer/packet_acks/"
@@ -1014,6 +1109,68 @@ async def transfer_raw(
     raise ValueError("IBC transfer timed out.")
 
 
+async def quantities_for_starting_amount(
+    starting_amount: int, route: list[Leg]
+) -> list[int]:
+    """
+    Gets the order size for each subsequent trade given a starting amount,
+    and the liquidity in each pool.
+    """
+
+    quantities = [starting_amount]
+
+    for leg in route:
+        if quantities[-1] == 0:
+            quantities = [starting_amount]
+
+            break
+
+        prev_amt = quantities[-1]
+
+        if isinstance(leg.backend, AuctionProvider):
+            if leg.in_asset != leg.backend.asset_a:
+                return quantities
+
+            if await leg.backend.remaining_asset_b() == 0:
+                return quantities
+
+            quantities.append(
+                min(
+                    int(await leg.backend.exchange_rate() * prev_amt),
+                    await leg.backend.remaining_asset_b(),
+                )
+            )
+
+            continue
+
+        if leg.in_asset == leg.backend.asset_a:
+            quantities.append(int(await leg.backend.simulate_swap_asset_a(prev_amt)))
+
+            pool_liquidity = await leg.backend.balance_asset_b()
+
+            if (
+                pool_liquidity == 0
+                or Decimal(quantities[-1]) / Decimal(pool_liquidity)
+                > MAX_POOL_LIQUIDITY_TRADE
+            ):
+                break
+
+            continue
+
+        quantities.append(int(await leg.backend.simulate_swap_asset_b(prev_amt)))
+
+        pool_liquidity = await leg.backend.balance_asset_a()
+
+        if (
+            pool_liquidity == 0
+            or Decimal(quantities[-1]) / Decimal(pool_liquidity)
+            > MAX_POOL_LIQUIDITY_TRADE
+        ):
+            break
+
+    return quantities
+
+
 async def quantities_for_route_profit(
     starting_amount: int,
     route: list[Leg],
@@ -1029,84 +1186,81 @@ async def quantities_for_route_profit(
     if len(route) <= 1:
         return (0, [])
 
-    quantities: list[int] = [starting_amount]
+    left = 0
+    right = starting_amount
+    mid = starting_amount // 2
 
-    while (seek_profit and quantities[-1] - quantities[0] <= 0) or len(
-        quantities
-    ) <= len(route):
-        ctx.log_route(r, "info", "Route has possible execution plan: %s", [quantities])
+    plans: dict[int, list[int]] = {}
 
-        if starting_amount < DENOM_QUANTITY_ABORT_ARB:
-            logger.debug(
-                "Hit investment backstop (%d) in route planning: %s (%s)",
-                DENOM_QUANTITY_ABORT_ARB,
-                starting_amount,
-                quantities,
-            )
+    # Plans sorted by profit, for purposes of returning the best plan
+    plans_by_profit: list[int] = []
 
-            return (0, [])
+    while mid > 0 and mid <= starting_amount:
+        quantities: list[int] = await quantities_for_starting_amount(mid, route)
+        plans[mid] = quantities
 
-        quantities = [starting_amount]
-
-        for leg in route:
-            if quantities[-1] == 0:
-                quantities = [starting_amount]
-
-                break
-
-            prev_amt = quantities[-1]
-
-            if isinstance(leg.backend, AuctionProvider):
-                if leg.in_asset != leg.backend.asset_a:
-                    return (0, [])
-
-                if await leg.backend.remaining_asset_b() == 0:
-                    return (0, [])
-
-                quantities.append(
-                    min(
-                        int(await leg.backend.exchange_rate() * prev_amt),
-                        await leg.backend.remaining_asset_b(),
+        ctx.log_route(
+            r,
+            "info",
+            "Got execution plan @ %d: [%s] (best candidates: [%s]",
+            [
+                mid,
+                ", ".join((str(qty) for qty in quantities)),
+                ", ".join(
+                    (
+                        f"[{', '.join((str(qty) for qty in plans[plan_idx]))}]"
+                        for plan_idx in plans_by_profit[:5]
                     )
-                )
+                ),
+            ],
+        )
 
-                continue
+        profit = 0 if len(quantities) == 0 else quantities[-1] - quantities[0]
 
-            if leg.in_asset == leg.backend.asset_a:
-                quantities.append(
-                    int(await leg.backend.simulate_swap_asset_a(prev_amt))
-                )
+        # Insert in sorted position
+        if len(quantities) >= len(route):
+            insort(plans_by_profit, mid, key=lambda idx: plans[idx][-1] - plans[idx][0])
 
-                pool_liquidity = await leg.backend.balance_asset_b()
+        # Continue checking plans, since this quantity was not profitable
+        if len(quantities) < len(route) or profit <= 0:
+            right = mid
+            mid = right // 2
 
-                if (
-                    pool_liquidity == 0
-                    or Decimal(quantities[-1]) / Decimal(pool_liquidity)
-                    > MAX_POOL_LIQUIDITY_TRADE
-                ):
-                    break
+            ctx.log_route(r, "info", "Probing lower execution plans", [])
 
-                continue
+            continue
 
-            quantities.append(int(await leg.backend.simulate_swap_asset_b(prev_amt)))
+        higher_plan = plans.get(mid + (right - mid) // 2, [])
 
-            pool_liquidity = await leg.backend.balance_asset_a()
+        # No more to evaluate, since greater starting amount was less profitable
+        if (
+            len(higher_plan) > 0
+            and len(higher_plan) >= len(route)
+            and higher_plan[-1] - higher_plan[0] <= profit
+        ):
+            ctx.log_route(r, "info", "Best execution plan identified", [])
 
-            if (
-                pool_liquidity == 0
-                or Decimal(quantities[-1]) / Decimal(pool_liquidity)
-                > MAX_POOL_LIQUIDITY_TRADE
-            ):
-                break
+            break
 
-        starting_amount = int(Decimal(starting_amount) / Decimal(2.0))
+        # This plan is profitable, but a bigger plan might be even more profitable
+        left = mid
+        mid += (right - left) // 2
 
-    ctx.log_route(r, "info", "Got execution plan: %s", [quantities])
+        ctx.log_route(r, "info", "Probing higher execution plans", [])
 
-    if quantities[-1] - quantities[0] > 0:
-        ctx.log_route(r, "info", "Route is profitable: %s", [fmt_route(route)])
+    if len(plans_by_profit) == 0:
+        return (0, [])
 
-    return (quantities[-1] - quantities[0], quantities)
+    best_plan = plans[plans_by_profit[0]]
+
+    ctx.log_route(
+        r,
+        "info",
+        "Best execution plan: [%s]",
+        [", ".join((str(qty) for qty in best_plan))],
+    )
+
+    return (best_plan[-1] - best_plan[0] if len(best_plan) > 0 else 0, best_plan)
 
 
 async def route_base_denom_profit(

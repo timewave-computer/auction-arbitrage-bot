@@ -20,6 +20,9 @@ from src.scheduler import Scheduler, Ctx
 from src.util import (
     custom_neutron_network_config,
     DISCOVERY_CONCURRENCY_FACTOR,
+    load_denom_chain_info,
+    load_denom_route_leg,
+    load_chain_info,
 )
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
@@ -192,9 +195,23 @@ async def main() -> None:
                 session,
                 [],
                 cast(dict[str, Any], json.load(f)),
-                denom_file["denom_map"],
-                denom_file["denom_routes"],
-                denom_file["chain_info"],
+                {
+                    denom: [load_denom_chain_info(info) for info in infos]
+                    for (denom, infos) in denom_file["denom_map"].items()
+                },
+                {
+                    src_denom: {
+                        dest_denom: [load_denom_route_leg(route) for route in routes]
+                        for (dest_denom, routes) in dest_denom_routes.items()
+                    }
+                    for (src_denom, dest_denom_routes) in denom_file[
+                        "denom_routes"
+                    ].items()
+                },
+                {
+                    chain_id: load_chain_info(info)
+                    for (chain_id, info) in denom_file["chain_info"].items()
+                },
             ).recover_history()
             sched = Scheduler(ctx, strategy)
 

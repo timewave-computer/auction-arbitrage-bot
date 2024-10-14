@@ -63,8 +63,7 @@ class State:
             ),
         )
 
-        if balance_resp:
-            self.balance = balance_resp
+        self.balance = balance_resp
 
         return self
 
@@ -113,7 +112,7 @@ async def strategy(
     ):
         ctx.log_route(r, "info", "Route queued: %s", [fmt_route(route)])
 
-        if not state.balance:
+        if state.balance is None:
             return ctx
 
         ctx.log_route(
@@ -233,7 +232,7 @@ async def eval_route(
     if not state:
         return None
 
-    if not state.balance:
+    if state.balance is None or not isinstance(state.balance, int):
         logger.error(
             "Failed to fetch bot wallet balance for account %s",
             str(Address(ctx.wallet.public_key(), prefix="neutron")),

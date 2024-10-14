@@ -290,7 +290,7 @@ async def strategy(
         ),
     )
 
-    if not balance_resp:
+    if balance_resp is None or not isinstance(balance_resp, int):
         return ctx
 
     profit = await route_base_denom_profit(balance_resp, route)

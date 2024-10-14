@@ -1,5 +1,5 @@
 use super::{
-    util::{self, DenomMapEntry},
+    util::{self, BidirectionalDenomRouteLeg, ChainInfo, DenomFile, DenomRouteLeg},
     ARBFILE_PATH, OSMO_OWNER_ADDR, OWNER_ADDR, TEST_MNEMONIC,
 };
 use clap::Parser;
@@ -53,10 +53,41 @@ impl Denom {
         &self,
         amount: u128,
         ctx: &mut TestContext,
-    ) -> Result<(String, Option<(DenomMapEntry, DenomMapEntry)>), Box<dyn Error + Send + Sync>>
-    {
+    ) -> Result<BidirectionalDenomRouteLeg, Box<dyn Error + Send + Sync>> {
         match self {
-            Self::Local { base_denom, .. } => Ok((base_denom.to_owned(), None)),
+            Self::Local {
+                base_denom,
+                base_chain,
+            } => {
+                let src_chain = ctx.get_chain(&base_chain);
+
+                let chain_info = ChainInfo {
+                    chain_name: src_chain.chain_name.clone(),
+                    chain_id: src_chain.rb.chain_id.clone(),
+                    pfm_enabled: true,
+                    supports_memo: true,
+                    bech32_prefix: src_chain.chain_prefix.clone(),
+                    fee_asset: src_chain.native_denom.clone(),
+                    chain_type: String::from("cosmos"),
+                    pretty_name: src_chain.chain_name.clone(),
+                };
+
+                let leg = DenomRouteLeg {
+                    src_chain: base_chain.to_owned(),
+                    dest_chain: base_chain.to_owned(),
+                    src_denom: base_denom.to_owned(),
+                    dest_denom: base_denom.to_owned(),
+                    from_chain: chain_info.clone(),
+                    to_chain: chain_info,
+                    port: String::from("transfer"),
+                    channel: String::new(),
+                };
+
+                Ok(BidirectionalDenomRouteLeg {
+                    src_to_dest: leg.clone(),
+                    dest_to_src: leg,
+                })
+            }
             Self::Interchain {
                 base_denom,
                 base_chain,
@@ -87,23 +118,49 @@ impl Denom {
                 let src_chain = ctx.get_chain(&base_chain);
                 let dest_chain = ctx.get_chain(&dest_chain);
 
-                Ok((
-                    ibc_denom_a.clone(),
-                    Some((
-                        DenomMapEntry {
-                            chain_id: dest_chain.rb.chain_id.clone(),
-                            denom: ibc_denom_a.clone(),
-                            channel_id: trace_a.to_owned(),
-                            port_id: "transfer".to_owned(),
-                        },
-                        DenomMapEntry {
-                            chain_id: src_chain.rb.chain_id.clone(),
-                            denom: base_denom.to_string(),
-                            channel_id: trace_a_counter.to_owned(),
-                            port_id: "transfer".to_owned(),
-                        },
-                    )),
-                ))
+                let chain_a_info = ChainInfo {
+                    chain_name: src_chain.chain_name.clone(),
+                    chain_id: src_chain.rb.chain_id.clone(),
+                    pfm_enabled: true,
+                    supports_memo: true,
+                    bech32_prefix: src_chain.chain_prefix.clone(),
+                    fee_asset: src_chain.native_denom.clone(),
+                    chain_type: String::from("cosmos"),
+                    pretty_name: src_chain.chain_name.clone(),
+                };
+                let chain_b_info = ChainInfo {
+                    chain_name: dest_chain.chain_name.clone(),
+                    chain_id: dest_chain.rb.chain_id.clone(),
+                    pfm_enabled: true,
+                    supports_memo: true,
+                    bech32_prefix: dest_chain.chain_prefix.clone(),
+                    fee_asset: dest_chain.native_denom.clone(),
+                    chain_type: String::from("cosmos"),
+                    pretty_name: dest_chain.chain_name.clone(),
+                };
+
+                Ok(BidirectionalDenomRouteLeg {
+                    src_to_dest: DenomRouteLeg {
+                        src_chain: src_chain.rb.chain_id.clone(),
+                        dest_chain: dest_chain.rb.chain_id.clone(),
+                        src_denom: base_denom.clone(),
+                        dest_denom: ibc_denom_a.clone(),
+                        channel: trace_a.to_owned(),
+                        port: "transfer".to_owned(),
+                        from_chain: chain_a_info.clone(),
+                        to_chain: chain_b_info.clone(),
+                    },
+                    dest_to_src: DenomRouteLeg {
+                        src_chain: dest_chain.rb.chain_id.clone(),
+                        dest_chain: src_chain.rb.chain_id.clone(),
+                        src_denom: ibc_denom_a,
+                        dest_denom: base_denom.clone(),
+                        channel: trace_a_counter.to_owned(),
+                        port: "transfer".to_owned(),
+                        from_chain: chain_b_info,
+                        to_chain: chain_a_info,
+                    },
+                })
             }
         }
     }
@@ -137,8 +194,7 @@ pub struct Args {
 pub struct TestRunner<'a> {
     test_statuses: Arc<Mutex<HashMap<(String, String), TestResult>>>,
     cli_args: Args,
-    /// Mapping from (src_denom, dest_chain) -> dest_denom
-    denom_map: HashMap<(String, String), DenomMapEntry>,
+    denom_file: DenomFile,
     created_denoms: HashSet<String>,
     test_ctx: &'a mut TestContext,
 }
@@ -148,7 +204,7 @@ impl<'a> TestRunner<'a> {
         Self {
             test_statuses: Default::default(),
             cli_args,
-            denom_map: Default::default(),
+            denom_file: Default::default(),
             created_denoms: Default::default(),
             test_ctx: ctx,
         }
@@ -195,7 +251,7 @@ impl<'a> TestRunner<'a> {
 
         // Perform hot start setup
         // Mapping of denoms to their matching denoms, chain id's, channel id's, and ports
-        self.denom_map = Default::default();
+        self.denom_file = Default::default();
 
         let ctx = &mut self.test_ctx;
 
@@ -231,7 +287,7 @@ impl<'a> TestRunner<'a> {
         ctx.build_tx_create_price_oracle().send()?;
         ctx.build_tx_update_auction_oracle().send()?;
 
-        test.setup(&mut self.denom_map, ctx)?;
+        test.setup(&mut self.denom_file, ctx)?;
 
         let ntrn_to_osmo = ctx
             .transfer_channel_ids
@@ -260,7 +316,7 @@ impl<'a> TestRunner<'a> {
         .expect("Failed to create deployments file");
         util::create_arbs_file().expect("Failed to create arbs file");
         util::create_netconfig().expect("Failed to create net config");
-        util::create_denom_file(&self.denom_map).expect("Failed to create denom file");
+        util::create_denom_file(&self.denom_file).expect("Failed to create denom file");
 
         let statuses = self.test_statuses.clone();
 
@@ -359,7 +415,7 @@ pub struct Test {
 impl Test {
     pub fn setup(
         &mut self,
-        denom_map: &mut HashMap<(String, String), DenomMapEntry>,
+        denom_file: &mut DenomFile,
         ctx: &mut TestContext,
     ) -> Result<&mut Self, Box<dyn Error + Send + Sync>> {
         self.tokenfactory_token_balances_acc0.iter().try_for_each(
@@ -421,32 +477,19 @@ impl Test {
                         let funds_b = spec.balance_asset_b;
 
                         // Create the osmo pool and join it
-                        let (norm_denom_a, denom_map_ent_1) =
-                            denom_a.normalize(funds_a, ctx).unwrap();
-                        let (norm_denom_b, denom_map_ent_2) =
-                            denom_b.normalize(funds_b, ctx).unwrap();
+                        let route_leg_a = denom_a.normalize(funds_a, ctx).unwrap();
+                        let route_leg_b = denom_b.normalize(funds_b, ctx).unwrap();
 
-                        if let Some((map_ent_a_1, map_ent_a_2)) = denom_map_ent_1 {
-                            // (denom, neutron) -> denom'
-                            // (denom', osmo) -> denom
-                            denom_map.insert((denom_a.to_string(), "neutron".into()), map_ent_a_1);
-                            denom_map.insert((norm_denom_a.clone(), "osmosis".into()), map_ent_a_2);
-                        }
-
-                        if let Some((map_ent_b_1, map_ent_b_2)) = denom_map_ent_2 {
-                            // (denom, neutron) -> denom'
-                            // (denom', osmo) -> denom
-                            denom_map.insert((denom_b.to_string(), "neutron".into()), map_ent_b_1);
-                            denom_map.insert((norm_denom_b.clone(), "osmosis".into()), map_ent_b_2);
-                        }
+                        denom_file.push_denom(route_leg_a.clone());
+                        denom_file.push_denom(route_leg_b.clone());
 
                         ctx.build_tx_create_pool()
-                            .with_denom_a(&norm_denom_a)
-                            .with_denom_b(&norm_denom_b)
+                            .with_denom_a(&route_leg_a.src_to_dest.dest_denom)
+                            .with_denom_b(&route_leg_b.src_to_dest.dest_denom)
                             .send()?;
                         ctx.build_tx_fund_pool()
-                            .with_denom_a(&norm_denom_a)
-                            .with_denom_b(&norm_denom_b)
+                            .with_denom_a(&route_leg_a.src_to_dest.dest_denom)
+                            .with_denom_b(&route_leg_b.src_to_dest.dest_denom)
                             .with_amount_denom_a(spec.balance_asset_a)
                             .with_amount_denom_b(spec.balance_asset_b)
                             .with_liq_token_receiver(OWNER_ADDR)
@@ -460,39 +503,41 @@ impl Test {
                         let weight_b = spec.denom_weights.get(denom_b).unwrap_or(&0);
 
                         // Create the osmo pool and join it
-                        let (norm_denom_a, denom_map_ent_1) =
-                            denom_a.normalize(*funds_a, ctx).unwrap();
-                        let (norm_denom_b, denom_map_ent_2) =
-                            denom_b.normalize(*funds_b, ctx).unwrap();
+                        let route_leg_a = denom_a.normalize(*funds_a, ctx).unwrap();
+                        let route_leg_b = denom_b.normalize(*funds_b, ctx).unwrap();
 
-                        if let Some((map_ent_a_1, map_ent_a_2)) = denom_map_ent_1 {
-                            // (denom, neutron) -> denom'
-                            // (denom', osmo) -> denom
-                            denom_map.insert((denom_a.to_string(), "osmosis".into()), map_ent_a_1);
-                            denom_map.insert((norm_denom_a.clone(), "neutron".into()), map_ent_a_2);
-                        }
-
-                        if let Some((map_ent_b_1, map_ent_b_2)) = denom_map_ent_2 {
-                            // (denom, neutron) -> denom'
-                            // (denom', osmo) -> denom
-                            denom_map.insert((denom_b.to_string(), "osmosis".into()), map_ent_b_1);
-                            denom_map.insert((norm_denom_b.clone(), "neutron".into()), map_ent_b_2);
-                        }
+                        denom_file.push_denom(route_leg_a.clone());
+                        denom_file.push_denom(route_leg_b.clone());
 
                         ctx.build_tx_create_osmo_pool()
-                            .with_weight(&norm_denom_a, *weight_a as u64)
-                            .with_weight(&norm_denom_b, *weight_b as u64)
-                            .with_initial_deposit(&norm_denom_a, *funds_a as u64)
-                            .with_initial_deposit(&norm_denom_b, *funds_b as u64)
+                            .with_weight(&route_leg_a.src_to_dest.dest_denom, *weight_a as u64)
+                            .with_weight(&route_leg_b.src_to_dest.dest_denom, *weight_b as u64)
+                            .with_initial_deposit(
+                                &route_leg_a.src_to_dest.dest_denom,
+                                *funds_a as u64,
+                            )
+                            .with_initial_deposit(
+                                &route_leg_b.src_to_dest.dest_denom,
+                                *funds_b as u64,
+                            )
                             .send()?;
 
-                        let pool_id = ctx.get_osmo_pool(&norm_denom_a, &norm_denom_b)?;
+                        let pool_id = ctx.get_osmo_pool(
+                            &route_leg_a.src_to_dest.dest_denom,
+                            &route_leg_b.src_to_dest.dest_denom,
+                        )?;
 
                         // Fund the pool
                         ctx.build_tx_fund_osmo_pool()
                             .with_pool_id(pool_id)
-                            .with_max_amount_in(&norm_denom_a, *funds_a as u64)
-                            .with_max_amount_in(&norm_denom_b, *funds_b as u64)
+                            .with_max_amount_in(
+                                &route_leg_a.src_to_dest.dest_denom,
+                                *funds_a as u64,
+                            )
+                            .with_max_amount_in(
+                                &route_leg_b.src_to_dest.dest_denom,
+                                *funds_b as u64,
+                            )
                             .with_share_amount_out(1000000000000)
                             .send()
                     }
@@ -517,7 +562,7 @@ impl Test {
                         ctx.build_tx_start_auction()
                             .with_offer_asset(&denom_a.to_string())
                             .with_ask_asset(&denom_b.to_string())
-                            .with_end_block_delta(10000)
+                            .with_end_block_delta(1000000000000000000)
                             .send()
                     }
                 })

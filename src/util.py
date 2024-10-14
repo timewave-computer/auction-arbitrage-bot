@@ -36,11 +36,6 @@ DISCOVERY_CONCURRENCY_FACTOR = 20
 EVALUATION_CONCURRENCY_FACTOR = 10
 
 
-# The quantity of a denom below which
-# it is no longer worthwhile checking for profit
-DENOM_QUANTITY_ABORT_ARB = 500
-
-
 NEUTRON_NETWORK_CONFIG = NetworkConfig(
     chain_id="neutron-1",
     url="grpc+http://grpc-kralum.neutron-1.neutron.org:80",
@@ -255,6 +250,19 @@ class ChainInfo:
     pretty_name: str
 
 
+def load_chain_info(obj: dict[str, Any]) -> ChainInfo:
+    return ChainInfo(
+        chain_name=obj["chain_name"],
+        chain_id=obj["chain_id"],
+        pfm_enabled=obj["pfm_enabled"],
+        supports_memo=obj["supports_memo"],
+        bech32_prefix=obj["bech32_prefix"],
+        fee_asset=obj["fee_asset"],
+        chain_type=obj["chain_type"],
+        pretty_name=obj["pretty_name"],
+    )
+
+
 @dataclass
 class DenomRouteQuery:
     """
@@ -289,11 +297,21 @@ class DenomRouteLeg:
     from_chain: ChainInfo
     to_chain: ChainInfo
 
-    denom_in: str
-    denom_out: str
-
     port: str
     channel: str
+
+
+def load_denom_route_leg(obj: dict[str, Any]) -> DenomRouteLeg:
+    return DenomRouteLeg(
+        src_chain=obj["src_chain"],
+        dest_chain=obj["dest_chain"],
+        src_denom=obj["src_denom"],
+        dest_denom=obj["dest_denom"],
+        from_chain=load_chain_info(obj["from_chain"]),
+        to_chain=load_chain_info(obj["to_chain"]),
+        port=obj["port"],
+        channel=obj["channel"],
+    )
 
 
 @dataclass
@@ -307,6 +325,14 @@ class DenomChainInfo:
     denom: str
     src_chain_id: str
     dest_chain_id: str
+
+
+def load_denom_chain_info(obj: dict[str, Any]) -> DenomChainInfo:
+    return DenomChainInfo(
+        denom=obj["denom"],
+        src_chain_id=obj["src_chain_id"],
+        dest_chain_id=obj["dest_chain_id"],
+    )
 
 
 @dataclass

@@ -254,7 +254,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
 
         balance = next(b for b in balances if b["info"] == token_to_asset_info(asset))
 
-        if not balance:
+        if balance is None:
             return 0
 
         return int(balance["amount"])

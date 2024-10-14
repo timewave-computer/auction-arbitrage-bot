@@ -143,7 +143,7 @@ pub fn test_osmo_arb(arbfile: Option<Value>) -> Result<(), Box<dyn Error + Send 
     println!("AUCTION BOT PROFIT: {auction_profit}");
     println!("OSMOSIS BOT PROFIT: {osmo_profit}");
 
-    util::assert_err("osmo_profit == 0", osmo_profit, 0)?;
+    util::assert_err("osmo_profit == 9482512", osmo_profit, 9482512)?;
 
     Ok(())
 }

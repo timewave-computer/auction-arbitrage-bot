@@ -54,7 +54,7 @@ class Ctx(Generic[TState]):
     order_history: list[Route]
     deployments: dict[str, Any]
     denom_map: dict[str, list[DenomChainInfo]]
-    denom_routes: dict[DenomRouteQuery, list[DenomRouteLeg]]
+    denom_routes: dict[str, dict[str, list[DenomRouteLeg]]]
     chain_info: dict[str, ChainInfo]
 
     def with_state(self, state: Any) -> Self:
@@ -160,7 +160,7 @@ class Ctx(Generic[TState]):
                 ),
             )
 
-            if not balance_resp_asset:
+            if balance_resp_asset is None or not isinstance(balance_resp_asset, int):
                 return None
 
             return f"balance[{leg.backend.chain_id}]({asset[:DENOM_BALANCE_PREFIX_MAX_DENOM_LEN]}): {balance_resp_asset}"
@@ -173,11 +173,17 @@ class Ctx(Generic[TState]):
             ]
 
         prefix = " ".join(
-            {
-                prefix
-                for leg_prefixes in [leg_balance_prefixes(leg) for leg in route.legs]
-                for prefix in leg_prefixes
-            }
+            list(
+                dict.fromkeys(
+                    [
+                        prefix
+                        for leg_prefixes in [
+                            leg_balance_prefixes(leg) for leg in route.legs
+                        ]
+                        for prefix in leg_prefixes
+                    ]
+                )
+            )
         )
 
         route.logs.append(f"{log_level.upper()} {prefix} {fmt_string % tuple(args)}")
@@ -205,8 +211,12 @@ class Ctx(Generic[TState]):
     async def query_denom_route(
         self, query: DenomRouteQuery
     ) -> Optional[list[DenomRouteLeg]]:
-        if self.denom_routes and query in self.denom_routes:
-            return self.denom_routes[query]
+        if (
+            self.denom_routes
+            and query.src_denom in self.denom_routes
+            and query.dest_denom in self.denom_routes[query.src_denom]
+        ):
+            return self.denom_routes[query.src_denom][query.dest_denom]
 
         head = {"accept": "application/json", "content-type": "application/json"}
 
@@ -252,15 +262,13 @@ class Ctx(Generic[TState]):
                     dest_denom=query.dest_denom,
                     from_chain=from_chain_info,
                     to_chain=to_chain_info,
-                    denom_in=transfer_info["denom_in"],
-                    denom_out=transfer_info["denom_out"],
                     port=transfer_info["port"],
                     channel=transfer_info["channel"],
                 )
                 for op in ops
             ]
 
-            self.denom_routes[query] = route
+            self.denom_routes.get(query.src_denom, {})[query.dest_denom] = route
 
             return route
 
