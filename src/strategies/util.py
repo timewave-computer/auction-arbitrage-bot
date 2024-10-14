@@ -1249,7 +1249,7 @@ async def quantities_for_route_profit(
         # Continue checking plans, since this quantity was not profitable
         if len(quantities) <= len(route) or profit <= 0:
             right = mid
-            mid = right // 2
+            mid = left + (right - left) // 2
 
             ctx.log_route(r, "info", "Probing lower execution plans", [])
 

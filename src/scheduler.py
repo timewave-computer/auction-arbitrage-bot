@@ -268,9 +268,12 @@ class Ctx(Generic[TState]):
                 from_chain_info = await self.query_chain_info(
                     transfer_info["from_chain_id"]
                 )
+                print("here", transfer_info["to_chain_id"])
                 to_chain_info = await self.query_chain_info(
                     transfer_info["to_chain_id"]
                 )
+
+                print(to_chain_info)
 
                 if not from_chain_info or not to_chain_info:
                     return None
