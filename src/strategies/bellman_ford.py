@@ -4,7 +4,6 @@ Implements an arbitrage strategy based on bellman ford.
 
 from functools import cache
 import traceback
-import random
 import logging
 from decimal import Decimal
 import asyncio
@@ -391,7 +390,7 @@ async def route_bellman_ford(
     }
 
     if ctx.cli_args["pools"]:
-        vertices = set(random.sample(list(vertices), ctx.cli_args["pools"] - 1))
+        vertices = set(list(vertices))
 
     # How far a given denom is from the `src` denom
     distances: dict[str, Decimal] = {}

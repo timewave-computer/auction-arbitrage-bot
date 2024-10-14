@@ -3,7 +3,6 @@ Defines common utilities shared across arbitrage strategies.
 """
 
 from bisect import insort
-import random
 import traceback
 import asyncio
 from itertools import groupby
@@ -834,8 +833,6 @@ async def listen_routes_with_depth_dfs(
 
         if len(next_pools) == 0:
             return
-
-        random.shuffle(next_pools)
 
         routes = stream.merge(*[next_legs(path + [pool]) for pool in next_pools])
 
