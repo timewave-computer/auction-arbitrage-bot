@@ -365,7 +365,11 @@ class Ctx(Generic[TState]):
                     src_chain_id=src_chain, denom=info["denom"], dest_chain_id=chain_id
                 )
 
-            return [chain_info(chain_id, info) for chain_id, info in dests.items()]
+            infos = [chain_info(chain_id, info) for chain_id, info in dests.items()]
+
+            self.denom_map[src_denom] = infos
+
+            return infos
 
 
 class Scheduler(Generic[TState]):
