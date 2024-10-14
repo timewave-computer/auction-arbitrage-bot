@@ -254,7 +254,6 @@ async def exec_arb(
                 [leg for leg, _ in remaining_legs],
                 route_ent,
                 ctx,
-                seek_profit=False,
             )
 
             # The execution plan was aborted
@@ -600,6 +599,13 @@ async def rebalance_portfolio(
                 )
             )
 
+            ctx.log_route(
+                route_ent,
+                "info",
+                "Rebalancing route discovered: %s",
+                [fmt_route(route)],
+            )
+
             route_ent.logs_enabled = ctx.cli_args["log_rebalancing"]
 
             # For logging
@@ -899,9 +905,7 @@ async def recover_funds(
             to_transfer,
         )
 
-    resp = await quantities_for_route_profit(
-        balance_resp, backtracked, r, ctx, seek_profit=False
-    )
+    resp = await quantities_for_route_profit(balance_resp, backtracked, r, ctx)
 
     if not resp:
         raise ValueError("Couldn't get execution plan.")
@@ -1175,7 +1179,7 @@ async def quantities_for_route_profit(
     route: list[Leg],
     r: Route,
     ctx: Ctx[Any],
-    seek_profit: Optional[bool] = True,
+    seek_profit: bool = True,
 ) -> tuple[int, list[int]]:
     """
     Calculates what quantities should be used to obtain
@@ -1201,7 +1205,7 @@ async def quantities_for_route_profit(
         ctx.log_route(
             r,
             "info",
-            "Got execution plan @ %d: [%s] (best candidates: [%s]",
+            "Got execution plan @ %d: [%s] (best candidates: [%s])",
             [
                 mid,
                 ", ".join((str(qty) for qty in quantities)),
@@ -1213,6 +1217,9 @@ async def quantities_for_route_profit(
                 ),
             ],
         )
+
+        if not seek_profit and len(quantities) > len(route):
+            return (quantities[-1] - quantities[0], quantities)
 
         profit = 0 if len(quantities) == 0 else quantities[-1] - quantities[0]
 
