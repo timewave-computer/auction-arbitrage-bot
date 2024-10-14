@@ -156,7 +156,7 @@ async def main() -> None:
             connector=aiohttp.TCPConnector(
                 force_close=True, limit_per_host=DISCOVERY_CONCURRENCY_FACTOR
             ),
-            timeout=aiohttp.ClientTimeout(total=240),
+            timeout=aiohttp.ClientTimeout(total=60),
         ) as session:
             ctx: Ctx[Any] = Ctx(
                 {
