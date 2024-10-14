@@ -354,7 +354,7 @@ class Ctx(Generic[TState]):
         head = {"accept": "application/json", "content-type": "application/json"}
 
         async with self.http_session.post(
-            "https://api.skip.money/v1/fungible/assets_from_source",
+            "https://api.skip.money/v2/fungible/assets_from_source",
             headers=head,
             json={
                 "allow_multi_tx": False,
