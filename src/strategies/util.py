@@ -42,6 +42,13 @@ logger = logging.getLogger(__name__)
 
 MAX_POOL_LIQUIDITY_TRADE = Decimal("0.05")
 
+
+"""
+Prevent routes from being evaluated excessively when binary search fails.
+"""
+MAX_EVAL_PROBES = 2**6
+
+
 """
 The amount of the summed gas limit that will be consumed if messages
 are batched together.
@@ -1198,7 +1205,11 @@ async def quantities_for_route_profit(
     # Plans sorted by profit, for purposes of returning the best plan
     plans_by_profit: list[int] = []
 
-    while mid > 0 and mid <= starting_amount:
+    attempts: int = 0
+
+    while mid > 0 and mid <= starting_amount and attempts < MAX_EVAL_PROBES:
+        attempts += 1
+
         quantities: list[int] = await quantities_for_starting_amount(mid, route)
         plans[mid] = quantities
 
