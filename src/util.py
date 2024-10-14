@@ -28,7 +28,7 @@ MAX_SKIP_CONCURRENT_CALLS = 5
 
 # Dictates the maximum number of concurrent calls to the skip
 # API in searching
-DISCOVERY_CONCURRENCY_FACTOR = 20
+DISCOVERY_CONCURRENCY_FACTOR = 15
 
 
 # Dictates the maximum number of concurrent calls to pool providers
