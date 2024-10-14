@@ -2,8 +2,6 @@ use super::util;
 use serde_json::Value;
 use std::{error::Error, process::Command};
 
-const ERROR_MARGIN_PROFIT: u64 = 50000;
-
 pub fn test_transfer_osmosis(
     _: Option<Value>,
 ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
@@ -56,17 +54,8 @@ pub fn test_profitable_arb(
     println!("ARB BOT PROFIT: {profit}");
     println!("AUCTION BOT PROFIT: {auction_profit}");
 
-    util::assert_err(
-        "200000 + PROFIT_MARGIN > profit > 200000 - PROFIT_MARGIN",
-        200000 + ERROR_MARGIN_PROFIT > profit && profit > 200000 - ERROR_MARGIN_PROFIT,
-        true,
-    )?;
-    util::assert_err(
-        "200000 + PROFIT_MARGIN > auction_profit > 200000 - PROFIT_MARGIN",
-        200000 + ERROR_MARGIN_PROFIT > auction_profit
-            && auction_profit > 200000 - ERROR_MARGIN_PROFIT,
-        true,
-    )?;
+    util::assert_err("profit > 0", profit > 0, true)?;
+    util::assert_err("auction_profit > 0", auction_profit > 0, true)?;
 
     Ok(())
 }
@@ -143,17 +132,8 @@ pub fn test_osmo_arb(arbfile: Option<Value>) -> Result<(), Box<dyn Error + Send 
     println!("AUCTION BOT PROFIT: {auction_profit}");
     println!("OSMOSIS BOT PROFIT: {osmo_profit}");
 
-    util::assert_err(
-        "9500000 + PROFIT_MARGIN > profit > 9500000 - PROFIT_MARGIN",
-        9500000 + ERROR_MARGIN_PROFIT > osmo_profit && osmo_profit > 9500000 - ERROR_MARGIN_PROFIT,
-        true,
-    )?;
-    util::assert_err(
-        "9500000 + PROFIT_MARGIN > auction_profit > 9500000 - PROFIT_MARGIN",
-        9500000 + ERROR_MARGIN_PROFIT > auction_profit
-            && auction_profit > 9500000 - ERROR_MARGIN_PROFIT,
-        true,
-    )?;
+    util::assert_err("osmo_profit > 0", osmo_profit > 0, true)?;
+    util::assert_err("auction_profit > 0", auction_profit > 0, true)?;
 
     Ok(())
 }

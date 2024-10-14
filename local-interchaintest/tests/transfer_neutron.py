@@ -1,5 +1,6 @@
 import json
 import asyncio
+from asyncio import Lock
 from typing import Any
 from src.strategies.util import transfer_raw
 from src.scheduler import Ctx
@@ -48,6 +49,7 @@ async def main() -> None:
             denoms,
             {},
             {},
+            Lock(),
         )
 
         await transfer_raw(

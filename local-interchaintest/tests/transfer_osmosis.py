@@ -1,4 +1,5 @@
 import json
+from asyncio import Lock
 import asyncio
 from typing import Any
 from src.strategies.util import transfer_raw
@@ -48,6 +49,7 @@ async def main() -> None:
             denoms,
             {},
             {},
+            Lock(),
         )
 
         await transfer_raw(

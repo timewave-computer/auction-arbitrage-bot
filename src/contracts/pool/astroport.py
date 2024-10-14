@@ -31,7 +31,7 @@ from cosmpy.crypto.address import Address
 from cosmpy.aerial.tx import Transaction
 
 
-MAX_SPREAD = "0.05"
+MAX_SPREAD = "0.1"
 
 
 @dataclass

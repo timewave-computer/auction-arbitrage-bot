@@ -1,3 +1,4 @@
+from asyncio import Lock
 from typing import Any, cast, AsyncIterator
 import json
 import aiohttp
@@ -108,4 +109,5 @@ async def ctx() -> AsyncIterator[Ctx[Any]]:
                 denom_map={},
                 denom_routes={},
                 chain_info={},
+                http_session_lock=Lock(),
             ).with_state(State(1000))
