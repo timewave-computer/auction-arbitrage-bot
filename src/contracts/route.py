@@ -61,6 +61,7 @@ class Route:
     status: Status
     time_created: str
     logs: list[str]
+    logs_enabled: bool
 
     def __hash__(self) -> int:
         return hash(self.uid)
@@ -113,6 +114,7 @@ def load_route(s: str) -> Route:
         Status[loaded["status"].split(".")[1]],
         loaded["time_created"],
         loaded["logs"],
+        True,
     )
 
 

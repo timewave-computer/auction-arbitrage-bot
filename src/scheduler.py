@@ -106,6 +106,7 @@ class Ctx(Generic[TState]):
         theoretical_profit: int,
         expected_profit: int,
         quantities: list[int],
+        enable_logs: bool = True,
     ) -> Route:
         """
         Creates a new identified route, inserting it into the order history,
@@ -126,6 +127,7 @@ class Ctx(Generic[TState]):
             Status.QUEUED,
             datetime.now().strftime("%Y-%m-%d @ %H:%M:%S"),
             [],
+            enable_logs,
         )
         self.order_history.append(r)
 

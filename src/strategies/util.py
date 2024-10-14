@@ -598,6 +598,8 @@ async def rebalance_portfolio(
                 auctions,
                 ctx,
             ):
+                route_ent.logs_enabled = ctx.cli_args["log_rebalancing"]
+
                 # For logging
                 _, execution_plan = await quantities_for_route_profit(
                     balance, route, route_ent, ctx, seek_profit=False

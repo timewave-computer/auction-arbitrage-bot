@@ -78,6 +78,7 @@ async def main() -> None:
         "-df", "--deployments_file", default="contracts/deployments.json"
     )
     parser.add_argument("-rt", "--rebalance_threshold", default=1000)
+    parser.add_argument("-lr", "--log_rebalancing", default=False)
     parser.add_argument("cmd", nargs="*", default=None)
 
     args = parser.parse_args()
@@ -189,6 +190,7 @@ async def main() -> None:
                         if "SKIP_API_KEY" in os.environ
                         else None
                     ),
+                    "log_rebalancing": args.log_rebalancing,
                 },
                 None,
                 False,
