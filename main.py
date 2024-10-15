@@ -17,7 +17,7 @@ import os
 from typing import Any, cast
 from cosmpy.aerial.client import LedgerClient
 from cosmpy.aerial.wallet import LocalWallet
-from src.scheduler import Scheduler, Ctx
+from src.scheduler import Scheduler, Ctx, MAX_SKIP_CONCURRENT_CALLS
 from src.util import (
     custom_neutron_network_config,
     DISCOVERY_CONCURRENCY_FACTOR,
@@ -215,7 +215,7 @@ async def main() -> None:
                     chain_id: load_chain_info(info)
                     for (chain_id, info) in denom_file["chain_info"].items()
                 },
-                Semaphore(),
+                Semaphore(MAX_SKIP_CONCURRENT_CALLS),
             ).recover_history()
             sched = Scheduler(ctx, strategy)
 

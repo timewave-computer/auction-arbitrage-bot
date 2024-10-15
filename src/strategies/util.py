@@ -1209,31 +1209,33 @@ async def quantities_for_route_profit(
     mid = starting_amount // 2
 
     plans: dict[int, list[int]] = {}
-
-    # Plans sorted by profit, for purposes of returning the best plan
     plans_by_profit: list[int] = []
 
     attempts: int = 0
 
-    while mid > 0 and mid <= starting_amount and attempts < MAX_EVAL_PROBES:
+    while (
+        left != right
+        and mid != right
+        and mid > 0
+        and mid <= starting_amount
+        and attempts < MAX_EVAL_PROBES
+    ):
         attempts += 1
 
-        quantities: list[int] = await quantities_for_starting_amount(mid, route)
+        quantities: list[int] = (
+            plans[mid]
+            if mid in plans
+            else await quantities_for_starting_amount(mid, route)
+        )
         plans[mid] = quantities
 
         ctx.log_route(
             r,
             "info",
-            "Got execution plan @ %d: [%s] (best candidates: [%s])",
+            "Got execution plan @ %d: [%s]",
             [
                 mid,
                 ", ".join((str(qty) for qty in quantities)),
-                ", ".join(
-                    (
-                        f"[{', '.join((str(qty) for qty in plans[plan_idx]))}]"
-                        for plan_idx in plans_by_profit[:-5]
-                    )
-                ),
             ],
         )
 
@@ -1244,14 +1246,14 @@ async def quantities_for_route_profit(
 
         # Insert in sorted position
         if len(quantities) > len(route):
-            insort(plans_by_profit, mid, key=lambda idx: plans[idx][-1] - plans[idx][0])
+            plans_by_profit.append(mid)
 
         # Continue checking plans, since this quantity was not profitable
         if len(quantities) <= len(route) or profit <= 0:
             right = mid
             mid = left + (right - left) // 2
 
-            ctx.log_route(r, "info", "Probing lower execution plans", [])
+            ctx.log_route(r, "debug", "Probing lower execution plans", [])
 
             continue
 
@@ -1269,9 +1271,11 @@ async def quantities_for_route_profit(
 
         # This plan is profitable, but a bigger plan might be even more profitable
         left = mid
-        mid += (right - left) // 2
+        mid = (right - left) // 2
 
-        ctx.log_route(r, "info", "Probing higher execution plans", [])
+        ctx.log_route(r, "debug", "Probing higher execution plans", [])
+
+    plans_by_profit.sort(key=lambda idx: plans[idx][-1] - plans[idx][0])
 
     if len(plans_by_profit) == 0:
         return (0, [])
