@@ -149,7 +149,7 @@ async def main() -> None:
             ),
             timeout=aiohttp.ClientTimeout(total=60),
         ) as session:
-            with closing(connect(args.history_db, autocommit=False)) as conn:
+            with closing(connect(args.history_db)) as conn:
                 ctx: Ctx[Any] = Ctx(
                     {
                         chain_id: [
