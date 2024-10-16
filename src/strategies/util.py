@@ -43,6 +43,9 @@ logger = logging.getLogger(__name__)
 MAX_POOL_LIQUIDITY_TRADE = Decimal("0.05")
 
 
+DENOM_QUANTITY_ABORT_ARB = 500
+
+
 """
 Prevent routes from being evaluated excessively when binary search fails.
 """
