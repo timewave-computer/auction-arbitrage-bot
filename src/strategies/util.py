@@ -2,7 +2,6 @@
 Defines common utilities shared across arbitrage strategies.
 """
 
-from bisect import insort
 import traceback
 import asyncio
 from itertools import groupby
@@ -920,9 +919,7 @@ async def recover_funds(
 
     profit, quantities = resp
 
-    r = ctx.queue_route(
-        backtracked, -r.theoretical_profit, -r.expected_profit, quantities
-    )
+    r = ctx.queue_route(backtracked, 0, 0, quantities)
 
     ctx.log_route(r, "info", "Executing recovery", [])
 

@@ -7,8 +7,8 @@ use cosmwasm_std::Decimal;
 use derive_builder::Builder;
 use localic_utils::{types::contract::MinAmount, utils::test_context::TestContext};
 use notify::{Event, EventKind, RecursiveMode, Result as NotifyResult, Watcher};
-use serde_json::Value;
 use shared_child::SharedChild;
+use sqlite::State;
 use std::{
     borrow::BorrowMut,
     collections::{HashMap, HashSet},
@@ -21,10 +21,14 @@ use std::{
         atomic::{AtomicBool, Ordering},
         mpsc, Arc, Mutex,
     },
+    thread,
+    time::Duration,
 };
 
 const EXIT_STATUS_SUCCESS: i32 = 9;
 const EXIT_STATUS_SIGKILL: i32 = 9;
+
+const EMPTY_ARB_DB_SIZE: u64 = 10000;
 
 /// A lazily evaluated denom hash,
 /// based on an src chain, a dest chain
@@ -321,10 +325,10 @@ impl<'a> TestRunner<'a> {
         let statuses = self.test_statuses.clone();
 
         if test.run_arbbot {
-            with_arb_bot_output(Arc::new(Box::new(move |arbfile: Option<Value>| {
+            with_arb_bot_output(Arc::new(Box::new(move || {
                 statuses.lock().expect("Failed to lock statuses").insert(
                     (test.name.clone(), test.description.clone()),
-                    (*test.test)(arbfile),
+                    (*test.test)(),
                 );
 
                 Ok(())
@@ -335,7 +339,7 @@ impl<'a> TestRunner<'a> {
 
         statuses.lock().expect("Failed to lock statuses").insert(
             (test.name.clone(), test.description.clone()),
-            (*test.test)(None),
+            (*test.test)(),
         );
 
         Ok(self)
@@ -377,7 +381,7 @@ impl<'a> TestRunner<'a> {
 }
 
 /// A test that receives arb bot executable output.
-pub type TestFn = Box<dyn Fn(Option<Value>) -> TestResult + Send + Sync>;
+pub type TestFn = Box<dyn Fn() -> TestResult + Send + Sync>;
 pub type OwnedTestFn = Arc<TestFn>;
 pub type TestResult = Result<(), Box<dyn Error + Send + Sync>>;
 
@@ -690,9 +694,9 @@ pub fn with_arb_bot_output(test: OwnedTestFn) -> TestResult {
 
     let test_handle = test.clone();
 
-    // Wait until the arbs.json file has been produced
+    // Wait until the arbs.db file has been produced
     let mut watcher = notify::recommended_watcher(move |res: NotifyResult<Event>| {
-        let e = res.expect("failed to watch arbs.json");
+        let e = res.expect("failed to watch arbs.db");
 
         // An arb was found
         if let EventKind::Modify(_) = e.kind {
@@ -706,21 +710,33 @@ pub fn with_arb_bot_output(test: OwnedTestFn) -> TestResult {
             let f = OpenOptions::new()
                 .read(true)
                 .open(ARBFILE_PATH)
-                .expect("failed to open arbs.json");
+                .expect("failed to open arbs.db");
 
-            if f.metadata().expect("can't get arbs metadata").len() == 0 {
+            if f.metadata().expect("can't get arbs metadata").len() < EMPTY_ARB_DB_SIZE {
                 return;
             }
 
-            let arbfile: Value =
-                serde_json::from_reader(&f).expect("failed to deserialize arbs.json");
-
-            let res = test_handle(Some(arbfile));
+            thread::sleep(Duration::from_secs(1));
 
             proc_handle_watcher.kill().expect("failed to kill arb bot");
-            tx_res.send(res).expect("failed to send test results");
 
-            finished.store(true, Ordering::SeqCst);
+            thread::sleep(Duration::from_secs(2));
+
+            let conn = sqlite::open(ARBFILE_PATH).expect("failed to open db");
+
+            let query = "SELECT COUNT(*) AS cnt FROM orders";
+            let mut statement = conn.prepare(query).unwrap();
+
+            if let Ok(State::Row) = statement.next() {
+                // The db is committed, we can run the tests now
+                if statement.read::<i64, _>("cnt").unwrap() > 0 {
+                    let res = test_handle();
+
+                    tx_res.send(res).expect("failed to send test results");
+
+                    finished.store(true, Ordering::SeqCst);
+                }
+            }
         }
     })?;
 

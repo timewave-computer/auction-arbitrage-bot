@@ -2,18 +2,25 @@
 Implements a strategy runner with an arbitrary provider set in an event-loop style.
 """
 
+from sqlite3 import Connection
 from asyncio import Semaphore
 import logging
 from datetime import datetime
-import json
 from typing import Callable, List, Self, Optional, Awaitable, Any, TypeVar, Generic
 from dataclasses import dataclass
 from cosmpy.aerial.client import LedgerClient
 from cosmpy.crypto.address import Address
 from cosmpy.aerial.wallet import LocalWallet
 from src.contracts.auction import AuctionDirectory, AuctionProvider
-from src.contracts.route import Route, load_route, LegRepr, Status, Leg
+from src.contracts.route import Route, LegRepr, Status, Leg
 from src.contracts.pool.provider import PoolProvider
+from src.db import (
+    migrate,
+    insert_legs_rows,
+    insert_logs_rows,
+    insert_order_rows,
+    order_row_count,
+)
 from src.util import (
     try_multiple_clients,
     DenomRouteLeg,
@@ -63,6 +70,7 @@ class Ctx(Generic[TState]):
     denom_routes: dict[str, dict[str, list[DenomRouteLeg]]]
     chain_info: dict[str, ChainInfo]
     http_session_lock: Semaphore
+    db_connection: Connection
 
     def with_state(self, state: Any) -> Self:
         """
@@ -79,22 +87,32 @@ class Ctx(Generic[TState]):
         Commits the order history to disk.
         """
 
-        with open(self.cli_args["history_file"], "w", encoding="utf-8") as f:
-            f.seek(0)
-            json.dump([order.dumps() for order in self.order_history], f)
+        cur = self.db_connection.cursor()
 
-        return self
+        migrate(cur)
 
-    def recover_history(self) -> Self:
-        """
-        Retrieves the order history from disk
-        """
+        starting_uid = order_row_count(cur)
 
-        with open(self.cli_args["history_file"], "r", encoding="utf-8") as f:
-            f.seek(0)
-            self.order_history = [
-                load_route(json_route) for json_route in json.load(f)
-            ][:-MAX_ROUTE_HISTORY_LEN]
+        route_rows = [route.db_row() for route in self.order_history]
+        leg_rows = [
+            leg_row
+            for (i, route) in enumerate(self.order_history)
+            for leg_row in route.legs_db_rows(starting_uid + i)
+        ]
+        log_rows = [
+            log_row
+            for (i, route) in enumerate(self.order_history)
+            for log_row in route.logs_db_rows(starting_uid + i)
+        ]
+
+        insert_order_rows(cur, route_rows)
+        insert_legs_rows(cur, leg_rows)
+        insert_logs_rows(cur, log_rows)
+
+        cur.close()
+        self.db_connection.commit()
+
+        self.order_history = []
 
         return self
 
@@ -132,10 +150,11 @@ class Ctx(Generic[TState]):
             None,
             quantities,
             Status.QUEUED,
-            datetime.now().strftime("%Y-%m-%d @ %H:%M:%S"),
+            datetime.now(),
             [],
             enable_logs,
         )
+
         self.order_history.append(r)
 
         return r

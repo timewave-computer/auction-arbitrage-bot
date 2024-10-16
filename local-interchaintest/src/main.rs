@@ -15,7 +15,7 @@ mod util;
 const TEST_MNEMONIC: &str = "decorate bright ozone fork gallery riot bus exhaust worth way bone indoor calm squirrel merry zero scheme cotton until shop any excess stage laundry";
 
 /// Path to a file where found arbs are stored
-const ARBFILE_PATH: &str = "../arbs.json";
+const ARBFILE_PATH: &str = "../arbs.db";
 
 /// The address that should principally own all contracts
 const OWNER_ADDR: &str = "neutron1hj5fveer5cjtn4wd6wstzugjfdxzl0xpznmsky";

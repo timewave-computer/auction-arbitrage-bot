@@ -4,6 +4,8 @@
 Implements a command-line interface for running arbitrage strategies.
 """
 
+from contextlib import closing
+from sqlite3 import connect
 from asyncio import Semaphore
 import traceback
 import asyncio
@@ -27,7 +29,6 @@ from src.util import (
 )
 from src.contracts.pool.osmosis import OsmosisPoolDirectory
 from src.contracts.pool.astroport import NeutronAstroportPoolDirectory
-from src.contracts.route import Status
 from src.strategies.naive import strategy
 from dotenv import load_dotenv
 import aiohttp
@@ -73,7 +74,7 @@ async def main() -> None:
         "-l",
         "--log_file",
     )
-    parser.add_argument("-hf", "--history_file", default="arbs.json")
+    parser.add_argument("-hf", "--history_db", default="arbs.db")
     parser.add_argument("-c", "--net_config", default="net_conf.json")
     parser.add_argument(
         "-df", "--deployments_file", default="contracts/deployments.json"
@@ -99,16 +100,6 @@ async def main() -> None:
             stream=sys.stdout,
             level=os.environ.get("LOGLEVEL", "INFO").upper(),
         )
-
-    # Always make sure the history file exists
-    if args.history_file is not None and not path.isfile(args.history_file):
-        logger.info("Creating pool file")
-
-        with open(args.history_file, "w+", encoding="utf-8") as f:
-            json.dump(
-                [],
-                f,
-            )
 
     denom_file: dict[str, Any] = {
         "denom_map": {},
@@ -158,300 +149,157 @@ async def main() -> None:
             ),
             timeout=aiohttp.ClientTimeout(total=60),
         ) as session:
-            ctx: Ctx[Any] = Ctx(
-                {
-                    chain_id: [
-                        LedgerClient(
-                            custom_neutron_network_config(endpoint, chain_id=chain_id)
-                        )
-                        for endpoint in endpoints["grpc"]
-                    ]
-                    for chain_id, endpoints in endpoints.items()
-                },
-                endpoints,
-                LocalWallet.from_mnemonic(
-                    os.environ.get("WALLET_MNEMONIC"), prefix="neutron"
-                ),
-                {
-                    "pool_file": args.pool_file,
-                    "poll_interval": int(args.poll_interval),
-                    "hops": int(args.hops),
-                    "pools": int(args.pools) if args.pools else None,
-                    "require_leg_types": args.require_leg_types,
-                    "base_denom": args.base_denom,
-                    "profit_margin": int(args.profit_margin),
-                    "rebalance_threshold": int(args.rebalance_threshold),
-                    "wallet_mnemonic": os.environ.get("WALLET_MNEMONIC"),
-                    "cmd": args.cmd,
-                    "net_config": args.net_config,
-                    "log_file": args.log_file,
-                    "history_file": args.history_file,
-                    "skip_api_key": (
-                        os.environ.get("SKIP_API_KEY")
-                        if "SKIP_API_KEY" in os.environ
-                        else None
+            with closing(connect(args.history_db, autocommit=False)) as conn:
+                ctx: Ctx[Any] = Ctx(
+                    {
+                        chain_id: [
+                            LedgerClient(
+                                custom_neutron_network_config(
+                                    endpoint, chain_id=chain_id
+                                )
+                            )
+                            for endpoint in endpoints["grpc"]
+                        ]
+                        for chain_id, endpoints in endpoints.items()
+                    },
+                    endpoints,
+                    LocalWallet.from_mnemonic(
+                        os.environ.get("WALLET_MNEMONIC"), prefix="neutron"
                     ),
-                    "log_rebalancing": args.log_rebalancing,
-                },
-                None,
-                False,
-                session,
-                [],
-                cast(dict[str, Any], json.load(f)),
-                {
-                    denom: [load_denom_chain_info(info) for info in infos]
-                    for (denom, infos) in denom_file["denom_map"].items()
-                },
-                {
-                    src_denom: {
-                        dest_denom: [load_denom_route_leg(route) for route in routes]
-                        for (dest_denom, routes) in dest_denom_routes.items()
-                    }
-                    for (src_denom, dest_denom_routes) in denom_file[
-                        "denom_routes"
-                    ].items()
-                },
-                {
-                    chain_id: load_chain_info(info)
-                    for (chain_id, info) in denom_file["chain_info"].items()
-                },
-                Semaphore(MAX_SKIP_CONCURRENT_CALLS),
-            ).recover_history()
-            sched = Scheduler(ctx, strategy)
-
-            # Register Osmosis and Astroport providers
-            osmosis = OsmosisPoolDirectory(
-                ctx.deployments,
-                ctx.http_session,
-                poolfile_path=args.pool_file,
-                endpoints=endpoints[
-                    list(ctx.deployments["pools"]["osmosis"].keys())[0]
-                ],
-            )
-            astros = [
-                NeutronAstroportPoolDirectory(
-                    ctx.deployments,
-                    chain_id,
-                    ctx.http_session,
-                    [
-                        (
-                            grpc.aio.secure_channel(
-                                endpoint.split("grpc+https://")[1],
-                                grpc.ssl_channel_credentials(),
-                            )
-                            if "https" in endpoint
-                            else grpc.aio.insecure_channel(
-                                endpoint.split("grpc+http://")[1],
-                            )
-                        )
-                        for endpoint in endpoints[chain_id]["grpc"]
-                    ],
-                    poolfile_path=args.pool_file,
-                    endpoints=endpoints[chain_id],
+                    {
+                        "pool_file": args.pool_file,
+                        "poll_interval": int(args.poll_interval),
+                        "hops": int(args.hops),
+                        "pools": int(args.pools) if args.pools else None,
+                        "require_leg_types": args.require_leg_types,
+                        "base_denom": args.base_denom,
+                        "profit_margin": int(args.profit_margin),
+                        "rebalance_threshold": int(args.rebalance_threshold),
+                        "wallet_mnemonic": os.environ.get("WALLET_MNEMONIC"),
+                        "cmd": args.cmd,
+                        "net_config": args.net_config,
+                        "log_file": args.log_file,
+                        "history_db": args.history_db,
+                        "skip_api_key": (
+                            os.environ.get("SKIP_API_KEY")
+                            if "SKIP_API_KEY" in os.environ
+                            else None
+                        ),
+                        "log_rebalancing": args.log_rebalancing,
+                    },
+                    None,
+                    False,
+                    session,
+                    [],
+                    cast(dict[str, Any], json.load(f)),
+                    {
+                        denom: [load_denom_chain_info(info) for info in infos]
+                        for (denom, infos) in denom_file["denom_map"].items()
+                    },
+                    {
+                        src_denom: {
+                            dest_denom: [
+                                load_denom_route_leg(route) for route in routes
+                            ]
+                            for (dest_denom, routes) in dest_denom_routes.items()
+                        }
+                        for (src_denom, dest_denom_routes) in denom_file[
+                            "denom_routes"
+                        ].items()
+                    },
+                    {
+                        chain_id: load_chain_info(info)
+                        for (chain_id, info) in denom_file["chain_info"].items()
+                    },
+                    Semaphore(MAX_SKIP_CONCURRENT_CALLS),
+                    conn,
                 )
-                for chain_id in ctx.deployments["pools"]["astroport"].keys()
-                if chain_id in endpoints
-            ]
+                sched = Scheduler(ctx, strategy)
 
-            osmo_pools = await osmosis.pools()
-            astros_pools = [await astro.pools() for astro in astros]
-
-            if args.cmd is not None and len(args.cmd) > 0 and args.cmd[0] == "hist":
-                # The user wnats to see a specific route
-                if len(args.cmd) == 3 and args.cmd[1] == "show":
-                    order_id = int(args.cmd[2])
-
-                    if order_id < 0 or order_id >= len(ctx.order_history):
-                        logger.critical("Route does not exist.")
-
-                        sys.exit(1)
-
-                    logger.info("%s", ctx.order_history[order_id].fmt_pretty())
-
-                    logger.info("Execution trace:")
-
-                    for log in ctx.order_history[order_id].logs:
-                        logger.info("%s", log)
-                else:
-                    for order in ctx.order_history:
-                        logger.info(
-                            "%s (%s) expected ROI: %d, realized P/L: %d, status: %s, is_osmo: %s, is_valence: %s",
-                            order,
-                            order.time_created,
-                            order.expected_profit,
-                            order.realized_profit if order.realized_profit else 0,
-                            order.status,
-                            any([leg.kind == "osmosis" for leg in order.route]),
-                            any([leg.kind == "auction" for leg in order.route]),
-                        )
-
-                    # Print a profit summary
-                    logger.info(
-                        "Summary - total routes attepmted: %d, total routes completed: %d, min P/L: %d, max P/L: %d, total P/L: %d",
-                        len(ctx.order_history),
-                        len(
-                            [
-                                order
-                                for order in ctx.order_history
-                                if order.status == Status.EXECUTED
-                            ]
-                        ),
-                        min(
-                            [
-                                order.realized_profit
-                                for order in ctx.order_history
-                                if order.realized_profit
-                            ],
-                            default=0,
-                        ),
-                        max(
-                            [
-                                order.realized_profit
-                                for order in ctx.order_history
-                                if order.realized_profit
-                            ],
-                            default=0,
-                        ),
-                        sum(
-                            [
-                                order.realized_profit
-                                for order in ctx.order_history
-                                if order.realized_profit
-                            ]
-                        ),
+                # Register Osmosis and Astroport providers
+                osmosis = OsmosisPoolDirectory(
+                    ctx.deployments,
+                    ctx.http_session,
+                    poolfile_path=args.pool_file,
+                    endpoints=endpoints[
+                        list(ctx.deployments["pools"]["osmosis"].keys())[0]
+                    ],
+                )
+                astros = [
+                    NeutronAstroportPoolDirectory(
+                        ctx.deployments,
+                        chain_id,
+                        ctx.http_session,
+                        [
+                            (
+                                grpc.aio.secure_channel(
+                                    endpoint.split("grpc+https://")[1],
+                                    grpc.ssl_channel_credentials(),
+                                )
+                                if "https" in endpoint
+                                else grpc.aio.insecure_channel(
+                                    endpoint.split("grpc+http://")[1],
+                                )
+                            )
+                            for endpoint in endpoints[chain_id]["grpc"]
+                        ],
+                        poolfile_path=args.pool_file,
+                        endpoints=endpoints[chain_id],
                     )
+                    for chain_id in ctx.deployments["pools"]["astroport"].keys()
+                    if chain_id in endpoints
+                ]
 
-                    atomic_orders = [
-                        order
-                        for order in ctx.order_history
-                        if all(
-                            [
-                                leg.kind == "astroport" or leg.kind == "auction"
-                                for leg in order.route
-                            ]
-                        )
-                    ]
+                osmo_pools = await osmosis.pools()
+                astros_pools = [await astro.pools() for astro in astros]
 
-                    ibc_orders = [
-                        order
-                        for order in ctx.order_history
-                        if any([leg.kind == "osmosis" for leg in order.route])
-                    ]
+                for osmo_base in osmo_pools.values():
+                    for osmo_pool in osmo_base.values():
+                        sched.register_provider(osmo_pool)
 
-                    logger.info(
-                        "Summary - total atomic routes attepmted: %d, total atomic routes completed: %d, min P/L: %d, max P/L: %d, total atomic P/L: %d",
-                        len(atomic_orders),
-                        len(
-                            [
-                                order
-                                for order in atomic_orders
-                                if order.status == Status.EXECUTED
-                            ]
-                        ),
-                        min(
-                            [
-                                order.realized_profit
-                                for order in atomic_orders
-                                if order.realized_profit
-                            ],
-                            default=0,
-                        ),
-                        max(
-                            [
-                                order.realized_profit
-                                for order in atomic_orders
-                                if order.realized_profit
-                            ],
-                            default=0,
-                        ),
-                        sum(
-                            [
-                                order.realized_profit
-                                for order in atomic_orders
-                                if order.realized_profit
-                            ]
-                        ),
-                    )
-                    logger.info(
-                        "Summary - total IBC routes attepmted: %d, total IBC routes completed: %d, min P/L: %d, max P/L: %d, total IBC P/L: %d",
-                        len(ibc_orders),
-                        len(
-                            [
-                                order
-                                for order in ibc_orders
-                                if order.status == Status.EXECUTED
-                            ]
-                        ),
-                        min(
-                            [
-                                order.realized_profit
-                                for order in atomic_orders
-                                if order.realized_profit
-                            ],
-                            default=0,
-                        ),
-                        max(
-                            [
-                                order.realized_profit
-                                for order in atomic_orders
-                                if order.realized_profit
-                            ],
-                            default=0,
-                        ),
-                        sum(
-                            [
-                                order.realized_profit
-                                for order in ibc_orders
-                                if order.realized_profit
-                            ]
-                        ),
-                    )
+                for astro_pools in astros_pools:
+                    for astro_base in astro_pools.values():
+                        for astro_pool in astro_base.values():
+                            sched.register_provider(astro_pool)
 
-                return
+                await sched.register_auctions()
 
-            for osmo_base in osmo_pools.values():
-                for osmo_pool in osmo_base.values():
-                    sched.register_provider(osmo_pool)
+                # Calculate the number of pools by summing up the number of pools for a particular base
+                # in Osmosis and Astroport
+                n_pools: int = sum(
+                    map(lambda base: len(base.values()), osmo_pools.values())
+                ) + sum(map(lambda base: len(base.values()), astro_pools.values()))
 
-            for astro_pools in astros_pools:
-                for astro_base in astro_pools.values():
-                    for astro_pool in astro_base.values():
-                        sched.register_provider(astro_pool)
+                logger.info("Built pool catalogue with %d pools", n_pools)
 
-            await sched.register_auctions()
+                async def event_loop() -> None:
+                    while True:
+                        try:
+                            async with asyncio.timeout(args.poll_interval):
+                                await sched.poll()
+                        except Exception:
+                            logger.info(
+                                "Arbitrage round failed: %s", traceback.format_exc()
+                            )
 
-            # Calculate the number of pools by summing up the number of pools for a particular base
-            # in Osmosis and Astroport
-            n_pools: int = sum(
-                map(lambda base: len(base.values()), osmo_pools.values())
-            ) + sum(map(lambda base: len(base.values()), astro_pools.values()))
+                            continue
 
-            logger.info("Built pool catalogue with %d pools", n_pools)
+                def daemon() -> None:
+                    loop = asyncio.get_event_loop()
+                    loop.run_until_complete(event_loop())
 
-            async def event_loop() -> None:
-                while True:
-                    try:
-                        async with asyncio.timeout(args.poll_interval):
-                            await sched.poll()
-                    except Exception:
-                        logger.info(
-                            "Arbitrage round failed: %s", traceback.format_exc()
-                        )
+                # Save pools to the specified file if the user wants to dump pools
+                if (
+                    args.cmd is not None
+                    and len(args.cmd) > 0
+                    and args.cmd[0] == "daemon"
+                ):
+                    Process(target=daemon, args=[]).run()
+                    logger.info("Spawned searcher daemon")
 
-                        continue
+                    return
 
-            def daemon() -> None:
-                loop = asyncio.get_event_loop()
-                loop.run_until_complete(event_loop())
-
-            # Save pools to the specified file if the user wants to dump pools
-            if args.cmd is not None and len(args.cmd) > 0 and args.cmd[0] == "daemon":
-                Process(target=daemon, args=[]).run()
-                logger.info("Spawned searcher daemon")
-
-                return
-
-            await event_loop()
+                await event_loop()
 
 
 if __name__ == "__main__":

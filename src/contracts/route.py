@@ -1,7 +1,8 @@
+from datetime import datetime
 import json
 from enum import Enum
 from dataclasses import dataclass
-from typing import Union, Callable, Optional
+from typing import Union, Callable, Optional, Any
 from src.contracts.auction import AuctionProvider
 from src.contracts.pool.provider import PoolProvider
 
@@ -59,7 +60,7 @@ class Route:
     realized_profit: Optional[int]
     quantities: list[int]
     status: Status
-    time_created: str
+    time_created: datetime
     logs: list[str]
     logs_enabled: bool
 
@@ -69,10 +70,62 @@ class Route:
     def __str__(self) -> str:
         return f"r{self.uid}"
 
-    def fmt_pretty(self) -> str:
-        route_fmt = " -> ".join(map(lambda route_leg: str(route_leg), self.route))
+    def db_row(self) -> list[Any]:
+        """
+        Creates a tuple representing the route's metadata for
+        persistence purposes.
+        Expects insertioni columns (theoretical_profit,
+        expected_profit,
+        realized_profit,
+        status,
+        time_created,
+        logs_enabled)
+        """
 
-        return f"{str(self)} ({self.time_created}) expected ROI: {self.expected_profit}, realized P/L: {self.realized_profit}, status: {self.status}, path: {route_fmt}, execution plan: {self.quantities}"
+        return [
+            str(self.theoretical_profit),
+            str(self.expected_profit),
+            str(self.realized_profit),
+            str(self.status),
+            self.time_created,
+            self.logs_enabled,
+        ]
+
+    def legs_db_rows(self, order_uid: int) -> list[list[Any]]:
+        """
+        Creates a db row for each leg in the route.
+        Expects insertion columns (in_amount, out_amount, in_asset, out_asset, kind, executed)
+        """
+
+        legs = []
+
+        for i, (leg, leg_repr, in_amount) in enumerate(
+            zip(self.legs, self.route, self.quantities)
+        ):
+            out_amount = self.quantities[i + 1]
+
+            legs.append(
+                [
+                    i,
+                    order_uid,
+                    str(in_amount),
+                    str(out_amount),
+                    leg.in_asset(),
+                    leg.out_asset(),
+                    leg_repr.kind,
+                    leg_repr.executed,
+                ]
+            )
+
+        return legs
+
+    def logs_db_rows(self, order_uid: int) -> list[tuple[int, int, str]]:
+        """
+        Creates a db row for each log in the route.
+        Expects insertionc columns (contents)
+        """
+
+        return [(i, order_uid, log) for (i, log) in enumerate(self.logs)]
 
     def dumps(self) -> str:
         return json.dumps(
@@ -98,29 +151,3 @@ class Route:
                 "logs": self.logs,
             }
         )
-
-
-def load_route(s: str) -> Route:
-    loaded = json.loads(s)
-
-    return Route(
-        loaded["uid"],
-        [load_leg_repr(json_leg) for json_leg in loaded["route"]],
-        [],
-        loaded["theoretical_profit"],
-        loaded["expected_profit"],
-        loaded["realized_profit"],
-        loaded["quantities"],
-        Status[loaded["status"].split(".")[1]],
-        loaded["time_created"],
-        loaded["logs"],
-        True,
-    )
-
-
-def load_leg_repr(s: str) -> LegRepr:
-    loaded = json.loads(s)
-
-    return LegRepr(
-        loaded["in_asset"], loaded["out_asset"], loaded["kind"], loaded["executed"]
-    )

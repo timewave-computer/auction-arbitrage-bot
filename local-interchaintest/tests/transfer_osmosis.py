@@ -1,3 +1,4 @@
+from sqlite3 import connect
 import json
 from asyncio import Semaphore
 import asyncio
@@ -50,6 +51,7 @@ async def main() -> None:
             {},
             {},
             Semaphore(MAX_SKIP_CONCURRENT_CALLS),
+            connect("test_db.db"),
         )
 
         await transfer_raw(

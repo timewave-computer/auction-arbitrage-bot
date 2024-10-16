@@ -1,3 +1,4 @@
+from sqlite3 import connect
 from asyncio import Semaphore
 from typing import Any, cast, AsyncIterator
 import json
@@ -98,12 +99,13 @@ async def ctx() -> AsyncIterator[Ctx[Any]]:
                     "cmd": "",
                     "net_config": "",
                     "log_file": "",
-                    "history_file": "",
+                    "history_db": "",
                     "skip_api_key": None,
                 },
                 state=None,
                 terminated=False,
                 http_session=session,
+                db_connection=connect("test_db.db"),
                 order_history=[],
                 deployments=cast(dict[str, Any], json.load(f)),
                 denom_map={},

@@ -175,9 +175,9 @@ pub(crate) fn create_arbs_file() -> Result<(), Box<dyn Error + Send + Sync>> {
         .create(true)
         .truncate(true)
         .write(true)
-        .open("../arbs.json")?;
+        .open("../arbs.db")?;
 
-    f.write_all(serde_json::json!([]).to_string().as_bytes())?;
+    f.write_all(&[])?;
 
     Ok(())
 }
