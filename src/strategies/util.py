@@ -469,7 +469,7 @@ async def exec_arb(
                 executed_leg.executed = True
 
                 # Update the execution height if it can be found
-                resp = tx.response()
+                resp = tx.response
 
                 if resp:
                     executed_leg.execution_height = resp.height
@@ -543,7 +543,7 @@ async def exec_arb(
         executed_leg.executed = True
 
         # Update the execution height if it can be found
-        resp = tx.response()
+        resp = tx.response
 
         if resp:
             executed_leg.execution_height = resp.height
