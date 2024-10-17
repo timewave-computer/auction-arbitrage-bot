@@ -40,6 +40,7 @@ class LegRepr:
     out_asset: str
     kind: str
     executed: bool
+    execution_height: Optional[int]
 
     def __str__(self) -> str:
         return f"{self.kind}: {self.in_asset} -> {self.out_asset}"
@@ -114,6 +115,7 @@ class Route:
                     leg.out_asset(),
                     leg_repr.kind,
                     leg_repr.executed,
+                    leg_repr.execution_height,
                 ]
             )
 

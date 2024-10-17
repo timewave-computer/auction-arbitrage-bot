@@ -458,13 +458,21 @@ async def exec_arb(
             )
 
             for leg, _ in sublegs:
-                next(
+                executed_leg = next(
                     (
                         leg_repr
                         for leg_repr in route_ent.route
                         if str(leg_repr) == str(leg)
                     )
-                ).executed = True
+                )
+
+                executed_leg.executed = True
+
+                # Update the execution height if it can be found
+                resp = tx.response()
+
+                if resp:
+                    executed_leg.execution_height = resp.height
 
                 prev_leg = leg
 
@@ -528,9 +536,17 @@ async def exec_arb(
                 ],
             )
 
-        next(
+        executed_leg = next(
             (leg_repr for leg_repr in route_ent.route if str(leg_repr) == str(leg))
-        ).executed = True
+        )
+
+        executed_leg.executed = True
+
+        # Update the execution height if it can be found
+        resp = tx.response()
+
+        if resp:
+            executed_leg.execution_height = resp.height
 
         prev_leg = leg
 

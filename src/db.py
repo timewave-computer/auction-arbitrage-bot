@@ -48,8 +48,9 @@ def insert_legs_rows(cur: Cursor, rows: list[list[Any]]) -> None:
         in_asset,
         out_asset,
         kind,
-        executed
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        executed,
+        execution_height
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         rows,
     )
 
@@ -93,6 +94,7 @@ def migrate(cur: Cursor) -> None:
         out_asset TEXT NOT NULL,
         kind TEXT NOT NULL,
         executed BOOL NOT NULL,
+        execution_height INTEGER,
         PRIMARY KEY (route_index, order_uid),
         FOREIGN KEY(order_uid) REFERENCES orders(uid)
         )"""

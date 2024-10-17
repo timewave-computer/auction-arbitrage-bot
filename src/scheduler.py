@@ -141,7 +141,7 @@ class Ctx(Generic[TState]):
         r = Route(
             len(self.order_history),
             [
-                LegRepr(leg.in_asset(), leg.out_asset(), leg.backend.kind, False)
+                LegRepr(leg.in_asset(), leg.out_asset(), leg.backend.kind, False, None)
                 for leg in route
             ],
             route,
