@@ -116,9 +116,6 @@ class Ctx(Generic[TState]):
 
         return self
 
-    def refresh_denom_balances(self) -> None:
-        self.denom_balance_cache.clear()
-
     def cancel(self) -> Self:
         """
         Marks the event loop for termination.
@@ -249,11 +246,6 @@ class Ctx(Generic[TState]):
         Gets the balance of the denom on the given chain.
         """
 
-        denom_id = f"{denom}_{chain_id}"
-
-        if denom_id in self.denom_balance_cache:
-            return self.denom_balance_cache[denom_id]
-
         balance_resp_asset = try_multiple_clients(
             self.clients[chain_id],
             lambda client: client.query_bank_balance(
@@ -266,11 +258,7 @@ class Ctx(Generic[TState]):
         )
 
         if balance_resp_asset is None or not isinstance(balance_resp_asset, int):
-            self.denom_balance_cache[denom_id] = 0
-
             return 0
-
-        self.denom_balance_cache[denom_id] = int(balance_resp_asset)
 
         return int(balance_resp_asset)
 
