@@ -116,6 +116,9 @@ class Ctx(Generic[TState]):
 
         return self
 
+    def refresh_denom_balances(self) -> None:
+        self.denom_balance_cache.clear()
+
     def cancel(self) -> Self:
         """
         Marks the event loop for termination.
@@ -180,15 +183,8 @@ class Ctx(Generic[TState]):
             return
 
         def asset_balance_prefix(leg: Leg, asset: str) -> Optional[str]:
-            balance_resp_asset = try_multiple_clients(
-                self.clients[leg.backend.chain_id],
-                lambda client: client.query_bank_balance(
-                    Address(
-                        self.wallet.public_key(),
-                        prefix=leg.backend.chain_prefix,
-                    ),
-                    asset,
-                ),
+            balance_resp_asset = self.query_denom_balance(
+                asset, leg.backend.chain_id, leg.backend.chain_prefix
             )
 
             if balance_resp_asset is None or not isinstance(balance_resp_asset, int):
@@ -209,19 +205,22 @@ class Ctx(Generic[TState]):
 
         # Log all in and out asset balances for each leg in the route,
         # removing any duplicate prefixes using dict.fromkeys
-        prefix = " ".join(
-            list(
-                dict.fromkeys(
-                    [
-                        prefix
-                        for leg_prefixes in [
-                            leg_balance_prefixes(leg) for leg in route.legs
+        prefix = ""
+
+        if log_level == "debug":
+            prefix = " ".join(
+                list(
+                    dict.fromkeys(
+                        [
+                            prefix
+                            for leg_prefixes in [
+                                leg_balance_prefixes(leg) for leg in route.legs
+                            ]
+                            for prefix in leg_prefixes
                         ]
-                        for prefix in leg_prefixes
-                    ]
+                    )
                 )
             )
-        )
 
         route.logs.append(f"{log_level.upper()} {prefix} {fmt_string % tuple(args)}")
 
@@ -244,6 +243,36 @@ class Ctx(Generic[TState]):
 
         if log_level == "debug":
             logger.debug(fmt_string, str(route), *args)
+
+    def query_denom_balance(self, denom: str, chain_id: str, chain_prefix: str) -> int:
+        """
+        Gets the balance of the denom on the given chain.
+        """
+
+        denom_id = f"{denom}_{chain_id}"
+
+        if denom_id in self.denom_balance_cache:
+            return self.denom_balance_cache[denom_id]
+
+        balance_resp_asset = try_multiple_clients(
+            self.clients[chain_id],
+            lambda client: client.query_bank_balance(
+                Address(
+                    self.wallet.public_key(),
+                    prefix=chain_prefix,
+                ),
+                denom,
+            ),
+        )
+
+        if balance_resp_asset is None or not isinstance(balance_resp_asset, int):
+            self.denom_balance_cache[denom_id] = 0
+
+            return 0
+
+        self.denom_balance_cache[denom_id] = int(balance_resp_asset)
+
+        return int(balance_resp_asset)
 
     async def query_denom_route(
         self, query: DenomRouteQuery

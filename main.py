@@ -19,7 +19,11 @@ import os
 from typing import Any, cast
 from cosmpy.aerial.client import LedgerClient
 from cosmpy.aerial.wallet import LocalWallet
-from src.scheduler import Scheduler, Ctx, MAX_SKIP_CONCURRENT_CALLS
+from src.scheduler import (
+    Scheduler,
+    Ctx,
+    MAX_SKIP_CONCURRENT_CALLS,
+)
 from src.util import (
     custom_neutron_network_config,
     DISCOVERY_CONCURRENCY_FACTOR,
@@ -90,7 +94,7 @@ async def main() -> None:
             format="%(asctime)s %(levelname)-8s %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
             filename=args.log_file,
-            level=os.environ.get("LOGLEVEL", "INFO").upper(),
+            level=os.environ.get("LOGLEVEL", "info").upper(),
         )
 
     else:
@@ -98,7 +102,7 @@ async def main() -> None:
             format="%(asctime)s %(levelname)-8s %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
             stream=sys.stdout,
-            level=os.environ.get("LOGLEVEL", "INFO").upper(),
+            level=os.environ.get("LOGLEVEL", "info").upper(),
         )
 
     denom_file: dict[str, Any] = {
