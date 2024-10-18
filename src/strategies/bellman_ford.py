@@ -4,7 +4,6 @@ Implements an arbitrage strategy based on bellman ford.
 
 from functools import cache
 import traceback
-import random
 import logging
 from decimal import Decimal
 import asyncio
@@ -21,7 +20,6 @@ from src.strategies.util import (
     quantities_for_route_profit,
 )
 from src.util import (
-    denom_info_on_chain,
     try_multiple_clients,
 )
 from cosmpy.crypto.address import Address
@@ -291,7 +289,7 @@ async def strategy(
         ),
     )
 
-    if not balance_resp:
+    if balance_resp is None or not isinstance(balance_resp, int):
         return ctx
 
     profit = await route_base_denom_profit(balance_resp, route)
@@ -392,7 +390,7 @@ async def route_bellman_ford(
     }
 
     if ctx.cli_args["pools"]:
-        vertices = set(random.sample(list(vertices), ctx.cli_args["pools"] - 1))
+        vertices = set(list(vertices))
 
     # How far a given denom is from the `src` denom
     distances: dict[str, Decimal] = {}
@@ -409,17 +407,15 @@ async def route_bellman_ford(
         for edge_a, edge_b in ctx.state.weights.values():
 
             async def relax_edge(edge: Edge) -> None:
-                in_asset_infos = await denom_info_on_chain(
+                in_asset_infos = await ctx.query_denom_info_on_chain(
                     edge.backend.backend.chain_id,
                     edge.backend.in_asset(),
                     "neutron-1",
-                    ctx.http_session,
                 )
-                out_asset_infos = await denom_info_on_chain(
+                out_asset_infos = await ctx.query_denom_info_on_chain(
                     edge.backend.backend.chain_id,
                     edge.backend.out_asset(),
                     "neutron-1",
-                    ctx.http_session,
                 )
 
                 if not in_asset_infos:
@@ -428,8 +424,8 @@ async def route_bellman_ford(
                 if not out_asset_infos:
                     return
 
-                in_asset = in_asset_infos[0].denom
-                out_asset = out_asset_infos[0].denom
+                in_asset = in_asset_infos.denom
+                out_asset = out_asset_infos.denom
 
                 if (
                     (
@@ -507,40 +503,36 @@ async def route_bellman_ford(
     # If this trade doesn't start and end with USDC
     # construct it to do so
     if legs[0].in_asset() != src or legs[-1].out_asset() != src:
-        in_denom = await denom_info_on_chain(
+        in_denom = await ctx.query_denom_info_on_chain(
             "neutron-1",
             src,
             legs[0].backend.chain_id,
-            ctx.http_session,
         )
 
         if not in_denom:
             return None
 
-        out_denom = await denom_info_on_chain(
+        out_denom = await ctx.query_denom_info_on_chain(
             "neutron-1",
             src,
             legs[-1].backend.chain_id,
-            ctx.http_session,
         )
 
         if not out_denom:
             return None
 
         in_legs: list[Union[PoolProvider, AuctionProvider]] = list(
-            pools.get(in_denom[0].denom, {}).get(legs[0].in_asset(), [])
+            pools.get(in_denom.denom, {}).get(legs[0].in_asset(), [])
         )
-        in_auction = auctions.get(in_denom[0].denom, {}).get(legs[0].in_asset(), None)
+        in_auction = auctions.get(in_denom.denom, {}).get(legs[0].in_asset(), None)
 
         if in_auction:
             in_legs.append(in_auction)
 
         out_legs: list[Union[PoolProvider, AuctionProvider]] = list(
-            pools.get(legs[-1].out_asset(), {}).get(out_denom[0].denom, [])
+            pools.get(legs[-1].out_asset(), {}).get(out_denom.denom, [])
         )
-        out_auction = auctions.get(legs[-1].out_asset(), {}).get(
-            out_denom[0].denom, None
-        )
+        out_auction = auctions.get(legs[-1].out_asset(), {}).get(out_denom.denom, None)
 
         if out_auction:
             out_legs.append(out_auction)
@@ -556,12 +548,12 @@ async def route_bellman_ford(
                 Leg(
                     (
                         in_leg.asset_a
-                        if in_leg.asset_a() == in_denom[0].denom
+                        if in_leg.asset_a() == in_denom.denom
                         else in_leg.asset_b
                     ),
                     (
                         in_leg.asset_b
-                        if in_leg.asset_a() == in_denom[0].denom
+                        if in_leg.asset_a() == in_denom.denom
                         else in_leg.asset_a
                     ),
                     in_leg,
@@ -572,12 +564,12 @@ async def route_bellman_ford(
                 Leg(
                     (
                         out_leg.asset_b
-                        if out_leg.asset_a() == out_denom[0].denom
+                        if out_leg.asset_a() == out_denom.denom
                         else out_leg.asset_a
                     ),
                     (
                         out_leg.asset_a
-                        if out_leg.asset_a() == out_denom[0].denom
+                        if out_leg.asset_a() == out_denom.denom
                         else out_leg.asset_b
                     ),
                     out_leg,

@@ -208,7 +208,7 @@ Debug information is logged to the DEBUG level, including:
 * Profit levels for considered trades
 * Intermediate debug logs
 
-The log level may be set via the `LOGLEVEL` environment variable. Possible values are: `INFO`, `DEBUG`, or `ERROR`.
+The log level may be set via the `LOGLEVEL` environment variable. Possible values are: `info`, `debug`, or `error`.
 
 An example output is as follows:
 

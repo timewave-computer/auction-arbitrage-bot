@@ -21,24 +21,14 @@ from cosmwasm.wasm.v1 import query_pb2, query_pb2_grpc
 DENOM_RESOLVER_TIMEOUT_SEC = 5
 
 
-# The maximum number of concurrent connections
-# that can be open to
-MAX_SKIP_CONCURRENT_CALLS = 5
-
-
 # Dictates the maximum number of concurrent calls to the skip
 # API in searching
-DISCOVERY_CONCURRENCY_FACTOR = 20
+DISCOVERY_CONCURRENCY_FACTOR = 15
 
 
 # Dictates the maximum number of concurrent calls to pool providers
 # for profit simulation (evaluation)
 EVALUATION_CONCURRENCY_FACTOR = 10
-
-
-# The quantity of a denom below which
-# it is no longer worthwhile checking for profit
-DENOM_QUANTITY_ABORT_ARB = 500
 
 
 NEUTRON_NETWORK_CONFIG = NetworkConfig(
@@ -255,6 +245,34 @@ class ChainInfo:
     pretty_name: str
 
 
+def load_chain_info(obj: dict[str, Any]) -> ChainInfo:
+    return ChainInfo(
+        chain_name=obj["chain_name"],
+        chain_id=obj["chain_id"],
+        pfm_enabled=obj["pfm_enabled"],
+        supports_memo=obj["supports_memo"],
+        bech32_prefix=obj["bech32_prefix"],
+        fee_asset=obj["fee_asset"],
+        chain_type=obj["chain_type"],
+        pretty_name=obj["pretty_name"],
+    )
+
+
+@dataclass
+class DenomRouteQuery:
+    """
+    Information identifying a request for a denom route.
+    """
+
+    src_chain: str
+    src_denom: str
+    dest_chain: str
+    dest_denom: str
+
+    def __hash__(self) -> int:
+        return hash((self.src_chain, self.src_denom, self.dest_chain, self.dest_denom))
+
+
 @dataclass
 class DenomRouteLeg:
     """
@@ -274,11 +292,25 @@ class DenomRouteLeg:
     from_chain: ChainInfo
     to_chain: ChainInfo
 
-    denom_in: str
-    denom_out: str
-
     port: str
     channel: str
+
+
+def load_denom_route_leg(obj: dict[str, Any]) -> DenomRouteLeg:
+    return DenomRouteLeg(
+        src_chain=obj["src_chain"],
+        dest_chain=obj["dest_chain"],
+        src_denom=obj["src_denom"],
+        dest_denom=obj["dest_denom"],
+        from_chain=load_chain_info(obj["from_chain"]),
+        to_chain=load_chain_info(obj["to_chain"]),
+        port=obj["port"],
+        channel=obj["channel"],
+    )
+
+
+def fmt_denom_route_leg(leg: DenomRouteLeg) -> str:
+    return f"{leg.src_denom} ({leg.src_chain}) -> {leg.dest_denom} ({leg.dest_chain}) via {leg.channel}/{leg.port}"
 
 
 @dataclass
@@ -290,205 +322,16 @@ class DenomChainInfo:
     """
 
     denom: str
-    chain_id: Optional[str]
+    src_chain_id: str
+    dest_chain_id: str
 
 
-async def denom_info(
-    src_chain: str,
-    src_denom: str,
-    session: aiohttp.ClientSession,
-    denom_map: Optional[dict[str, list[dict[str, str]]]] = None,
-) -> list[list[DenomChainInfo]]:
-    """
-    Gets a denom's denom and channel on/to other chains.
-    """
-
-    if denom_map:
-        return [
-            [
-                DenomChainInfo(
-                    denom_info["denom"],
-                    denom_info["chain_id"],
-                )
-            ]
-            for denom_info in denom_map.get(src_denom, [])
-        ]
-
-    head = {"accept": "application/json", "content-type": "application/json"}
-
-    async with session.post(
-        "https://api.skip.money/v1/fungible/assets_from_source",
-        headers=head,
-        json={
-            "allow_multi_tx": False,
-            "include_cw20_assets": True,
-            "source_asset_denom": src_denom,
-            "source_asset_chain_id": src_chain,
-            "client_id": "timewave-arb-bot",
-        },
-    ) as resp:
-        if resp.status != 200:
-            return []
-
-        dests = (await resp.json())["dest_assets"]
-
-        def chain_info(chain_id: str, info: dict[str, Any]) -> DenomChainInfo:
-            info = info["assets"][0]
-
-            return DenomChainInfo(denom=info["denom"], chain_id=chain_id)
-
-        return [[chain_info(chain_id, info) for chain_id, info in dests.items()]]
-
-
-async def denom_info_on_chain(
-    src_chain: str,
-    src_denom: str,
-    dest_chain: str,
-    session: aiohttp.ClientSession,
-    denom_map: Optional[dict[str, list[dict[str, str]]]] = None,
-) -> Optional[list[DenomChainInfo]]:
-    """
-    Gets a neutron denom's denom and channel on/to another chain.
-    """
-
-    if denom_map:
-        return [
-            DenomChainInfo(
-                denom_info["denom"],
-                denom_info["chain_id"],
-            )
-            for denom_info in denom_map.get(src_denom, [])
-            if denom_info["chain_id"] == dest_chain
-        ][:1]
-
-    head = {"accept": "application/json", "content-type": "application/json"}
-
-    async with session.post(
-        "https://api.skip.money/v1/fungible/assets_from_source",
-        headers=head,
-        json={
-            "allow_multi_tx": False,
-            "include_cw20_assets": True,
-            "source_asset_denom": src_denom,
-            "source_asset_chain_id": src_chain,
-            "client_id": "timewave-arb-bot",
-        },
-    ) as resp:
-        if resp.status != 200:
-            return None
-
-        dests = (await resp.json())["dest_assets"]
-
-        if dest_chain in dests:
-            info = dests[dest_chain]["assets"][0]
-
-            return [DenomChainInfo(denom=info["denom"], chain_id=dest_chain)]
-
-        return None
-
-
-async def denom_route(
-    src_chain: str,
-    src_denom: str,
-    dest_chain: str,
-    dest_denom: str,
-    session: aiohttp.ClientSession,
-    denom_map: Optional[dict[str, list[dict[str, str]]]] = None,
-) -> Optional[list[DenomRouteLeg]]:
-    """
-    Gets a neutron denom's denom and channel on/to another chain.
-    """
-
-    head = {"accept": "application/json", "content-type": "application/json"}
-
-    async with session.post(
-        "https://api.skip.money/v2/fungible/route",
-        headers=head,
-        json={
-            "amount_in": "1",
-            "source_asset_denom": src_denom,
-            "source_asset_chain_id": src_chain,
-            "dest_asset_denom": dest_denom,
-            "dest_asset_chain_id": dest_chain,
-            "allow_multi_tx": True,
-            "allow_unsafe": False,
-            "bridges": ["IBC"],
-        },
-    ) as resp:
-        if resp.status != 200:
-            return None
-
-        ops = (await resp.json())["operations"]
-
-        # The transfer includes a swap or some other operation
-        # we can't handle
-        if any(("transfer" not in op for op in ops)):
-            return None
-
-        transfer_info = ops[0]["transfer"]
-
-        from_chain_info = await chain_info(
-            transfer_info["from_chain_id"], session, denom_map
-        )
-        to_chain_info = await chain_info(
-            transfer_info["to_chain_id"], session, denom_map
-        )
-
-        if not from_chain_info or not to_chain_info:
-            return None
-
-        return [
-            DenomRouteLeg(
-                src_chain=src_chain,
-                dest_chain=dest_chain,
-                src_denom=src_denom,
-                dest_denom=dest_denom,
-                from_chain=from_chain_info,
-                to_chain=to_chain_info,
-                denom_in=transfer_info["denom_in"],
-                denom_out=transfer_info["denom_out"],
-                port=transfer_info["port"],
-                channel=transfer_info["channel"],
-            )
-            for op in ops
-        ]
-
-
-async def chain_info(
-    chain_id: str,
-    session: aiohttp.ClientSession,
-    denom_map: Optional[dict[str, list[dict[str, str]]]] = None,
-) -> Optional[ChainInfo]:
-    """
-    Gets basic information about a cosmos chain.
-    """
-
-    head = {"accept": "application/json", "content-type": "application/json"}
-
-    async with session.get(
-        f"https://api.skip.money/v2/info/chains?chain_ids={chain_id}",
-        headers=head,
-    ) as resp:
-        if resp.status != 200:
-            return None
-
-        chains = (await resp.json())["chains"]
-
-        if len(chains) == 0:
-            return None
-
-        chain = chains[0]
-
-        return ChainInfo(
-            chain_name=chain["chain_name"],
-            chain_id=chain["chain_id"],
-            pfm_enabled=chain["pfm_enabled"],
-            supports_memo=chain["supports_memo"],
-            bech32_prefix=chain["bech32_prefix"],
-            fee_asset=chain["fee_assets"][0]["denom"],
-            chain_type=chain["chain_type"],
-            pretty_name=chain["pretty_name"],
-        )
+def load_denom_chain_info(obj: dict[str, Any]) -> DenomChainInfo:
+    return DenomChainInfo(
+        denom=obj["denom"],
+        src_chain_id=obj["src_chain_id"],
+        dest_chain_id=obj["dest_chain_id"],
+    )
 
 
 @dataclass

@@ -31,7 +31,7 @@ from cosmpy.crypto.address import Address
 from cosmpy.aerial.tx import Transaction
 
 
-MAX_SPREAD = "0.05"
+MAX_SPREAD = "0.1"
 
 
 @dataclass
@@ -254,7 +254,7 @@ class NeutronAstroportPoolProvider(PoolProvider, WithContract):
 
         balance = next(b for b in balances if b["info"] == token_to_asset_info(asset))
 
-        if not balance:
+        if balance is None:
             return 0
 
         return int(balance["amount"])

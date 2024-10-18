@@ -2,7 +2,6 @@
 Defines common utilities shared across arbitrage strategies.
 """
 
-import random
 import traceback
 import asyncio
 from itertools import groupby
@@ -21,17 +20,13 @@ from src.contracts.pool.astroport import (
     NeutronAstroportPoolProvider,
 )
 from src.util import (
-    chain_info,
     IBC_TRANSFER_TIMEOUT_SEC,
     IBC_TRANSFER_POLL_INTERVAL_SEC,
     try_multiple_rest_endpoints,
     try_multiple_clients_fatal,
     try_multiple_clients,
-    DENOM_QUANTITY_ABORT_ARB,
-    denom_route,
-    denom_info_on_chain,
-    denom_info,
-    DenomChainInfo,
+    DenomRouteQuery,
+    fmt_denom_route_leg,
 )
 from src.scheduler import Ctx
 from cosmos.base.v1beta1 import coin_pb2
@@ -46,6 +41,16 @@ logger = logging.getLogger(__name__)
 
 
 MAX_POOL_LIQUIDITY_TRADE = Decimal("0.05")
+
+
+DENOM_QUANTITY_ABORT_ARB = 500
+
+
+"""
+Prevent routes from being evaluated excessively when binary search fails.
+"""
+MAX_EVAL_PROBES = 2**6
+
 
 """
 The amount of the summed gas limit that will be consumed if messages
@@ -112,6 +117,14 @@ def collapse_route(
     ]
 
 
+def expand_route(route_sublegs: list[list[tuple[Leg, int]]]) -> list[tuple[Leg, int]]:
+    """
+    Ungroups legs grouped together by consecutive elements.
+    """
+
+    return [leg for sublegs in route_sublegs for leg in sublegs]
+
+
 def build_atomic_arb(
     sublegs: list[tuple[Leg, int]], wallet: LocalWallet
 ) -> Transaction:
@@ -136,6 +149,28 @@ def build_atomic_arb(
         tx.add_message(msg)
 
     return tx
+
+
+def denom_balance_on_chain(
+    provider: Union[AuctionProvider, PoolProvider], denom: str, ctx: Ctx[Any]
+) -> int:
+    """
+    Gets the maximum order size for the provider of the leg,
+    given the balance in the user's wallet.
+    """
+
+    balance_resp = try_multiple_clients(
+        ctx.clients[provider.chain_id],
+        lambda client: client.query_bank_balance(
+            Address(ctx.wallet.public_key(), prefix=provider.chain_prefix),
+            denom,
+        ),
+    )
+
+    if isinstance(balance_resp, int):
+        return balance_resp
+
+    return 0
 
 
 async def exec_arb(
@@ -187,9 +222,72 @@ async def exec_arb(
         ],
     )
 
-    for sublegs in to_execute:
+    for i, sublegs in enumerate(to_execute):
+        (leg, predicted_to_swap) = sublegs[0]
+
+        # The execution plan must have a sufficient balance
+        # in order to execute the step.
+        # Otherwise, the step's quantity should be set to the balance
+        # and the plan should be updated and reevaluated for profit.
+        # If the route is no longer profitable, it should be canceled
+
+        to_swap = min(
+            predicted_to_swap,
+            denom_balance_on_chain(
+                prev_leg.backend if prev_leg else leg.backend,
+                prev_leg.out_asset() if prev_leg else leg.in_asset(),
+                ctx,
+            ),
+        )
+
+        ctx.log_route(
+            route_ent,
+            "info",
+            "Execution plan for leg %s requires %d, and maximum spendable for leg is %d",
+            [fmt_route([leg]), predicted_to_swap, to_swap],
+        )
+
+        # Recalculate execution plan and update all legs,
+        # or abort if the route is no longer profitable
+        if to_swap != predicted_to_swap:
+            ctx.log_route(
+                route_ent,
+                "info",
+                "Maximum spendable for leg %s (%d) is insufficient for execution plan (requires %d); reevaluating",
+                [fmt_route([leg]), predicted_to_swap, to_swap],
+            )
+
+            remaining_legs = expand_route(to_execute[i:])
+
+            _, new_execution_plan = await quantities_for_route_profit(
+                to_swap,
+                [leg for leg, _ in remaining_legs],
+                route_ent,
+                ctx,
+            )
+
+            # The execution plan was aborted
+            if len(new_execution_plan) < len(remaining_legs):
+                ctx.log_route(
+                    route_ent,
+                    "info",
+                    "Insufficient execution planning (%d) for remaining legs (%d); skipping",
+                    [len(new_execution_plan), len(remaining_legs)],
+                )
+
+                continue
+
+            # The execution plan indicates the trade is no longer profitable
+            if new_execution_plan[-1] < quantities[0]:
+                raise ValueError(
+                    "Execution plan indicates arb is no longer profitable."
+                )
+
+            # Update the remaining execution plan
+            to_execute[i:] = collapse_route(iter(remaining_legs))
+
         leg_to_swap: tuple[Leg, int] = sublegs[0]
-        (leg, to_swap) = leg_to_swap
+        (leg, _) = leg_to_swap
 
         # Log legs on the same chain
         if len(sublegs) > 1:
@@ -360,13 +458,21 @@ async def exec_arb(
             )
 
             for leg, _ in sublegs:
-                next(
+                executed_leg = next(
                     (
                         leg_repr
                         for leg_repr in route_ent.route
                         if str(leg_repr) == str(leg)
                     )
-                ).executed = True
+                )
+
+                executed_leg.executed = True
+
+                # Update the execution height if it can be found
+                resp = tx.response
+
+                if resp:
+                    executed_leg.execution_height = resp.height
 
                 prev_leg = leg
 
@@ -430,9 +536,17 @@ async def exec_arb(
                 ],
             )
 
-        next(
+        executed_leg = next(
             (leg_repr for leg_repr in route_ent.route if str(leg_repr) == str(leg))
-        ).executed = True
+        )
+
+        executed_leg.executed = True
+
+        # Update the execution height if it can be found
+        resp = tx.response
+
+        if resp:
+            executed_leg.execution_height = resp.height
 
         prev_leg = leg
 
@@ -458,7 +572,7 @@ async def rebalance_portfolio(
     for chain_id in ctx.endpoints.keys():
         logger.info("Rebalancing portfolio for chain %s", chain_id)
 
-        chain_meta = await chain_info(chain_id, ctx.http_session)
+        chain_meta = await ctx.query_chain_info(chain_id)
 
         if not chain_meta:
             continue
@@ -499,67 +613,77 @@ async def rebalance_portfolio(
 
             logger.info("Rebalancing %d %s", balance, denom)
 
-            async for route_ent, route in listen_routes_with_depth_dfs(
-                ctx.cli_args["hops"],
-                denom,
-                sell_denom,
-                set(),
-                pools,
-                auctions,
-                ctx,
-            ):
-                # For logging
-                _, execution_plan = await quantities_for_route_profit(
-                    balance, route, route_ent, ctx, seek_profit=False
+            route_ent, route = await anext(
+                listen_routes_with_depth_dfs(
+                    ctx.cli_args["hops"],
+                    denom,
+                    sell_denom,
+                    set(),
+                    pools,
+                    auctions,
+                    ctx,
                 )
+            )
 
-                # The execution plan was aborted
-                if len(execution_plan) <= len(route):
-                    ctx.log_route(
-                        route_ent,
-                        "info",
-                        "Insufficient execution planning for rebalancing for %s; skipping",
-                        [denom],
-                    )
+            ctx.log_route(
+                route_ent,
+                "info",
+                "Rebalancing route discovered: %s",
+                [fmt_route(route)],
+            )
 
-                    continue
+            route_ent.logs_enabled = ctx.cli_args["log_rebalancing"]
 
-                # Check that the execution plan results in a liquidatable quantity
-                if execution_plan[-1] < ctx.cli_args["rebalance_threshold"]:
-                    ctx.log_route(
-                        route_ent,
-                        "info",
-                        "Not enough funds for rebalancing %s; trying a different execution plan",
-                        [denom],
-                    )
+            # For logging
+            _, execution_plan = await quantities_for_route_profit(
+                balance, route, route_ent, ctx, seek_profit=False
+            )
 
-                    continue
-
+            # The execution plan was aborted
+            if len(execution_plan) <= len(route):
                 ctx.log_route(
-                    route_ent, "info", "Executing rebalancing plan for %s", [denom]
+                    route_ent,
+                    "info",
+                    "Insufficient execution planning for rebalancing for %s; skipping",
+                    [denom],
                 )
 
-                # Execute the plan
-                route_ent.quantities = execution_plan
-                ctx.update_route(route_ent)
+                return
 
-                try:
-                    await exec_arb(route_ent, 0, execution_plan, route, ctx)
+            # Check that the execution plan results in a liquidatable quantity
+            if execution_plan[-1] < ctx.cli_args["rebalance_threshold"]:
+                ctx.log_route(
+                    route_ent,
+                    "info",
+                    "Not enough funds for rebalancing %s; trying a different execution plan",
+                    [denom],
+                )
 
-                    break
-                except Exception:
-                    ctx.log_route(
-                        route_ent,
-                        "error",
-                        "Arb failed - rebalancing of %s failed: %s",
-                        [
-                            denom,
-                            traceback.format_exc().replace(
-                                "\n",
-                                f"\n{route_ent.uid}- Arb failed - failed to rebalance funds: ",
-                            ),
-                        ],
-                    )
+                return
+
+            ctx.log_route(
+                route_ent, "info", "Executing rebalancing plan for %s", [denom]
+            )
+
+            # Execute the plan
+            route_ent.quantities = execution_plan
+            ctx.update_route(route_ent)
+
+            try:
+                await exec_arb(route_ent, 0, execution_plan, route, ctx)
+            except Exception:
+                ctx.log_route(
+                    route_ent,
+                    "error",
+                    "Arb failed - rebalancing of %s failed: %s",
+                    [
+                        denom,
+                        traceback.format_exc().replace(
+                            "\n",
+                            f"\n{route_ent.uid}- Arb failed - failed to rebalance funds: ",
+                        ),
+                    ],
+                )
 
         await asyncio.gather(
             *[
@@ -585,8 +709,6 @@ async def listen_routes_with_depth_dfs(
         ]
     ] = None,
 ) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
-    denom_cache: dict[str, dict[str, list[str]]] = {}
-
     start_pools: list[Union[AuctionProvider, PoolProvider]] = [
         *auctions.get(src, {}).values(),
         *(pool for pool_set in pools.get(src, {}).values() for pool in pool_set),
@@ -604,19 +726,21 @@ async def listen_routes_with_depth_dfs(
     async def next_legs(
         path: list[Leg],
     ) -> AsyncGenerator[tuple[Route, list[Leg]], None]:
-        nonlocal denom_cache
         nonlocal eval_profit
 
-        if len(path) >= 2 and not (
-            path[-1].in_asset() == path[-2].out_asset()
-            or path[-1].in_asset()
-            in [
-                denom
-                for denom_list in denom_cache[path[-2].out_asset()].values()
-                for denom in denom_list
-            ]
-        ):
-            return
+        if len(path) >= 2:
+            denom_infos = await ctx.query_denom_info(
+                path[-2].backend.chain_id,
+                path[-2].out_asset(),
+            )
+
+            matching_denoms = [info.denom for info in denom_infos]
+
+            if not (
+                path[-1].in_asset() == path[-2].out_asset()
+                or path[-1].in_asset() in matching_denoms
+            ):
+                return
 
         # Only find `limit` pools
         # with a depth less than `depth
@@ -662,29 +786,7 @@ async def listen_routes_with_depth_dfs(
         # no more work to do
         end = prev_pool.out_asset()
 
-        if end not in denom_cache:
-            try:
-                denom_infos = await denom_info(
-                    prev_pool.backend.chain_id, end, ctx.http_session, ctx.denom_map
-                )
-
-                denom_cache[end] = {
-                    info[0].chain_id: [i.denom for i in info]
-                    for info in (
-                        denom_infos
-                        + [
-                            [
-                                DenomChainInfo(
-                                    denom=end,
-                                    chain_id=prev_pool.backend.chain_id,
-                                )
-                            ]
-                        ]
-                    )
-                    if len(info) > 0 and info[0].chain_id
-                }
-            except asyncio.TimeoutError:
-                return
+        denom_infos = await ctx.query_denom_info(prev_pool.backend.chain_id, end)
 
         # A pool is a candidate to be a next pool if it has a denom
         # contained in denom_cache[end] or one of its denoms *is* end
@@ -721,38 +823,40 @@ async def listen_routes_with_depth_dfs(
                     Leg(
                         (
                             auction.asset_a
-                            if auction.asset_a() == src or auction.asset_a() == denom
+                            if auction.asset_a() == src
+                            or auction.asset_a() == denom_info.denom
                             else auction.asset_b
                         ),
                         (
                             auction.asset_a
-                            if auction.asset_a() != src and auction.asset_a() != denom
+                            if auction.asset_a() != src
+                            and auction.asset_a() != denom_info.denom
                             else auction.asset_b
                         ),
                         auction,
                     )
-                    for denom_set in denom_cache[end].values()
-                    for denom in denom_set
-                    for auction in auctions.get(denom, {}).values()
+                    for denom_info in denom_infos
+                    for auction in auctions.get(denom_info.denom, {}).values()
                     if auction.chain_id != prev_pool.backend.chain_id
                 ),
                 *(
                     Leg(
                         (
                             pool.asset_a
-                            if pool.asset_a() == src or pool.asset_a() == denom
+                            if pool.asset_a() == src
+                            or pool.asset_a() == denom_info.denom
                             else pool.asset_b
                         ),
                         (
                             pool.asset_a
-                            if pool.asset_a() != src and pool.asset_a() != denom
+                            if pool.asset_a() != src
+                            and pool.asset_a() != denom_info.denom
                             else pool.asset_b
                         ),
                         pool,
                     )
-                    for denom_set in denom_cache[end].values()
-                    for denom in denom_set
-                    for pool_set in pools.get(denom, {}).values()
+                    for denom_info in denom_infos
+                    for pool_set in pools.get(denom_info.denom, {}).values()
                     for pool in pool_set
                     if pool.chain_id != prev_pool.backend.chain_id
                 ),
@@ -762,8 +866,6 @@ async def listen_routes_with_depth_dfs(
 
         if len(next_pools) == 0:
             return
-
-        random.shuffle(next_pools)
 
         routes = stream.merge(*[next_legs(path + [pool]) for pool in next_pools])
 
@@ -814,7 +916,7 @@ async def recover_funds(
         ),
     )
 
-    if not balance_resp:
+    if balance_resp is None or not isinstance(balance_resp, int):
         raise ValueError(f"Couldn't get balance for asset {curr_leg.in_asset()}.")
 
     if curr_leg.backend.chain_id != backtracked[0].backend.chain_id:
@@ -829,18 +931,14 @@ async def recover_funds(
             to_transfer,
         )
 
-    resp = await quantities_for_route_profit(
-        balance_resp, backtracked, r, ctx, seek_profit=False
-    )
+    resp = await quantities_for_route_profit(balance_resp, backtracked, r, ctx)
 
     if not resp:
         raise ValueError("Couldn't get execution plan.")
 
     profit, quantities = resp
 
-    r = ctx.queue_route(
-        backtracked, -r.theoretical_profit, -r.expected_profit, quantities
-    )
+    r = ctx.queue_route(backtracked, 0, 0, quantities)
 
     ctx.log_route(r, "info", "Executing recovery", [])
 
@@ -862,12 +960,10 @@ async def transfer(
     succeeded.
     """
 
-    denom_infos_on_dest = await denom_info_on_chain(
+    denom_infos_on_dest = await ctx.query_denom_info_on_chain(
         prev_leg.backend.chain_id,
         denom,
         leg.backend.chain_id,
-        ctx.http_session,
-        ctx.denom_map,
     )
 
     if not denom_infos_on_dest:
@@ -875,16 +971,24 @@ async def transfer(
             f"Missing denom info for transfer {denom} ({prev_leg.backend.chain_id}) -> {leg.backend.chain_id}"
         )
 
-    ibc_route = await denom_route(
-        prev_leg.backend.chain_id,
-        denom,
-        leg.backend.chain_id,
-        denom_infos_on_dest[0].denom,
-        ctx.http_session,
+    ibc_route = await ctx.query_denom_route(
+        DenomRouteQuery(
+            src_chain=prev_leg.backend.chain_id,
+            src_denom=denom,
+            dest_chain=leg.backend.chain_id,
+            dest_denom=denom_infos_on_dest.denom,
+        )
     )
 
     if not ibc_route or len(ibc_route) == 0:
         raise ValueError(f"No route from {denom} to {leg.backend.chain_id}")
+
+    ctx.log_route(
+        route,
+        "info",
+        "Got potential transfer route: %s",
+        [fmt_denom_route_leg(leg) for leg in ibc_route],
+    )
 
     src_channel_id = ibc_route[0].channel
     sender_addr = str(

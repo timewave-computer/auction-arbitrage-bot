@@ -15,7 +15,7 @@ mod util;
 const TEST_MNEMONIC: &str = "decorate bright ozone fork gallery riot bus exhaust worth way bone indoor calm squirrel merry zero scheme cotton until shop any excess stage laundry";
 
 /// Path to a file where found arbs are stored
-const ARBFILE_PATH: &str = "../arbs.json";
+const ARBFILE_PATH: &str = "../arbs.db";
 
 /// The address that should principally own all contracts
 const OWNER_ADDR: &str = "neutron1hj5fveer5cjtn4wd6wstzugjfdxzl0xpznmsky";
@@ -183,7 +183,56 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                 .with_test(Box::new(tests::test_unprofitable_arb) as TestFn)
                 .build()?,
         )?
-        /*
+        // Test case unprofitable osmo arb:
+        //
+        // - Astro: untrn-bruhtoken @ 1.5 bruhtoken/untrn
+        // - Osmo: bruhtoken-uosmo @ 0.001 uosmo/bruhtoken
+        // - Astro: uosmo-untrn @ 1 untrn/uosmo
+        .run(
+            TestBuilder::default()
+                .with_name("Osmosis Arb")
+                .with_description("The arbitrage bot not execute an unprofitable arb on Osmosis")
+                .with_denom(untrn_osmo.clone(), 100000000000)
+                .with_denom(uosmo.clone(), 100000000000)
+                .with_denom(bruhtoken.clone(), 100000000000)
+                .with_denom(untrn.clone(), 100000000000)
+                .with_denom(bruhtoken_osmo.clone(), 100000000000)
+                .with_pool(
+                    untrn.clone(),
+                    uosmo_ntrn.clone(),
+                    Pool::Astroport(
+                        AstroportPoolBuilder::default()
+                            .with_balance_asset_a(10000000u128)
+                            .with_balance_asset_b(15000000u128)
+                            .build()?,
+                    ),
+                )
+                .with_pool(
+                    uosmo.clone(),
+                    bruhtoken_osmo.clone(),
+                    Pool::Osmosis(
+                        OsmosisPoolBuilder::default()
+                            .with_funds(bruhtoken_osmo.clone(), 100000000u128)
+                            .with_funds(uosmo.clone(), 100000u128)
+                            .with_weight(bruhtoken_osmo.clone(), 100u128)
+                            .with_weight(uosmo.clone(), 1u128)
+                            .build(),
+                    ),
+                )
+                .with_pool(
+                    untrn.clone(),
+                    bruhtoken.clone(),
+                    Pool::Auction(
+                        AuctionPoolBuilder::default()
+                            .with_balance_offer_asset(10000000u128)
+                            .with_price(Decimal::percent(10))
+                            .build()?,
+                    ),
+                )
+                .with_arbbot()
+                .with_test(Box::new(tests::test_unprofitable_osmo_arb) as TestFn)
+                .build()?,
+        )?
         // Test case (astro -> osmo arb):
         //
         // - Astro: untrn-bruhtoken @ 1.5 bruhtoken/untrn
@@ -213,7 +262,7 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                     bruhtoken_osmo.clone(),
                     Pool::Osmosis(
                         OsmosisPoolBuilder::default()
-                            .with_funds(bruhtoken_osmo.clone(), 10000000u128)
+                            .with_funds(bruhtoken_osmo.clone(), 100000000u128)
                             .with_funds(uosmo.clone(), 10000000u128)
                             .with_weight(bruhtoken_osmo.clone(), 1u128)
                             .with_weight(uosmo.clone(), 1u128)
@@ -223,16 +272,16 @@ fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
                 .with_pool(
                     untrn.clone(),
                     bruhtoken.clone(),
-                    Pool::Astroport(
-                        AstroportPoolBuilder::default()
-                            .with_balance_asset_a(10000000u128)
-                            .with_balance_asset_b(10000000u128)
+                    Pool::Auction(
+                        AuctionPoolBuilder::default()
+                            .with_balance_offer_asset(10000000u128)
+                            .with_price(Decimal::percent(10))
                             .build()?,
                     ),
                 )
                 .with_arbbot()
                 .with_test(Box::new(tests::test_osmo_arb) as TestFn)
                 .build()?,
-        )?*/
+        )?
         .join()
 }
