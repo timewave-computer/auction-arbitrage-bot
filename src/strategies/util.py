@@ -1108,7 +1108,7 @@ async def transfer_raw(
 
         # Check for a package acknowledgement by querying osmosis
         ack_resp = await try_multiple_rest_endpoints(
-            ctx.endpoints[dest_chain_id]["http"],
+            ctx.endpoints[src_chain_id]["http"],
             (
                 f"/ibc/core/channel/v1/channels/{src_channel_id}/"
                 f"ports/transfer/packet_acks/"
